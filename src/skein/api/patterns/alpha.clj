@@ -9,6 +9,7 @@
   (:require [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [next.jdbc :as jdbc]
+            [skein.api.format.alpha :as format-alpha]
             [skein.core.db :as db]
             [skein.core.query :as query]
             [skein.core.weaver.access :refer [ds normalize pattern-registry
@@ -149,13 +150,16 @@
       {:required (mapv key-spec-summary (concat (:req opts) (:req-un opts)))
        :optional (mapv key-spec-summary (concat (:opt opts) (:opt-un opts)))})))
 
+(def ^:private input-contract-summary
+  (format-alpha/reflow
+   "|Input must satisfy this clojure.spec contract. For key specs, see
+    |required/optional entries for each key's own predicate."))
+
 (defn- pattern-input-contract [input-spec]
   (let [form (spec-form input-spec)
         keys-summary (keys-spec-summary form)]
     (cond-> (spec-summary input-spec)
-      true (assoc :summary (str "Input must satisfy this clojure.spec contract. For key "
-                                "specs, see required/optional entries for each key's own "
-                                "predicate."))
+      true (assoc :summary input-contract-summary)
       keys-summary (merge keys-summary))))
 
 (defn- missing-key [problem]
