@@ -17,17 +17,58 @@
   published ambient runtime."
   (:require [clojure.spec.alpha :as s]
             [clojure.string :as str]
+            [skein.api.format.alpha :as format-alpha]
             [skein.api.relations.alpha :as relations]
             [skein.api.runtime.alpha :as runtime]
             [skein.api.spool.alpha :refer [fail! reject-unknown-keys! require-valid!]]))
 
-;; --- C1 declaration shape ------------------------------------------------
+(declare validate-declaration! register-declaration registry)
 
 (def declaration-kinds
   "The two vocabulary kinds a declaration may describe: an attribute namespace
   segment or an edge (relation) type. This set is the `::kind` spec enum and the
   single source of the `vocab --kind` allow-list reused by the batteries op."
   #{:attr-namespace :edge})
+
+(defn declare!
+  "Record C1 `declaration` in `runtime`'s vocabulary registry and return it.
+
+  Validates the shape (fails loudly on an unknown kind, unknown keys, or missing
+  required keys). Recording is keyed by `[:kind :name]`: a re-declaration by the
+  *same* `:owner` is an idempotent replace, while a *different* owner throws
+  `ex-info` carrying `:name`/`:kind`/`:existing-owner`/`:declaring-owner`, so
+  ownership of a namespace or edge type is a hard, single-owner edge. The
+  conflict check runs inside the `swap!`, so concurrent cross-owner declarations
+  cannot race past it."
+  [runtime declaration]
+  (let [declaration (validate-declaration! declaration)
+        {kind :kind decl-name :name} declaration
+        k [kind decl-name]]
+    (swap! (registry runtime) register-declaration k declaration)
+    declaration))
+
+(defn declarations
+  "Return `runtime`'s declarations as full C1 maps, sorted by `[:kind :name]`.
+
+  With `{:kind k}` opts, narrows to that kind; a `:kind` outside
+  `declaration-kinds` fails loudly rather than silently matching nothing.
+  Reads the runtime store explicitly — never the published ambient
+  singleton."
+  ([runtime] (declarations runtime nil))
+  ([runtime opts]
+   (when (some? opts)
+     (reject-unknown-keys! "vocab/declarations" #{:kind} opts)
+     (when (and (contains? opts :kind)
+                (not (contains? declaration-kinds (:kind opts))))
+       (fail! "vocab/declarations :kind must be :attr-namespace or :edge"
+              {:kind (:kind opts) :allowed (vec (sort declaration-kinds))})))
+   (let [kind (:kind opts)]
+     (->> (vals @(registry runtime))
+          (filter (fn [d] (or (nil? kind) (= kind (:kind d)))))
+          (sort-by (juxt :kind :name))
+          vec))))
+
+;; --- C1 declaration shape ------------------------------------------------
 
 (def ^:private common-declaration-keys
   "Keys every declaration carries regardless of kind."
@@ -80,6 +121,24 @@
     (reject-unknown-keys! "vocab/declare!" (allowed-keys-by-kind kind) declaration))
   (require-valid! ::declaration declaration "Vocabulary declaration has an invalid shape"))
 
+;; --- Owner-guarded recording ---------------------------------------------
+
+(defn- register-declaration
+  "Registry `swap!` update fn: record `declaration` under key `k`, unless a
+  *different* `:owner` already holds that `[:kind :name]` — then throw the
+  owner-conflict `ex-info`. Living inside the `swap!` keeps the conflict check
+  and the write atomic, so two racing cross-owner declarations cannot both clear
+  a stale read and let the later write silently win."
+  [reg-map k declaration]
+  (when-let [existing (get reg-map k)]
+    (when (not= (:owner existing) (:owner declaration))
+      (throw (ex-info "Vocabulary declaration owner conflict"
+                      {:name (:name declaration)
+                       :kind (:kind declaration)
+                       :existing-owner (:owner existing)
+                       :declaring-owner (:owner declaration)}))))
+  (assoc reg-map k declaration))
+
 ;; --- Core seed -----------------------------------------------------------
 
 (defn- edge-declaration
@@ -103,7 +162,9 @@
    ;; note/kind is an open, guidance-only advisory set (activity/decision/
    ;; review-dump/summary; absent reads as activity), declared but never enforced.
    :keys ["note/text" "note/at" "note/by" "note/round" "note/kind"]
-   :doc "Note-strand memory attributes written by skein.api.notes.alpha/note!; note/text and note/at are storage-enforced write-once."})
+   :doc (format-alpha/reflow
+         "|Note-strand memory attributes written by skein.api.notes.alpha/note!;
+          |note/text and note/at are storage-enforced write-once.")})
 
 (defn- seed-declarations
   "Return the core seed as a vector of valid C1 declarations: one `:edge` per
@@ -139,53 +200,3 @@
 
 (defn- registry [runtime]
   (:registry (state runtime)))
-
-;; --- Public surface ------------------------------------------------------
-
-(defn- register-declaration
-  "Registry `swap!` update fn: record `declaration` under key `k`, unless a
-  *different* `:owner` already holds that `[:kind :name]` — then throw the
-  owner-conflict `ex-info`. Living inside the `swap!` keeps the conflict check
-  and the write atomic, so two racing cross-owner declarations cannot both clear
-  a stale read and let the later write silently win."
-  [reg-map k declaration]
-  (when-let [existing (get reg-map k)]
-    (when (not= (:owner existing) (:owner declaration))
-      (throw (ex-info "Vocabulary declaration owner conflict"
-                      {:name (:name declaration)
-                       :kind (:kind declaration)
-                       :existing-owner (:owner existing)
-                       :declaring-owner (:owner declaration)}))))
-  (assoc reg-map k declaration))
-
-(defn declare!
-  "Record C1 `declaration` in `runtime`'s vocabulary registry and return it.
-
-  Validates the shape (fails loudly on an unknown kind, unknown keys, or missing
-  required keys). Recording is keyed by `[:kind :name]`: a re-declaration by the
-  *same* `:owner` is an idempotent replace, while a *different* owner throws
-  `ex-info` carrying `:name`/`:kind`/`:existing-owner`/`:declaring-owner`, so
-  ownership of a namespace or edge type is a hard, single-owner edge. The
-  conflict check runs inside the `swap!`, so concurrent cross-owner declarations
-  cannot race past it."
-  [runtime declaration]
-  (let [declaration (validate-declaration! declaration)
-        {kind :kind decl-name :name} declaration
-        k [kind decl-name]]
-    (swap! (registry runtime) register-declaration k declaration)
-    declaration))
-
-(defn declarations
-  "Return `runtime`'s declarations as full C1 maps, sorted by `[:kind :name]`.
-
-  With `{:kind k}` opts, narrows to that kind. Reads the runtime store
-  explicitly — never the published ambient singleton."
-  ([runtime] (declarations runtime nil))
-  ([runtime opts]
-   (when (some? opts)
-     (reject-unknown-keys! "vocab/declarations" #{:kind} opts))
-   (let [kind (:kind opts)]
-     (->> (vals @(registry runtime))
-          (filter (fn [d] (or (nil? kind) (= kind (:kind d)))))
-          (sort-by (juxt :kind :name))
-          vec))))

@@ -67,7 +67,12 @@
                               (vocab/declare! rt {:kind :attr-namespace :name "x"}))))
       (testing "unknown read opt key"
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"unknown keys"
-                              (vocab/declarations rt {:bogus true})))))))
+                              (vocab/declarations rt {:bogus true}))))
+      (testing "unknown read :kind fails loudly instead of matching nothing"
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #":kind must be"
+                              (vocab/declarations rt {:kind :bogus})))
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #":kind must be"
+                              (vocab/declarations rt {:kind nil})))))))
 
 (deftest declare-is-single-owner-hard-edge
   (with-runtime
