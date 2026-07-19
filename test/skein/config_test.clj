@@ -81,6 +81,10 @@
             ((requiring-resolve 'harnesses/install!))
             ((requiring-resolve 'workflows/install!))
             ((requiring-resolve 'analytics/install!))
+            ;; devflow's stage workflows register from its install! (init.clj
+            ;; wires this via runtime/use!); the runtime-owned registry needs a
+            ;; scoped runtime, so requiring the ns no longer registers them.
+            ((requiring-resolve 'ct.spools.devflow/install!))
             (f rt)))
         (finally
           (weaver-runtime/stop! rt)
