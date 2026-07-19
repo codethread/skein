@@ -52,7 +52,7 @@
     state-dir))
 
 (defn- with-state-root [state-root f]
-  (let [state-root-var (ns-resolve 'skein.api.peers.alpha 'state-root)
+  (let [state-root-var (ns-resolve 'skein.api.peers.internal.discovery 'state-root)
         original @state-root-var]
     (alter-var-root state-root-var (constantly (fn [] state-root)))
     (try
@@ -94,6 +94,28 @@
            (is false "expected stale peer resolution to throw")
            (catch clojure.lang.ExceptionInfo ex
              (is (= :peer/stale (:code (ex-data ex))))))))))
+
+(deftest peers-unknown-name-not-found-test
+  (let [state-root (temp-dir "skein-peers-none")]
+    (with-state-root state-root
+      #(try
+         (peers/call! "nobody" "status")
+         (is false "expected unknown peer resolution to throw")
+         (catch clojure.lang.ExceptionInfo ex
+           (is (= :peer/not-found (:code (ex-data ex))))
+           (is (= :name (:match-by (ex-data ex)))))))))
+
+(deftest peers-workspace-path-resolution-test
+  (let [state-root (temp-dir "skein-peers-bypath")
+        workspace (temp-dir "skein-peer-bypath-workspace")]
+    (write-peer! state-root "p" workspace "pathy" 999999999)
+    (with-state-root state-root
+      #(try
+         (peers/call! (.getPath workspace) "status")
+         (is false "expected stale path-resolved peer to throw")
+         (catch clojure.lang.ExceptionInfo ex
+           (is (= :peer/stale (:code (ex-data ex))))
+           (is (= :workspace (:match-by (ex-data ex)))))))))
 
 (deftest peers-duplicate-name-ambiguity-test
   (let [state-root (temp-dir "skein-peers-ambiguous")
