@@ -43,7 +43,8 @@
       (is (thrown-with-msg? ExceptionInfo #"must be a fully qualified symbol"
                             (events/register-handler! rt :k #{:strand/added} 'unqualified)))
       (is (thrown-with-msg? ExceptionInfo #"could not be resolved"
-                            (events/register-handler! rt :k #{:strand/added} 'no.such.ns/handler)))
+                            (events/register-handler! rt :k #{:strand/added}
+                                                      'no.such.ns/handler)))
       (is (thrown-with-msg? ExceptionInfo #"must resolve to a callable value"
                             (events/register-handler!
                              rt :k #{:strand/added}
@@ -64,6 +65,48 @@
              (events/unregister-handler! rt :never-registered)))
       (is (thrown-with-msg? ExceptionInfo #"key must be a keyword, symbol, or string"
                             (events/unregister-handler! rt 42))))))
+
+(defn- registration-accepts?
+  "True when `register-handler!` accepts the pieces without throwing."
+  [rt key types fn-sym]
+  (try
+    (events/register-handler! rt key types fn-sym)
+    true
+    (catch ExceptionInfo _ false)))
+
+(deftest seam-specs-agree-with-the-seam-validators
+  (t/with-weaver-world [ctx {:storage :sqlite-memory}]
+    (let [rt (:runtime ctx)]
+      ;; ::key and ::types state the full grammar, so spec and seam verdicts
+      ;; must be identical over representative inputs.
+      (doseq [key [:kw-key "string-key" 'sym-key 42 "  " nil]]
+        (is (= (s/valid? ::events/key key)
+               (registration-accepts? rt key #{:strand/added} handler-sym))
+            (pr-str key)))
+      (doseq [types [#{:strand/added} #{:a :b} [:strand/added] #{} #{"a"} nil]]
+        (is (= (s/valid? ::events/types types)
+               (registration-accepts? rt :types-probe types handler-sym))
+            (pr-str types)))
+      ;; ::fn and ::metadata state necessary shapes; resolution and the
+      ;; data-first walk are semantics the body alone owns, so spec-invalid
+      ;; must imply seam-rejected (never the reverse).
+      (doseq [fn-sym ['unqualified "not-a-symbol" nil]]
+        (is (not (s/valid? ::events/fn fn-sym)) (pr-str fn-sym))
+        (is (not (registration-accepts? rt :fn-probe #{:strand/added} fn-sym))
+            (pr-str fn-sym))))))
+
+(deftest failure-record-spec-pins-the-promised-key-set
+  ;; The live record round-trip (dispatch writes it, `recent-failures` reads
+  ;; it back) is locked in `skein.weaver-test`; this pins the spec against
+  ;; that record's documented shape.
+  (is (s/valid? ::events/failure-record
+                {:handler/key :fails
+                 :handler/fn 'skein.weaver-test/failing-event
+                 :event/id "evt-1"
+                 :event/type :strand/updated
+                 :exception/message "handler failed"
+                 :failed/at "2026-07-19T12:00:00Z"}))
+  (is (not (s/valid? ::events/failure-record {:handler/key :fails}))))
 
 (deftest registry-reads-are-deterministic-across-mixed-key-types
   (t/with-weaver-world [ctx {:storage :sqlite-memory}]

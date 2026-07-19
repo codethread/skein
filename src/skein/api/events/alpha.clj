@@ -101,6 +101,14 @@
 
 (s/def ::unregistered ::key)
 
+;; The promised failure-record key set (SPEC-004.C67). Its qualified keys stay
+;; unregistered here on purpose: the record is written by the dispatch worker,
+;; so this spec pins the promised keys without claiming shared `:event/*` and
+;; `:handler/*` key specs the writer does not consult.
+(s/def ::failure-record
+  (s/keys :req [:handler/key :handler/fn :event/id :event/type
+                :exception/message :failed/at]))
+
 (s/fdef register-handler!
   :args (s/cat :runtime ::runtime :key ::key :types ::types :fn-sym ::fn
                :metadata (s/? ::metadata))
@@ -116,7 +124,7 @@
 
 (s/fdef recent-failures
   :args (s/cat :runtime ::runtime)
-  :ret (s/coll-of map? :kind vector?))
+  :ret (s/coll-of ::failure-record :kind vector?))
 
 ;; --- event-system state access ------------------------------------------------
 
