@@ -100,19 +100,24 @@ keys **within** `--attr` fail loudly (old C6e); a blank `--attributes` key fails
 
 ```
 strand update <id> [--title t] [--state active|closed] [--attr key=value]… \
-  [--edge edge-type:to-id]…
+  [--attributes <json-object-ref>] [--edge edge-type:to-id]…
 ```
 
-Patches title, lifecycle state, attributes, and outgoing edges of one existing strand. `--attr`
-**merges** into the existing attribute map — it does not replace it. The weaver applies the patch
-with SQLite `json_patch` (`skein.core.db/update-strand!`), so keys you pass are added or overwritten
-and keys you omit are left untouched. Because `--attr` values are always strings, `update` has no
-way to *remove* an attribute key: `--attr key=null` stores the literal string `"null"`, and `update`
-accepts no `--attributes` flag to carry a typed JSON `null` (the merge-patch value that would delete
-a key). Removing a key is a trusted-path operation — `skein.api.weaver.alpha/update!` with
-`{:attributes {"key" nil}}`. Duplicate keys within one `--attr` set fail loudly, as on `add`.
-`--attributes` is not accepted here (it is `add`-only, old C7). Accepts `active|closed`; cannot set
-`replaced`. Returns the normalized strand.
+Patches title, lifecycle state, attributes, and outgoing edges of one existing strand. Attributes
+**merge** into the existing map — they never replace it. The weaver applies the patch with SQLite
+`json_patch` (`skein.core.db/update-strand!`), so keys you pass are added or overwritten and keys you
+omit are left untouched. Precedence matches `add`: `--attr` (highest, repeatable string map) over
+`--attributes` (lowest, a JSON object of typed values). Passing no attribute flag leaves the
+attribute map untouched.
+
+The JSON Merge Patch surface is how you *remove* a key: a JSON `null` in `--attributes` deletes that
+attribute. A JSON empty string stores `""`, and `--attr key=` likewise stores `""` — blank is data,
+never a clearing convention. `--attr` values are always strings, so `--attr key=null` stores the
+literal `"null"`; use `--attributes '{"key":null}'` to delete. The trusted-path equivalent is
+`skein.api.weaver.alpha/update!` with `{:attributes {"key" nil}}`.
+
+Duplicate keys within one `--attr` set fail loudly, as on `add`; a blank `--attributes` key fails
+loudly. Accepts `active|closed`; cannot set `replaced`. Returns the normalized strand.
 
 #### `supersede` — BAT-C7
 
@@ -341,8 +346,10 @@ Reproducing old SPEC-002.C6–C8 (see SPEC-002-D004.R2):
   set fail loudly (old C6e), enforced in the handler by recovering flag keys
   from the raw argv (the parser's `:map` type silently collapses duplicates).
 - **BAT-C20:** `--attributes <ref>` — a payload reference to one JSON object of
-  typed bulk attributes, lowest precedence, `add`-only. Cross-priority duplicate
-  keys resolve by precedence (`--attr` wins); JSON value types are preserved.
+  typed bulk attributes, lowest precedence, on `add` and `update`. Cross-priority
+  duplicate keys resolve by precedence (`--attr` wins); JSON value types are
+  preserved. On `update` it is a JSON Merge Patch: a JSON `null` value removes
+  that key, while a JSON empty string stores `""`.
 - **BAT-C21:** `--edge edge-type:to-id` — repeatable outgoing edge on `add` /
   `update`; malformed specs fail loudly.
 - **BAT-C22:** The `notes` edge is the note primitive's storage link: note
@@ -363,7 +370,7 @@ Reproducing old SPEC-002.C6–C8 (see SPEC-002-D004.R2):
 | SPEC-002.C6c `--attr-stdin` | BAT-C2/C19 | Replaced by `--attr key=:stdin`. |
 | SPEC-002.C6d `--attributes-stdin` | BAT-C2/C20 | Replaced by `--attributes :stdin` (JSON-object parse). |
 | SPEC-002.C6e precedence + dup loudness | BAT-C19/C20 | Equivalent; the mutual-exclusion of two stdin sources dissolves — payloads are named, not a single stdin. |
-| SPEC-002.C7 `update` | BAT-C6 | Equivalent; `--attributes` stays add-only. |
+| SPEC-002.C7 `update` | BAT-C6 | `update` now accepts `--attributes` as a typed JSON Merge Patch (JSON `null` removes a key), matching `add` precedence. |
 | SPEC-002.C8 `--edge` | BAT-C21 | Equivalent. |
 | SPEC-002.C9 normalized JSON | BAT-C4 | Equivalent. |
 | SPEC-002.C9a `supersede` | BAT-C7 | Equivalent. |

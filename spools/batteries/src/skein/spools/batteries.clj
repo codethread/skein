@@ -741,18 +741,24 @@
                    (request-context :add)))))
 
 (defn update-op
-  "Patch one strand's title, state, attributes, and outgoing edges."
+  "Patch one strand's title, state, attributes, and outgoing edges.
+
+  Attributes are a JSON Merge Patch: `--attr` string values merge on top of the
+  typed `--attributes` object (add precedence), and a JSON null in `--attributes`
+  removes that key. Passing no attribute flag leaves the attribute map untouched."
   [ctx]
   (let [rt (:op/runtime ctx)
         args (:op/args ctx)
-        {:keys [id title state attr edge]} args]
+        {:keys [id title state attr attributes edge]} args]
     (check-attr-duplicates! (:op/argv ctx))
     (let [edges (parse-edges edge)
+          attribute-patch? (or (contains? args :attr) (contains? args :attributes))
           patch (cond-> {}
                   (seq edges) (assoc :edges edges)
                   (some? title) (assoc :title title)
                   (some? state) (assoc :state (validate-generic-state state))
-                  (contains? args :attr) (assoc :attributes attr))]
+                  attribute-patch? (assoc :attributes
+                                          (merge (attributes->map attributes) (or attr {}))))]
       (weaver/update! rt id patch (request-context :update)))))
 
 (defn show-op
@@ -894,13 +900,16 @@
 
 (def ^:private update-arg-spec
   {:op "update"
-   :doc "Update one strand's title, state, attributes, and outgoing edges."
+   :doc "Update one strand's title, state, attributes, and outgoing edges. Attributes merge-patch, they do not replace the whole map."
    :flags {:title {:type :string
                    :doc "New strand title."}
            :state {:type :string
                    :doc "Lifecycle state: active or closed (cannot set replaced)."}
            :attr {:type :map
-                  :doc "String attribute key=value; repeatable, replaces attributes. Values may be payload references."}
+                  :doc "String attribute key=value merge patch; repeatable, highest precedence. Values may be payload references."}
+           :attributes {:type :string
+                        :parse :json
+                        :doc "Payload reference to a JSON object merge patch of typed bulk attributes (lowest precedence). A JSON null value removes that key; a JSON empty string stores \"\"."}
            :edge {:type :string
                   :repeat? true
                   :doc "Outgoing edge edge-type:to-id; repeatable."}}
