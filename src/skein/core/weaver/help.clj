@@ -10,23 +10,24 @@
   namespace.
 
   It renders help detail through the `skein.api.cli.alpha`/
-  `skein.api.return-shape.alpha` explain surfaces. It reaches the op registry
-  (`skein.core.weaver.access/op-registry`) and the alpha module's
-  `register-op!`/`resolve-op` through `requiring-resolve` at call time. Both
-  reaches break load cycles a static require would form: alpha statically
-  requires this namespace for the alias check, and `access` (through the runtime
-  and socket namespaces) requires back to this one."
+  `skein.api.return-shape.alpha` explain surfaces. The load graph pins its
+  other reaches: `skein.core.weaver.access` requires the runtime and socket
+  namespaces back to this one, so the registry read uses the runtime map's
+  `:op-registry` key directly, and everything below `access` in the graph can
+  only reach the alpha module dynamically — the two `requiring-resolve` calls
+  here (`register-op!`, `resolve-op`) are call-time reaches into the public
+  surface, the same idiom the socket transport uses for `op!`."
   (:require [skein.api.cli.alpha :as cli]
             [skein.api.return-shape.alpha :as return-shape]))
 
 (defn- registered-op-entries
   "Return `runtime`'s registered op entries sorted by canonical name.
 
-  Reaches `skein.core.weaver.access/op-registry` via requiring-resolve to avoid
-  a static require that would close a load cycle."
+  Reads the runtime map's `:op-registry` atom directly: the blessed accessor
+  (`skein.core.weaver.access/op-registry`) sits above this namespace in the
+  load graph, so requiring it would close a cycle."
   [runtime]
-  (let [registry ((requiring-resolve 'skein.core.weaver.access/op-registry) runtime)]
-    (mapv val (sort-by key @registry))))
+  (mapv val (sort-by key @(:op-registry runtime))))
 
 (defn- op-summary
   "Project one op registry entry to its help-listing summary."
@@ -84,7 +85,8 @@
     (if op-name
       ;; The parsed positional is a raw string; resolve-op keys on simple
       ;; symbols/keywords, and its loud not-found error carries available names.
-      ;; requiring-resolve avoids a static core->alpha require (load cycle).
+      ;; A call-time reach into the public surface: everything below `access`
+      ;; in the load graph can only reach the alpha module dynamically.
       (op-detail ((requiring-resolve 'skein.api.weaver.alpha/resolve-op)
                   runtime (symbol op-name)))
       {:ops (mapv op-summary (registered-op-entries runtime))})))
@@ -104,8 +106,10 @@
 (defn register-built-in-ops!
   "Install Skein-provided CLI operations into the runtime op registry.
 
-  Resolves `register-op!` through requiring-resolve so this core namespace does
-  not statically require the alpha module (load cycle)."
+  Resolves `register-op!` at call time: this namespace sits below `access` in
+  the load graph, so a static require of the alpha module would close a cycle —
+  the same constraint that made `skein.core.weaver.runtime` reach the previous
+  alpha registrar dynamically."
   [runtime]
   ((requiring-resolve 'skein.api.weaver.alpha/register-op!)
    runtime 'help

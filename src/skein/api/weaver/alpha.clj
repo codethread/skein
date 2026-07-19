@@ -28,6 +28,7 @@
             [clojure.string :as str]
             [next.jdbc :as jdbc]
             [skein.api.cli.alpha :as cli]
+            [skein.api.return-shape.alpha :as return-shape]
             [skein.api.weaver.internal.op-entry :as op-entry]
             [skein.core.db :as db]
             [skein.core.query :as query]
@@ -40,7 +41,8 @@
                                                  run-validation-hooks! run-transform-hooks]]))
 
 (declare apply-edges! reject-unknown-update-keys! supersede-context
-         require-archive-result! require-lean-result! operation-label)
+         require-archive-result! require-lean-result!
+         validated-op-entry operation-label)
 
 ;; A runtime is an opaque, non-nil handle; callers select it and pass it first.
 (s/def ::runtime some?)
@@ -384,7 +386,7 @@
   ([runtime op-name fn-sym]
    (register-op! runtime op-name nil fn-sym))
   ([runtime op-name opts fn-sym]
-   (let [entry (op-entry/build-op-entry op-name opts fn-sym)]
+   (let [entry (validated-op-entry op-name opts fn-sym)]
      (swap! (op-registry runtime)
             (fn [registry]
               (when-let [existing (get registry (:name entry))]
@@ -409,7 +411,7 @@
   ([runtime op-name fn-sym]
    (replace-op! runtime op-name nil fn-sym))
   ([runtime op-name opts fn-sym]
-   (let [entry (op-entry/build-op-entry op-name opts fn-sym)]
+   (let [entry (validated-op-entry op-name opts fn-sym)]
      (swap! (op-registry runtime)
             (fn [registry]
               (when-not (contains? registry (:name entry))
@@ -560,6 +562,50 @@
           :when (:skein/omitted value)]
     (require-omitted-attribute-descriptor! value))
   result)
+
+;; -- op registration helpers --
+
+(defn- validate-op-arg-spec!
+  "Structurally validate `arg-spec` for `op-name` through the CLI parser
+  contract, returning it."
+  [op-name arg-spec]
+  (try
+    (cli/validate! arg-spec)
+    (catch clojure.lang.ExceptionInfo e
+      (throw (ex-info "Operation arg-spec is invalid"
+                      (assoc (ex-data e) :operation (op-entry/canonical-op-name op-name))
+                      e)))))
+
+(defn- validate-op-returns!
+  "Validate `returns` through the return-shape contract and its op alignment,
+  returning it."
+  [op-name arg-spec stream? returns]
+  (try
+    (return-shape/validate! returns)
+    (catch clojure.lang.ExceptionInfo e
+      (throw (ex-info "Operation :returns declaration is invalid"
+                      (assoc (ex-data e) :operation (op-entry/canonical-op-name op-name))
+                      e))))
+  (op-entry/validate-returns-alignment! op-name arg-spec stream? returns))
+
+(defn- validated-op-entry
+  "Validate one registration's inputs and assemble its registry entry.
+
+  Normalization, structural metadata validation, and entry assembly are
+  `op-entry` plumbing; the reaches into the promised `skein.api.cli.alpha`
+  and `skein.api.return-shape.alpha` contracts happen here, because an
+  internal namespace never requires an alpha namespace (SPEC-003.C19a)."
+  [op-name opts fn-sym]
+  (let [opts (op-entry/validate-op-metadata! (op-entry/normalize-op-opts opts))
+        fn-sym (op-entry/validate-op-fn-symbol! fn-sym)
+        stream? (boolean (:stream? opts))]
+    (when (:doc opts)
+      (op-entry/validate-op-doc! (:doc opts)))
+    (when (some? (:arg-spec opts))
+      (validate-op-arg-spec! op-name (:arg-spec opts)))
+    (when (contains? opts :returns)
+      (validate-op-returns! op-name (:arg-spec opts) stream? (:returns opts)))
+    (op-entry/assemble op-name opts fn-sym)))
 
 ;; -- op dispatch helpers --
 

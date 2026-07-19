@@ -2,15 +2,14 @@
   "Registration-time validation and entry construction for weaver CLI ops.
 
   Plumbing behind `skein.api.weaver.alpha`'s `register-op!`/`replace-op!`: it
-  normalizes the metadata argument, validates every declared field, and builds
-  the validated registry entry with derived provenance and metadata defaults.
-  These are plain public defns on an internal tier (SPEC-005.C5b); the alpha
-  module composes `build-op-entry` into its registration story.
-
-  The arg-spec and return-shape structural checks reach the
-  `skein.api.cli.alpha` and `skein.api.return-shape.alpha` surfaces through
-  `requiring-resolve`: an internal namespace must not statically require an
-  alpha namespace (SPEC-003.C19a), so the cross-tier reach is dynamic."
+  normalizes the metadata argument, validates the structural fields, checks
+  returns/arg-spec routing alignment, and assembles the registry entry with
+  derived provenance and metadata defaults. These are plain public defns on an
+  internal tier (SPEC-005.C5b); the alpha module composes them into its
+  registration story and owns the reaches into the `skein.api.cli.alpha` and
+  `skein.api.return-shape.alpha` contracts (an internal namespace never
+  requires an alpha namespace, SPEC-003.C19a), so everything here is
+  tier-free: only clojure and `skein.core.*`."
   (:require [clojure.string :as str]
             [skein.core.query :as query]
             [skein.core.weaver.access :as access]))
@@ -85,19 +84,6 @@
                     {:hook-class (:hook-class opts)})))
   opts)
 
-(defn validate-op-arg-spec!
-  "Structurally validate `arg-spec` for `op-name` through the CLI parser.
-
-  Reached via requiring-resolve because an internal namespace must not
-  statically require the `skein.api.cli.alpha` surface (SPEC-003.C19a)."
-  [op-name arg-spec]
-  (try
-    ((requiring-resolve 'skein.api.cli.alpha/validate!) arg-spec)
-    (catch clojure.lang.ExceptionInfo e
-      (throw (ex-info "Operation arg-spec is invalid"
-                      (assoc (ex-data e) :operation (canonical-op-name op-name))
-                      e)))))
-
 (defn invalid-returns!
   "Throw a canonicalized `:returns` validation error for `op-name`."
   [op-name reason message data]
@@ -120,20 +106,14 @@
                       "Operation :returns does not align with :stream?"
                       (assoc context :stream? stream? :returns return-case))))
 
-(defn validate-op-returns!
-  "Validate the `returns` declaration for `op-name`, returning it.
+(defn validate-returns-alignment!
+  "Require the `returns` declaration's routing to align with the op, returning it.
 
-  Checks the return-shape structure, that `:subcommands` routing matches the
-  arg-spec's subcommands exactly, and that each case's stream marker aligns
-  with `stream?`. Reaches the return-shape surface via requiring-resolve
-  (internal must not require an alpha namespace, SPEC-003.C19a)."
+  Checks that `:subcommands` routing matches the arg-spec's subcommands exactly
+  and that each case's stream marker aligns with `stream?`. Purely structural:
+  the return-shape contract itself is validated in alpha, which owns the reach
+  into `skein.api.return-shape.alpha`."
   [op-name arg-spec stream? returns]
-  (try
-    ((requiring-resolve 'skein.api.return-shape.alpha/validate!) returns)
-    (catch clojure.lang.ExceptionInfo e
-      (throw (ex-info "Operation :returns declaration is invalid"
-                      (assoc (ex-data e) :operation (canonical-op-name op-name))
-                      e))))
   (let [arg-subcommands (:subcommands arg-spec)
         return-subcommands (when (and (map? returns) (contains? returns :subcommands))
                              (:subcommands returns))]
@@ -164,27 +144,22 @@
         (validate-return-case-alignment! op-name stream? returns {}))))
   returns)
 
-(defn build-op-entry
-  "Build a validated op registry entry with metadata defaults and provenance.
+(defn assemble
+  "Assemble the registry entry for already-validated registration inputs.
 
   Provenance is derived from the handler symbol's namespace. `:deadline-class`
   defaults to `:unbounded` for stream ops and `:standard` otherwise;
   `:hook-class` defaults to `:mutating`, preserving today's hook-gated
-  behavior."
+  behavior. Pure assembly: the caller has already validated the metadata map,
+  the handler symbol, and any declared doc, arg-spec, and returns."
   [op-name opts fn-sym]
-  (let [opts (validate-op-metadata! (normalize-op-opts opts))
-        validated-fn (validate-op-fn-symbol! fn-sym)
-        stream? (boolean (:stream? opts))]
+  (let [stream? (boolean (:stream? opts))]
     (cond-> {:name (canonical-op-name op-name)
-             :fn validated-fn
+             :fn fn-sym
              :stream? stream?
              :deadline-class (or (:deadline-class opts) (if stream? :unbounded :standard))
              :hook-class (or (:hook-class opts) :mutating)
-             :provenance (symbol (namespace validated-fn))}
-      (:doc opts) (assoc :doc (validate-op-doc! (:doc opts)))
-      (some? (:arg-spec opts)) (assoc :arg-spec (validate-op-arg-spec! op-name
-                                                                       (:arg-spec opts)))
-      (contains? opts :returns) (assoc :returns (validate-op-returns! op-name
-                                                                      (:arg-spec opts)
-                                                                      stream?
-                                                                      (:returns opts))))))
+             :provenance (symbol (namespace fn-sym))}
+      (:doc opts) (assoc :doc (:doc opts))
+      (some? (:arg-spec opts)) (assoc :arg-spec (:arg-spec opts))
+      (contains? opts :returns) (assoc :returns (:returns opts)))))
