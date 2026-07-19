@@ -21,9 +21,10 @@ This spec draws the line around what Skein ships as "alpha": which surface is in
   `skein.spools.util` and `skein.spools.format` no longer name authoring helpers: `format` is deleted
   in favor of the already-blessed `skein.api.format.alpha` (`fill`, `reflow`), and `util` is
   promoted to blessed `skein.api.spool.alpha` (`fail!`, `reject-unknown-keys!`, `require-valid!`,
-  `attr-key->str`, `attr-get`, `poll-until-deadline!`, `entity-projection`, plus the composable
-  arg-spec fragments `note-surface`, `work-root`, `timeout-secs`, and `outcome` — plain declared
-  arg-spec data that spool authors merge with domain-specific flags and positionals; SPEC-005.C2).
+  `attr-key->str`, `attr-get`, `poll-until-deadline!`, `entity-projection`; SPEC-005.C2). The
+  composable arg-spec fragments that once rode along (`note-surface`, `work-root`, `timeout-secs`,
+  `outcome`) found no consumers and were removed before any release (PR #105); spool authors
+  declare their own arg-spec data.
   `entity-projection` fails loudly unless its strand-shaped input contains `:id`, `:title`, `:state`,
   and `:attributes`, then returns exactly those four keys; domain-specific rows may extend that base
   explicitly, and richer existing rows are not narrowed. After this change the `skein.spools.*`

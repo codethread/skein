@@ -21,6 +21,8 @@
   (:require [clojure.spec.alpha :as s]
             [skein.core.specs :as specs]))
 
+(declare entity-projection-keys reject-omitted-attribute!)
+
 (defn fail!
   "Throw an `ex-info` carrying `message` and a contextual `data` map (TEN-003).
 
@@ -30,8 +32,6 @@
    (throw (ex-info message data)))
   ([message data cause]
    (throw (ex-info message data cause))))
-
-(def ^:private entity-projection-keys [:id :title :state :attributes])
 
 (defn entity-projection
   "Return the canonical exact strand entity projection.
@@ -77,50 +77,6 @@
   [k]
   (if (keyword? k) (subs (str k) 1) (str k)))
 
-(s/def ::deadline int?)
-(s/def ::poll-ms (s/and integer? (complement neg?)))
-(s/def ::poll-fn ifn?)
-
-(defn poll-until-deadline!
-  "The shared spool-tier long-poll skeleton behind `skein.spools.workflow/await!`
-  and `skein.spools.roster/await-quiet!`: call `check` (a zero-arg fn) once,
-  test its value with `pred->result`, and repeat every `poll-ms` until either
-  `pred->result` returns a non-nil result or `deadline` (a `System/currentTimeMillis`
-  epoch millis value, as already computed by each caller from its own
-  `:timeout-secs`/`:timeout-ms` option) has passed.
-
-  `pred->result` receives each `check` value and returns a non-nil result to
-  stop and return it, or nil to keep polling. Once `deadline` passes with
-  `pred->result` still nil, `on-timeout` receives the last `check` value and
-  its return value becomes the result. `deadline` and `poll-ms` are both
-  required — this helper does not supply timeout/cadence defaults; those stay
-  owned by each caller so existing behavior is unchanged. Fails loudly
-  (TEN-003) when `deadline` is not a long, `poll-ms` is not a non-negative
-  integer, or `check`/`pred->result`/`on-timeout` is not a function, rather
-  than surfacing a bare NPE/`IllegalArgumentException` once the loop actually
-  runs."
-  [{:keys [deadline poll-ms check pred->result on-timeout]}]
-  (require-valid! ::deadline deadline "poll-until-deadline! :deadline must be a long")
-  (require-valid! ::poll-ms poll-ms "poll-until-deadline! :poll-ms must be a non-negative integer")
-  (require-valid! ::poll-fn check "poll-until-deadline! :check must be a function")
-  (require-valid! ::poll-fn pred->result "poll-until-deadline! :pred->result must be a function")
-  (require-valid! ::poll-fn on-timeout "poll-until-deadline! :on-timeout must be a function")
-  (loop []
-    (let [value (check)]
-      (or (pred->result value)
-          (if (>= (System/currentTimeMillis) deadline)
-            (on-timeout value)
-            (do (Thread/sleep (long poll-ms)) (recur)))))))
-
-(defn- reject-omitted-attribute! [strand k value]
-  (when (specs/omitted-attribute-descriptor? value)
-    (let [strand-id (:id strand)]
-      (fail! "Attribute value was omitted from this lean read; fetch the full strand before reading it"
-             {:key k
-              :strand-id strand-id
-              :recovery (str "show " strand-id)})))
-  value)
-
 (defn attr-get
   "Read attribute `k` from a normalized strand, tolerating keyword- or
   string-keyed attribute maps.
@@ -147,3 +103,62 @@
                 (get attrs kw)
                 (get attrs (attr-key->str kw)))]
     (reject-omitted-attribute! strand k value)))
+
+(defn poll-until-deadline!
+  "The shared spool-tier long-poll skeleton behind `skein.spools.workflow/await!`
+  and `skein.spools.roster/await-quiet!`: call `check` (a zero-arg fn) once,
+  test its value with `pred->result`, and repeat every `poll-ms` until either
+  `pred->result` returns a non-nil result or `deadline` (a `System/currentTimeMillis`
+  epoch millis value, as already computed by each caller from its own
+  `:timeout-secs`/`:timeout-ms` option) has passed.
+
+  `pred->result` receives each `check` value and returns a non-nil result to
+  stop and return it, or nil to keep polling. Once `deadline` passes with
+  `pred->result` still nil, `on-timeout` receives the last `check` value and
+  its return value becomes the result. `deadline` and `poll-ms` are both
+  required — this helper does not supply timeout/cadence defaults; those stay
+  owned by each caller so existing behavior is unchanged. Fails loudly
+  (TEN-003) on option keys outside the five named here, when `deadline` is
+  not a long, when `poll-ms` is not a non-negative integer, or when
+  `check`/`pred->result`/`on-timeout` is not a function, rather than
+  surfacing a bare NPE/`IllegalArgumentException` once the loop actually
+  runs."
+  [{:keys [deadline poll-ms check pred->result on-timeout] :as opts}]
+  (reject-unknown-keys! "poll-until-deadline!"
+                        #{:deadline :poll-ms :check :pred->result :on-timeout}
+                        opts)
+  (require-valid! ::deadline deadline "poll-until-deadline! :deadline must be a long")
+  (require-valid! ::poll-ms poll-ms
+                  "poll-until-deadline! :poll-ms must be a non-negative integer")
+  (require-valid! ::poll-fn check "poll-until-deadline! :check must be a function")
+  (require-valid! ::poll-fn pred->result
+                  "poll-until-deadline! :pred->result must be a function")
+  (require-valid! ::poll-fn on-timeout "poll-until-deadline! :on-timeout must be a function")
+  (loop []
+    (let [value (check)]
+      (or (pred->result value)
+          (if (>= (System/currentTimeMillis) deadline)
+            (on-timeout value)
+            (do (Thread/sleep (long poll-ms)) (recur)))))))
+
+;; Entity projection mechanics
+
+(def ^:private entity-projection-keys [:id :title :state :attributes])
+
+;; Attribute read mechanics
+
+(defn- reject-omitted-attribute! [strand k value]
+  (when (specs/omitted-attribute-descriptor? value)
+    (let [strand-id (:id strand)]
+      (fail! (str "Attribute value was omitted from this lean read; "
+                  "fetch the full strand before reading it")
+             {:key k
+              :strand-id strand-id
+              :recovery (str "show " strand-id)})))
+  value)
+
+;; Polling option specs
+
+(s/def ::deadline int?)
+(s/def ::poll-ms (s/and integer? (complement neg?)))
+(s/def ::poll-fn ifn?)
