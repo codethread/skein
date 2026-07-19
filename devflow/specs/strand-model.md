@@ -1,6 +1,6 @@
 # Strand Model
 
-**Document ID:** `SPEC-001` **Status:** Implemented **Last Updated:** 2026-07-12 **Code:** `src/skein/core/db.clj`
+**Document ID:** `SPEC-001` **Status:** Implemented **Last Updated:** 2026-07-19 **Code:** `src/skein/core/db.clj`
 
 ## SPEC-001.P1 Purpose
 
@@ -53,13 +53,13 @@ Strand edges connect `from_strand_id` to `to_strand_id`, have an `edge_type` rel
 
 A `depends-on` edge from strand `A` to strand `B` means `A` is blocked by `B` while `B` is active. Shipped storage initialization declares `depends-on`, `parent-of`, `supersedes`, `serves`, and `notes` acyclic. Userland may declare additional acyclic relations before writing edges of that relation.
 
-The `serves` relation is an engine-owned operational edge from a run to the strand whose own work that run carries out (run `--serves-->` served-target); it is the single durable encoding of that delegation and is declared acyclic. `parent-of` expresses structural hierarchy and placement only — a reader never infers serving from a `parent-of` edge — so a run placed structurally beneath a strand and a run serving that strand are recorded by distinct relations.
+The `serves` relation is an engine-owned operational edge from a run to the strand whose own work that run carries out (run `--serves-->` served-target); it is the single durable encoding of that delegation and is declared acyclic. A run may serve at most one target — a single outgoing `serves` edge, or none. Writes that would add a second target fail and name the existing target; initialization fails if legacy storage contains a run with multiple targets. `parent-of` expresses structural hierarchy and placement only — a reader never infers serving from a `parent-of` edge — so a run placed structurally beneath a strand and a run serving that strand are recorded by distinct relations.
 
 The `notes` relation is a core-owned operational edge from a closed note strand to the target it annotates (note `--notes--> target`), recording append-only memory attached to that target; it is the single durable encoding of that attachment and is declared acyclic. A note's content lives in self-describing `note/*` attributes, never in a target-pointing attribute, so the edge is the sole linkage and nothing else names the target. The blessed shape is `note/text` (the content) and `note/at` (the write time), with optional `note/by` and `note/round`; note strands are born closed and stay open to decorating attributes owned by their writers.
 
 Self-edges fail for every relation. Writes to declared acyclic relations fail when they introduce a cycle within that same relation. Undeclared annotation relations may form non-self cycles.
 
-The blessed `skein.api.relations.alpha` namespace ships a source-visible advisory catalog of this relation vocabulary for agents, config, and REPL workflows: `catalog` data plus `relation`, `operational-relations`, and `annotation-relations` lookups, each entry carrying the relation's family (operational battery vs behavior-free annotation), direction gloss, declared-acyclicity flag, and help text. It is documentation-only — not a storage allowlist or runtime relation-semantics registry — so relation names outside the catalog remain valid userland annotations. The `skein.api.vocab.alpha` registry reflects this catalog as owned `:edge` declarations (owner `:skein/core`) so the shipped edge vocabulary has one source and never forks. As an `skein.api.*.alpha` namespace it carries accretion-based compatibility within the subnamespace.
+The blessed `skein.api.relations.alpha` namespace ships a source-visible advisory catalog of this relation vocabulary for agents, config, and REPL workflows: `catalog` data, each entry carrying the relation's family (operational battery vs behavior-free annotation), direction gloss, declared-acyclicity flag, and help text. It is documentation-only — not a storage allowlist or runtime relation-semantics registry — so relation names outside the catalog remain valid userland annotations. The `skein.api.vocab.alpha` registry reflects this catalog as owned `:edge` declarations (owner `:skein/core`) so the shipped edge vocabulary has one source and never forks. As an `skein.api.*.alpha` namespace it carries accretion-based compatibility within the subnamespace.
 
 ## SPEC-001.P6 Batch graph mutation
 

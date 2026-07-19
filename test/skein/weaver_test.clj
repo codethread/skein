@@ -2553,7 +2553,8 @@
     (fn [rt _]
       (weaver/init rt)
       (let [source (weaver/add! rt {:title "Source"})
-            target (weaver/add! rt {:title "Target"})]
+            target (weaver/add! rt {:title "Target"})
+            other-target (weaver/add! rt {:title "Other target"})]
         (is (thrown-with-msg? clojure.lang.ExceptionInfo
                               #"Strand not found"
                               (weaver/update! rt "missing" {:edges [{:type "depends-on" :to (:id target)}]})))
@@ -2561,7 +2562,27 @@
                               #"non-blank"
                               (weaver/update! rt (:id source) {:title ""
                                                                :edges [{:type "depends-on" :to (:id target)}]})))
-        (is (empty? (db/execute! (:datasource rt) ["SELECT 1 FROM strand_edges WHERE from_strand_id = ?" (:id source)])))))))
+        (is (empty? (db/execute! (:datasource rt) ["SELECT 1 FROM strand_edges WHERE from_strand_id = ?" (:id source)])))
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                              (re-pattern (:id target))
+                              (weaver/add! rt {:title "Malformed run"
+                                               :edges [{:type "serves" :to (:id target)}
+                                                       {:type "serves" :to (:id other-target)}]})))
+        (is (nil? (some #(when (= "Malformed run" (:title %)) %) (weaver/list rt))))
+        (weaver/update! rt (:id source) {:edges [{:type "serves" :to (:id target)}]})
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                              (re-pattern (:id target))
+                              (weaver/update! rt (:id source)
+                                              {:title "Must roll back"
+                                               :edges [{:type "serves" :to (:id other-target)}]})))
+        (is (= "Source" (:title (weaver/show rt (:id source)))))
+        (is (= [(:id target)]
+               (mapv :to_strand_id
+                     (db/execute! (:datasource rt)
+                                  ["SELECT to_strand_id
+                                    FROM strand_edges
+                                    WHERE from_strand_id = ? AND edge_type = 'serves'"
+                                   (:id source)]))))))))
 
 (deftest runtime-uses-world-default-database-and-directories
   (let [world (temp-world)
