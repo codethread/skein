@@ -633,7 +633,13 @@
 (s/def ::sync-root-map
   (s/and (s/map-of symbol? ::sync-root-entry)
          #(every? (fn [[lib entry]] (= lib (:lib entry))) %)))
-(s/def ::pending-generation map?)
+(s/def ::pending-generation
+  (s/and #(exact-keys? #{:status :generation :diff :approved-spools :remedy} %)
+         #(= :pending (:status %))
+         #(string? (:generation %))
+         #(map? (:diff %))
+         #(set? (:approved-spools %))
+         #(string? (:remedy %))))
 (s/def ::retained-spool-state vector?)
 (s/def ::sync-result
   (s/and #(exact-keys? #{:spools :pending-validations :pending-generation
@@ -641,7 +647,8 @@
          #(contains? % :spools)
          #(s/valid? ::sync-root-map (:spools %))
          #(or (not (contains? % :pending-validations)) (vector? (:pending-validations %)))
-         #(or (not (contains? % :pending-generation)) (map? (:pending-generation %)))
+         #(or (not (contains? % :pending-generation))
+              (s/valid? ::pending-generation (:pending-generation %)))
          #(or (not (contains? % :retained-spool-state)) (vector? (:retained-spool-state %)))))
 
 (defn- family-projection [shared families]

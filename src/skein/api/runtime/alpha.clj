@@ -169,8 +169,7 @@
 ;; --- syncing approved roots -------------------------------------------------
 
 (s/def ::sync-result :skein.core.weaver.spool-sync/sync-result)
-(s/def ::pending-generation
-  (s/keys :req-un [::status ::generation ::diff ::approved-spools ::remedy]))
+(s/def ::pending-generation :skein.core.weaver.spool-sync/pending-generation)
 (s/def ::non-additive-sync-diff-ex-data
   (s/keys :req-un [::status ::reason ::diff ::pending-generation ::remedy]))
 
@@ -202,7 +201,9 @@
   "Return `runtime`'s most recent approved-root sync state.
 
   The result is `{:spools ...}` and may include the latest recorded
-  `:pending-generation` from a refused non-additive sync diff."
+  `:pending-generation` from a refused non-additive sync diff, conforming to
+  `:skein.core.weaver.spool-sync/pending-generation` (status, generation id,
+  classified diff, approved coordinate set, remedy)."
   [runtime]
   (validate-sync-result! (spool-sync/approved-spool-syncs runtime)))
 
