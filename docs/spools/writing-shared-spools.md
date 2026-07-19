@@ -416,7 +416,7 @@ evidence from tests at that floor.
 
 Keep `bin/compat-alarm` in the spool repository. It takes a previous marker, extracts that release's
 tests, and runs them against the working tree. The
-[agent-harness.spool alarm](https://github.com/codethread/agent-harness.spool/blob/7415d9dc50cd98c15a8703b237711295b2996759/bin/compat-alarm)
+[agent-harness.spool alarm](https://github.com/codethread/agent-harness.spool/blob/25933eb3400f0f8175878b2fc66e351f960fd211/bin/compat-alarm)
 is a shipped example.
 
 `v1` has no previous marker, so its release gate is the current test suite only. Start running the
@@ -498,7 +498,7 @@ distinct from the consumer's plural `spools.edn`:
 ```
 
 The pinned
-[agent-harness.spool manifest](https://github.com/codethread/agent-harness.spool/blob/7415d9dc50cd98c15a8703b237711295b2996759/spool.edn)
+[agent-harness.spool manifest](https://github.com/codethread/agent-harness.spool/blob/25933eb3400f0f8175878b2fc66e351f960fd211/spool.edn)
 is a real multi-root example. The
 [kanban.spool manifest](https://github.com/codethread/kanban.spool/blob/dfd6948afb5db9c8ca30778cb1ba329a3afff877/spool.edn)
 shows the single-root form.
