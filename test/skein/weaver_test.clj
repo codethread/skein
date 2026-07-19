@@ -1679,7 +1679,7 @@
     (with-runtime
       (fn [rt _]
         (let [{:keys [entries missing required unchecked]}
-              (owner-return-coverage rt 'skein.api.weaver.alpha #{})]
+              (owner-return-coverage rt 'skein.core.weaver.help #{})]
           (is (= ["help"] (mapv :name entries)))
           (is (empty? missing))
           (is (= #{["help" {}]} required))
@@ -1689,7 +1689,7 @@
             (is (= result (return-shape/check! declaration result)))
             (t/check-op-return! rt 'help result)
             (is (empty? (:unchecked
-                         (owner-return-coverage rt 'skein.api.weaver.alpha
+                         (owner-return-coverage rt 'skein.core.weaver.help
                                                 #{["help" {}]})))))))))
   (testing "required leaves come from declarations and remain unchecked until successful checks"
     (with-runtime
@@ -2110,7 +2110,7 @@
           (is (every? #(not (contains? % :returns)) ops))
           (let [help-entry (first (filter #(= "help" (:name %)) ops))]
             (is (= "read" (:hook-class help-entry)))
-            (is (= "skein.api.weaver.alpha" (:provenance help-entry)))
+            (is (= "skein.core.weaver.help" (:provenance help-entry)))
             (is (false? (:stream? help-entry)))
             (is (= "standard" (:deadline-class help-entry)))
             (is (string? (:doc help-entry))))))
