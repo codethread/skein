@@ -1,6 +1,6 @@
 # Alpha Surface
 
-**Document ID:** `SPEC-005` **Status:** Implemented **Last Updated:** 2026-07-18 **Related:** [Strand Model](./strand-model.md), [CLI Surface](./cli.md), [REPL API](./repl-api.md), [Weaver Runtime](./daemon-runtime.md), [Spools index](../../spools/README.md), [Writing shared spools](../../docs/spools/writing-shared-spools.md)
+**Document ID:** `SPEC-005` **Status:** Implemented **Last Updated:** 2026-07-19 **Related:** [Strand Model](./strand-model.md), [CLI Surface](./cli.md), [REPL API](./repl-api.md), [Weaver Runtime](./daemon-runtime.md), [Spools index](../../spools/README.md), [Writing shared spools](../../docs/spools/writing-shared-spools.md)
 
 ## SPEC-005.P1 Purpose
 
@@ -47,3 +47,4 @@ This spec draws the line around what Skein ships as "alpha": which surface is in
 ## SPEC-005.P4 Change discipline
 
 - **SPEC-005.C9:** Moving surface across the line — promoting internal surface into contract, or removing/reshaping in-contract surface — updates the owning root spec or spool doc, and this index when the tier membership itself changes. Internal-only changes need no spec update.
+- **SPEC-005.C9a:** Deprecation in a `skein.api.*.alpha` namespace is advisory only. A deprecated var carries metadata `{:deprecated true :since "vN" :replacement fully-qualified-symbol}`; its behavior remains available forever under the published name. The first actual deprecation must also make this metadata visible in the generated API docs. Deprecation never makes a previously accepted call fail.

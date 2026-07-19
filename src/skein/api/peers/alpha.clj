@@ -3,13 +3,12 @@
   (:require [clojure.data.json :as json]
             [clojure.java.io :as io]
             [clojure.string :as str]
-            [skein.core.weaver.metadata :as metadata])
+            [skein.core.weaver.metadata :as metadata]
+            [skein.core.weaver.protocol :as protocol])
   (:import [java.io BufferedReader BufferedWriter File InputStreamReader OutputStreamWriter]
            [java.net StandardProtocolFamily UnixDomainSocketAddress]
            [java.nio.channels Channels SocketChannel]
            [java.util UUID]))
-
-(def ^:private protocol-version 1)
 
 (defn- state-root
   "Return Skein's mill state root for the current process environment."
@@ -144,11 +143,11 @@
     :else (throw (ex-info "Peer operation must be a string, unqualified symbol, or unqualified keyword" {:operation op}))))
 
 (defn- ensure-peer-protocol! [peer]
-  (when-not (= protocol-version (:protocol-version peer))
+  (when-not (= protocol/version (:protocol-version peer))
     (throw (ex-info "Peer metadata protocol version mismatch"
                     {:code :peer/protocol-version-mismatch
                      :peer (select-keys peer [:name :workspace :weaver-id :socket-path :state-dir])
-                     :expected protocol-version
+                     :expected protocol/version
                      :actual (:protocol-version peer)})))
   peer)
 
@@ -170,7 +169,7 @@
            cause))
 
 (defn- request-envelope [peer op args request-id]
-  {"protocol_version" protocol-version
+  {"protocol_version" protocol/version
    "request_id" request-id
    "weaver_id" (:weaver-id peer)
    "operation" op
@@ -223,12 +222,12 @@
 (defn- verify-response! [peer op request-id response]
   (when-not (map? response)
     (throw (socket-error peer op "Peer response is not an object" {})))
-  (when-not (= protocol-version (get response "protocol_version"))
+  (when-not (= protocol/version (get response "protocol_version"))
     (throw (ex-info "Peer protocol version mismatch"
                     {:code :peer/protocol-version-mismatch
                      :peer (peer-identity peer)
                      :operation op
-                     :expected protocol-version
+                     :expected protocol/version
                      :actual (get response "protocol_version")})))
   (when-not (= request-id (get response "request_id"))
     (throw (ex-info "Peer response request id mismatch"

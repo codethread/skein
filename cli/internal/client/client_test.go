@@ -1,9 +1,37 @@
 package client
 
 import (
+	"os"
+	"path/filepath"
+	"regexp"
+	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 )
+
+func TestProtocolVersionMatchesJVM(t *testing.T) {
+	_, testFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate client test source")
+	}
+	protocolFile := filepath.Join(filepath.Dir(testFile), "..", "..", "..", "src", "skein", "core", "weaver", "protocol.clj")
+	source, err := os.ReadFile(protocolFile)
+	if err != nil {
+		t.Fatalf("read JVM protocol version: %v", err)
+	}
+	match := regexp.MustCompile(`(?ms)\(def version\s+"[^"]*"\s+([0-9]+)\)`).FindSubmatch(source)
+	if len(match) != 2 {
+		t.Fatalf("find JVM protocol version in %s", protocolFile)
+	}
+	jvmVersion, err := strconv.Atoi(string(match[1]))
+	if err != nil {
+		t.Fatalf("parse JVM protocol version: %v", err)
+	}
+	if ProtocolVersion != jvmVersion {
+		t.Fatalf("Go protocol version %d differs from JVM protocol version %d; bump both atomically", ProtocolVersion, jvmVersion)
+	}
+}
 
 func TestResponseErrorDetailsDoNotHTMLEscape(t *testing.T) {
 	err := (&ResponseError{
