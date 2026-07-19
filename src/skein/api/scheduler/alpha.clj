@@ -8,11 +8,12 @@
   event handlers observe one mutation order (RFC-009, DELTA-weaver-scheduler-
   repl-001). Delivery is at-least-once: handlers must be idempotent.
 
-  This namespace guards the wake map and resolves handlers eagerly, so a bad
-  handler fails `schedule!`, not dispatch; field validation flows through the
-  shared `:skein.core.specs/scheduler-wake` boundary spec at the persistence
-  seam, durable storage lives in `skein.core.db`, and timer arming/dispatch
-  in `skein.core.weaver.scheduler`. Persisted rows return as decoded
+  This namespace validates the wake against the shared
+  `:skein.core.specs/scheduler-wake` boundary spec (the persistence seam
+  consults the same spec) and resolves handlers eagerly, so a bad wake or
+  handler fails `schedule!`, not dispatch; durable storage lives in
+  `skein.core.db`, and timer arming/dispatch in
+  `skein.core.weaver.scheduler`. Persisted rows return as decoded
   data-first maps (`::pending-wake`, `::cancellation`).
 
   Pull-based `wake-at` strand attributes plus named queries remain the
@@ -29,7 +30,7 @@
             [skein.core.weaver.access :as access]
             [skein.core.weaver.scheduler :as scheduler]))
 
-(declare decoded-row resolve-handler-fn!)
+(declare require-wake! decoded-row resolve-handler-fn!)
 
 (defn schedule!
   "Persist or replace a durable wake in `runtime` and arm it for dispatch.
@@ -42,8 +43,7 @@
   Malformed keys/instants/payloads and unresolvable or non-callable handlers
   fail loudly; no wake is persisted on failure."
   [runtime wake]
-  (when-not (map? wake)
-    (throw (ex-info "Scheduler wake must be a map" {:wake wake})))
+  (require-wake! wake)
   (resolve-handler-fn! runtime (:handler wake))
   (let [created (decoded-row (db/schedule-wake! (access/ds runtime) wake))]
     (scheduler/arm! runtime)
@@ -117,14 +117,34 @@
   :args (s/cat :runtime ::runtime)
   :ret (s/coll-of ::pending-wake :kind vector?))
 
+;; --- wake validation ----------------------------------------------------------
+
+(defn- require-wake!
+  "Return `wake` when the shared scheduler-wake boundary spec accepts it.
+
+  Every rejection carries the spec explanation; the non-map case keeps its
+  dedicated outward message."
+  [wake]
+  (when-not (s/valid? ::wake wake)
+    (throw (ex-info (if (map? wake)
+                      "Scheduler wake is invalid"
+                      "Scheduler wake must be a map")
+                    {:wake wake :explain (s/explain-str ::wake wake)})))
+  wake)
+
 ;; --- row decoding -------------------------------------------------------------
 
 (defn- decoded-row
-  "Decode a scheduler wake/history row's JSON payload and handler symbol."
+  "Decode a scheduler wake/history row's JSON payload and handler symbol.
+
+  Storage returns exactly one row for every operation this namespace
+  performs, so a missing row is a broken invariant and fails loudly."
   [row]
-  (some-> row
-          (update :payload db/<-json)
-          (update :handler symbol)))
+  (when-not (map? row)
+    (throw (ex-info "Scheduler storage returned no row" {:row row})))
+  (-> row
+      (update :payload db/<-json)
+      (update :handler symbol)))
 
 ;; --- handler resolution -------------------------------------------------------
 

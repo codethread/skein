@@ -12,11 +12,12 @@ Explicit-runtime API for the weaver-owned no-poller scheduler primitive.
   event handlers observe one mutation order (RFC-009, DELTA-weaver-scheduler-
   repl-001). Delivery is at-least-once: handlers must be idempotent.
 
-  This namespace guards the wake map and resolves handlers eagerly, so a bad
-  handler fails `schedule!`, not dispatch; field validation flows through the
-  shared `:skein.core.specs/scheduler-wake` boundary spec at the persistence
-  seam, durable storage lives in `skein.core.db`, and timer arming/dispatch
-  in `skein.core.weaver.scheduler`. Persisted rows return as decoded
+  This namespace validates the wake against the shared
+  `:skein.core.specs/scheduler-wake` boundary spec (the persistence seam
+  consults the same spec) and resolves handlers eagerly, so a bad wake or
+  handler fails `schedule!`, not dispatch; durable storage lives in
+  `skein.core.db`, and timer arming/dispatch in
+  `skein.core.weaver.scheduler`. Persisted rows return as decoded
   data-first maps (`::pending-wake`, `::cancellation`).
 
   Pull-based `wake-at` strand attributes plus named queries remain the
@@ -71,4 +72,4 @@ Persist or replace a durable wake in `runtime` and arm it for dispatch.
   count. Returns the persisted wake as a decoded `::pending-wake` map.
   Malformed keys/instants/payloads and unresolvable or non-callable handlers
   fail loudly; no wake is persisted on failure.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/scheduler/alpha.clj#L34-L50">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/scheduler/alpha.clj#L35-L50">Source</a></sub></p>

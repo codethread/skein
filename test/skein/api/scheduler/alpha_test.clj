@@ -77,6 +77,9 @@
     (fn [rt _db-file]
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"must be a map"
                             (scheduler/schedule! rt "not-a-map")))
+      (is (s/valid? ::scheduler/wake {:key "k" :wake-at (Instant/now)
+                                      :handler `deliver-fire-handler})
+          "the alpha ::wake alias accepts what the persistence seam accepts")
       ;; Field-level validation flows through ::specs/scheduler-wake; the offending
       ;; predicate is pinpointed in the spec explanation carried in the ex-data.
       (is (re-find #"non-blank-string"
@@ -91,9 +94,10 @@
 (deftest schedule-rejects-unresolvable-or-non-callable-handler-without-persisting
   (wt/with-runtime
     (fn [rt _db-file]
-      (testing "a bare (non-namespaced) symbol is rejected"
-        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"fully qualified symbol"
-                              (scheduler/schedule! rt {:key "k" :wake-at (Instant/now) :handler 'bare-symbol}))))
+      (testing "a bare (non-namespaced) symbol is rejected by the wake spec"
+        (is (re-find #"fully-qualified-symbol"
+                     (reject-explain rt {:key "k" :wake-at (Instant/now)
+                                         :handler 'bare-symbol}))))
       (testing "a symbol whose namespace cannot be required is rejected"
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"could not be resolved"
                               (scheduler/schedule! rt {:key "k" :wake-at (Instant/now)
