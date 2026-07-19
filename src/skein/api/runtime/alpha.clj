@@ -169,8 +169,7 @@
 ;; --- syncing approved roots -------------------------------------------------
 
 (s/def ::sync-result :skein.core.weaver.spool-sync/sync-result)
-(s/def ::pending-generation
-  (s/keys :req-un [::status ::generation ::diff ::approved-spools ::remedy]))
+(s/def ::pending-generation :skein.core.weaver.spool-sync/pending-generation)
 (s/def ::non-additive-sync-diff-ex-data
   (s/keys :req-un [::status ::reason ::diff ::pending-generation ::remedy]))
 
@@ -181,8 +180,11 @@
   entries are from an older or unknown generation. Refuses non-additive diffs,
   including Maven version changes for already-loaded coordinates, by throwing
   ExceptionInfo with `:reason :non-additive-sync-diff`, `:diff`,
-  `:pending-generation`, and `:remedy`; later successful calls include the
-  pending generation until the weaver process is replaced."
+  `:pending-generation`, and `:remedy`. The recorded pending generation stays
+  visible through `syncs` and later sync results until a call succeeds with
+  zero per-root failures — only then has every loaded root been classified, so
+  the clean pass proves no refused class remains and clears the record — or
+  the weaver process is replaced."
   [runtime]
   (try
     (validate-sync-result!
@@ -199,7 +201,9 @@
   "Return `runtime`'s most recent approved-root sync state.
 
   The result is `{:spools ...}` and may include the latest recorded
-  `:pending-generation` from a refused non-additive sync diff."
+  `:pending-generation` from a refused non-additive sync diff, conforming to
+  `:skein.core.weaver.spool-sync/pending-generation` (status, generation id,
+  classified diff, approved coordinate set, remedy)."
   [runtime]
   (validate-sync-result! (spool-sync/approved-spool-syncs runtime)))
 
@@ -243,7 +247,10 @@
   neither picks up updated synced spool code. `reload-spool!` does. It reloads
   code only and leaves re-registration to the caller (a targeted re-`use!` of
   the spool's activation, or a full `reload!` when the bump changes
-  registrations across the config).
+  registrations across the config). A fully reloaded root also records its
+  fresh generation fingerprint, so the completed hot bump stops classifying as
+  a non-additive redefinition and `sync!`/`reload!` pass again; a failed or
+  partial reload records nothing and the refusal stands.
 
   Redefinition semantics — this re-`load-file`s sources, rebinding vars in
   place; it unloads nothing, so definitions minted before the reload are not

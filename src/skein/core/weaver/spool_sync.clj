@@ -633,7 +633,13 @@
 (s/def ::sync-root-map
   (s/and (s/map-of symbol? ::sync-root-entry)
          #(every? (fn [[lib entry]] (= lib (:lib entry))) %)))
-(s/def ::pending-generation map?)
+(s/def ::pending-generation
+  (s/and #(exact-keys? #{:status :generation :diff :approved-spools :remedy} %)
+         #(= :pending (:status %))
+         #(string? (:generation %))
+         #(map? (:diff %))
+         #(set? (:approved-spools %))
+         #(string? (:remedy %))))
 (s/def ::retained-spool-state vector?)
 (s/def ::sync-result
   (s/and #(exact-keys? #{:spools :pending-validations :pending-generation
@@ -641,7 +647,8 @@
          #(contains? % :spools)
          #(s/valid? ::sync-root-map (:spools %))
          #(or (not (contains? % :pending-validations)) (vector? (:pending-validations %)))
-         #(or (not (contains? % :pending-generation)) (map? (:pending-generation %)))
+         #(or (not (contains? % :pending-generation))
+              (s/valid? ::pending-generation (:pending-generation %)))
          #(or (not (contains? % :retained-spool-state)) (vector? (:retained-spool-state %)))))
 
 (defn- family-projection [shared families]
@@ -1216,6 +1223,24 @@
               (recur))))))
     (format "%064x" (BigInteger. 1 (.digest digest)))))
 
+(defn- sha256-byte-array [^bytes bs]
+  (let [digest (MessageDigest/getInstance "SHA-256")]
+    (.update digest bs)
+    (format "%064x" (BigInteger. 1 (.digest digest)))))
+
+(defn- load-source-bytes!
+  "Load one source file from bytes read exactly once; return their sha256.
+
+  Reading, hashing, and compiling the same byte array makes the returned hash
+  the hash of exactly what loaded — no window where the file changes between
+  fingerprinting and loading can record a hash the loaded code does not have."
+  [^String path]
+  (let [file (io/file path)
+        bs (java.nio.file.Files/readAllBytes (.toPath file))]
+    (with-open [rdr (io/reader (java.io.ByteArrayInputStream. bs))]
+      (clojure.lang.Compiler/load rdr path (.getName file)))
+    (sha256-byte-array bs)))
+
 (defn- root-fingerprint [source-paths]
   (->> source-paths
        (mapcat file-seq)
@@ -1403,6 +1428,14 @@
                       (into (sorted-map) (filter successful-sync?) results)))
        (reset! (:approved-spool-generation-fingerprints runtime) (merge previous-fingerprints fingerprints))
        (reset! (:approved-spool-generation-maven runtime) (merge previous-maven resolved-maven))
+       ;; A sync with zero per-root failures classified every previously loaded
+       ;; root as a survivor, so a clean pass proves no refused class remains on
+       ;; disk and any recorded pending generation is stale (C44d). A sync that
+       ;; succeeded around per-root :failed roots proves nothing about them — a
+       ;; broken root can temporarily hide a repoint, redefinition, or Maven
+       ;; bump — so the record stands.
+       (when (empty? failed)
+         (reset! (:pending-spool-generation runtime) nil))
        (let [result (cond-> {:spools results}
                       (seq (:pending-validations approved))
                       (assoc :pending-validations (:pending-validations approved))
@@ -1633,6 +1666,15 @@
   this same `{:status :failed :reason … :root-lib …}` shape rather than escaping
   raw).
 
+  Once every namespace loads, the root's fresh fingerprint is recorded in the
+  generation baselines, so the completed hot bump stops classifying as a C44c
+  redefinition and later `sync!`/`reload!` calls pass. Loaded-namespace entries
+  hash the exact bytes compiled (`load-source-bytes!`), so a file racing the
+  reload can only make the baseline conservative — a later sync refuses, never
+  silently accepts code that differs from what loaded. A load failure records
+  nothing: a half-reloaded root genuinely diverges from disk, and the
+  outstanding refusal is the truthful signal.
+
   Returns a data-first map naming the root lib, its resolved canonical root, and
   the namespaces reloaded with their source files."
   [runtime root-lib]
@@ -1662,11 +1704,35 @@
         (when (empty? sources)
           (throw (ex-info "Synced spool root has no namespace sources"
                           {:status :failed :reason :no-namespaces :root-lib root-lib :root canonical-root})))
-        (let [ordered (dependency-ordered-sources root-lib sources)]
-          (with-spool-classloader
-            runtime
-            (fn [] (doseq [{:keys [file]} ordered]
-                     (load-file file))))
+        (let [ordered (dependency-ordered-sources root-lib sources)
+              ;; The baseline's file set is enumerated once, BEFORE loading:
+              ;; a file created after this point is absent from the baseline
+              ;; (later sync sees an extra file and refuses) and a compiled
+              ;; file deleted afterwards stays in it (later sync sees it
+              ;; missing and refuses) — every race stays conservative.
+              ;; Non-namespace clojure sources (e.g. data_readers.clj) are
+              ;; hashed from disk now; loaded-namespace entries get the hash
+              ;; of the exact bytes compiled (see load-source-bytes!).
+              namespace-files (set (map :file ordered))
+              disk-hashes (->> (root-paths root)
+                               (mapcat file-seq)
+                               (filter clojure-source?)
+                               (keep (fn [^java.io.File file]
+                                       (let [path (.getCanonicalPath file)]
+                                         (when-not (contains? namespace-files path)
+                                           [path (sha256-file file)]))))
+                               (into {}))
+              ;; Recorded only after every namespace loads, so a completed hot
+              ;; bump stops classifying as a C44c redefinition while a partial
+              ;; failure leaves the baseline (and the refusal) in place.
+              loaded-hashes (with-spool-classloader
+                              runtime
+                              (fn [] (into {}
+                                           (map (fn [{:keys [file]}]
+                                                  [file (load-source-bytes! file)]))
+                                           ordered)))
+              fingerprint (vec (sort (map vec (concat disk-hashes loaded-hashes))))]
+          (swap! (:approved-spool-generation-fingerprints runtime) assoc root-lib fingerprint)
           {:root-lib root-lib
            :root canonical-root
            :namespaces (mapv #(select-keys % [:ns :file]) ordered)})))))
