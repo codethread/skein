@@ -117,15 +117,29 @@
 ;; note carries them.
 (s/def ::note-view (s/keys :req-un [::id ::note ::at] :opt-un [::by ::round]))
 
-;; Write opts stay an open map: `:by`/`:round` ride beside caller-owned
-;; decorating attributes, and the single-typed round contract is enforced
-;; fail-loud in the body, which is its grammar authority.
+;; Opts maps stay open — `:by`/`:round` ride beside caller-owned decorating
+;; attributes — so the known keys are constrained by predicate rather than
+;; `s/keys`: writers legitimately pass them as nil to mean absent, which
+;; present-key `s/keys` validation would reject.
+(s/def ::note-opts
+  (s/nilable
+   (s/and map?
+          (fn [{:keys [by round]}]
+            (and (or (nil? by) (string? by))
+                 (or (nil? round) (integer? round)))))))
+
+(s/def ::read-opts
+  (s/nilable
+   (s/and map?
+          (fn [{:keys [round]}]
+            (or (nil? round) (integer? round))))))
+
 (s/fdef note!
-  :args (s/cat :runtime ::runtime :target-id ::specs/id :text string? :opts (s/nilable map?))
+  :args (s/cat :runtime ::runtime :target-id ::specs/id :text string? :opts ::note-opts)
   :ret (s/keys :req-un [::id ::target]))
 
 (s/fdef notes
-  :args (s/cat :runtime ::runtime :target-id ::specs/id :opts (s/nilable map?))
+  :args (s/cat :runtime ::runtime :target-id ::specs/id :opts ::read-opts)
   :ret (s/coll-of ::note-view :kind vector?))
 
 ;; `writer-ref->prompt` is itself the authority for the writer-ref grammar: its
