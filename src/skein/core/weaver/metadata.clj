@@ -4,12 +4,12 @@
             [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.pprint :as pp]
-            [clojure.string :as str])
+            [clojure.string :as str]
+            [skein.core.weaver.protocol :as protocol])
   (:import [java.lang ProcessHandle]
            [java.nio.file Files StandardCopyOption]
            [java.util UUID]))
 
-(def ^:private protocol-version 1)
 (def ^:private json-file-name "weaver.json")
 (def ^:private edn-file-name "weaver.edn")
 (def ^:private socket-file-name "weaver.sock")
@@ -68,7 +68,7 @@
     (require-storage-identity! shape)
     {:pid pid
      :transport :nrepl
-     :protocol-version protocol-version
+     :protocol-version protocol/version
      :endpoint {:host host :port port}
      :config-dir (:config-dir world)
      :name name
@@ -84,7 +84,7 @@
 (defn- json-metadata-shape
   "Return the public JSON metadata shape consumed by non-Clojure clients."
   [metadata]
-  {"protocol_version" protocol-version
+  {"protocol_version" protocol/version
    "pid" (:pid metadata)
    "weaver_id" (:nonce metadata)
    "config_dir" (:config-dir metadata)
@@ -173,7 +173,7 @@
   (and (map? metadata)
        (valid-pid? (:pid metadata))
        (= :nrepl (:transport metadata))
-       (= protocol-version (:protocol-version metadata))
+       (= protocol/version (:protocol-version metadata))
        (string? (:config-dir metadata))
        (not (str/blank? (:name metadata)))
        (string? (:data-dir metadata))
