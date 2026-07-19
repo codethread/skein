@@ -127,6 +127,17 @@
                                    (current/runtime)))]
       (is (= :absent (:skein/runtime (ex-data ex)))))))
 
+(deftest current-with-runtime-scopes-the-ambient-runtime
+  ;; The nil outer binding isolates the assertion from any published runtime, so
+  ;; the reads below can only see what the scoping forms bound.
+  (binding [weaver-runtime/*runtime* nil]
+    (is (= [::rt ::rt]
+           (current/with-runtime ::rt
+             [(current/runtime-or-nil) (current/runtime)])))
+    (is (= ::value (current/with-runtime* ::rt (constantly ::value))))
+    (is (nil? (current/runtime-or-nil))
+        "the scoped binding unwinds with the dynamic extent")))
+
 (deftest current-with-runtime*-rejects-nil-runtime
   (let [ex (is (thrown-with-msg? clojure.lang.ExceptionInfo
                                  #"Cannot scope a nil Skein runtime"
