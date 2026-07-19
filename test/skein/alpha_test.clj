@@ -117,18 +117,29 @@
                  (select-keys (:after updated) [:id :state :attributes]))))))))
 
 (deftest current-runtime-fails-loudly-without-ambient-runtime
-  (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                        #"No active Skein weaver runtime"
-                        (#'current/runtime* (constantly nil))))
   ;; This namespace runs in the parallel batch, whose tests start unpublished
   ;; runtimes only; with the thread-local binding cleared, the public entry point
   ;; must see no ambient runtime and fail loudly.
   (binding [weaver-runtime/*runtime* nil]
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                          #"No active Skein weaver runtime"
-                          (current/runtime)))))
+    (is (nil? (current/runtime-or-nil)))
+    (let [ex (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                                   #"No active Skein weaver runtime"
+                                   (current/runtime)))]
+      (is (= :absent (:skein/runtime (ex-data ex)))))))
+
+(deftest current-with-runtime-scopes-the-ambient-runtime
+  ;; The nil outer binding isolates the assertion from any published runtime, so
+  ;; the reads below can only see what the scoping forms bound.
+  (binding [weaver-runtime/*runtime* nil]
+    (is (= [::rt ::rt]
+           (current/with-runtime ::rt
+             [(current/runtime-or-nil) (current/runtime)])))
+    (is (= ::value (current/with-runtime* ::rt (constantly ::value))))
+    (is (nil? (current/runtime-or-nil))
+        "the scoped binding unwinds with the dynamic extent")))
 
 (deftest current-with-runtime*-rejects-nil-runtime
-  (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                        #"Cannot scope a nil Skein runtime"
-                        (current/with-runtime* nil (constantly :never)))))
+  (let [ex (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                                 #"Cannot scope a nil Skein runtime"
+                                 (current/with-runtime* nil (constantly :never))))]
+    (is (= :nil (:skein/runtime (ex-data ex))))))
