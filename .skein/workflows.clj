@@ -555,23 +555,31 @@
                   :attributes {"workflow/action-ref" "land.signoff.review"
                                "workflow/instruction"
                                (fn [{:keys [worktree card]}]
-                                 (str "Run the declared roster review against a TASK strand, never the kanban card"
-                                      " or work root — findings append as notes on the review target, and card notes"
-                                      " stay lean for handover. "
+                                 (str (format-alpha/reflow
+                                       "|Run the declared roster review against a TASK strand, never
+                                        |the kanban card or work root — findings append as notes on
+                                        |the review target, and card notes stay lean for handover.")
+                                      " "
                                       (if card
                                         (str "Pick the card's task tracking this branch's work"
                                              " (`strand kanban task list " card "`), adding one first if none fits"
                                              " (`strand kanban task add " card " <title>`). ")
                                         "Target the task strand for this work under the work root. ")
-                                      "Then: `strand agent review <task-id> --roster change-review --cwd " worktree
-                                      " --commit-range origin/main..HEAD`. Drive every fix round to done; each fix"
-                                      " round re-pushes the branch and MUST re-establish green CI at the new HEAD"
-                                      " (`gh pr checks <branch> --watch` — the ci-green gate closed at an earlier sha"
-                                      " and does not re-run) before this step may complete. SIGN-OFF IS ONLY VALID"
-                                      " WITH A PUSHED BRANCH AND GREEN CI — that is why this step follows the CI"
-                                      " gate. Record the review pass ids and the final verdict in notes. For"
-                                      " card-backed land runs the card moved to in_review when push-draft-pr"
-                                      " completed; aborting sign-off moves it back to claimed."))})
+                                      "Then: `git -C " worktree " fetch origin` and `strand agent review <task-id>"
+                                      " --roster change-review --cwd " worktree " --base origin/main` — "
+                                      (format-alpha/reflow
+                                       "|the surface pins merge-base(origin/main, HEAD) at spawn,
+                                        |covering only this branch's own work even when main has
+                                        |advanced. Drive every fix round to done; each fix round
+                                        |re-pushes the branch and MUST re-establish green CI at the
+                                        |new HEAD (`gh pr checks <branch> --watch` — the ci-green
+                                        |gate closed at an earlier sha and does not re-run) before
+                                        |this step may complete. SIGN-OFF IS ONLY VALID WITH A
+                                        |PUSHED BRANCH AND GREEN CI — that is why this step follows
+                                        |the CI gate. Record the review pass ids and the final
+                                        |verdict in notes. For card-backed land runs the card moved
+                                        |to in_review when push-draft-pr completed; aborting
+                                        |sign-off moves it back to claimed.")))})
    (workflow/checkpoint :signoff
                         (fn [{:keys [branch]}] (str "Sign off landing " branch))
                         :depends-on [:signoff-review]
@@ -996,7 +1004,9 @@
                                (fn [{:keys [feature module]}]
                                  (str "Adversarial intent review for " feature ". "
                                       (format-alpha/reflow
-                                       "|Read the diff (`git diff main...HEAD`) and the
+                                       "|Read the diff (`git fetch origin && git diff
+                                        |origin/main...HEAD` — three-dot merge-base
+                                        |semantics, never two-dot) and the
                                         |feature intent (kanban card, proposal, or step
                                         |notes on this run). Challenge the INTENT, not
                                         |style: is the change the right change, does the
@@ -1074,7 +1084,9 @@
                                  (str "Adversarial review of the fresh per-concern split"
                                       " of module `" module "` "
                                       (format-alpha/reflow
-                                       "|(diff: `git diff main...HEAD`), while the concern
+                                       "|(diff: `git fetch origin && git diff
+                                        |origin/main...HEAD`, three-dot merge-base
+                                        |semantics, never two-dot), while the concern
                                         |boundaries are still visible: bad or arbitrary
                                         |boundaries, forwarding husks in alpha, story
                                         |helpers exiled from reading reach, tests leaning

@@ -95,6 +95,28 @@
            (catch clojure.lang.ExceptionInfo ex
              (is (= :peer/stale (:code (ex-data ex))))))))))
 
+(deftest peers-unknown-name-not-found-test
+  (let [state-root (temp-dir "skein-peers-none")]
+    (with-state-root state-root
+      #(try
+         (peers/call! "nobody" "status")
+         (is false "expected unknown peer resolution to throw")
+         (catch clojure.lang.ExceptionInfo ex
+           (is (= :peer/not-found (:code (ex-data ex))))
+           (is (= :name (:match-by (ex-data ex)))))))))
+
+(deftest peers-workspace-path-resolution-test
+  (let [state-root (temp-dir "skein-peers-bypath")
+        workspace (temp-dir "skein-peer-bypath-workspace")]
+    (write-peer! state-root "p" workspace "pathy" 999999999)
+    (with-state-root state-root
+      #(try
+         (peers/call! (.getPath workspace) "status")
+         (is false "expected stale path-resolved peer to throw")
+         (catch clojure.lang.ExceptionInfo ex
+           (is (= :peer/stale (:code (ex-data ex))))
+           (is (= :workspace (:match-by (ex-data ex)))))))))
+
 (deftest peers-duplicate-name-ambiguity-test
   (let [state-root (temp-dir "skein-peers-ambiguous")
         workspace-a (temp-dir "skein-peer-a")
@@ -191,6 +213,24 @@
       (is false "expected namespaced operation to throw")
       (catch clojure.lang.ExceptionInfo ex
         (is (= :peer/stop (:operation (ex-data ex))))))))
+
+(deftest call-peer-rejects-malformed-args-before-connect-test
+  (let [peer-row {:name "offline"
+                  :workspace "/tmp/offline"
+                  :weaver-id "missing"
+                  :protocol-version 1
+                  :socket-path "/tmp/skein-peer-missing.sock"
+                  :state-dir "/tmp"}]
+    (doseq [[args key] [["not-a-map" :args]
+                        [{:argv "x"} :argv]
+                        [{:argv [1 2]} :argv]
+                        [{:payloads []} :payloads]]]
+      (try
+        (peers/call! peer-row "echo" args)
+        (is false (str "expected malformed args to throw for " (pr-str args)))
+        (catch clojure.lang.ExceptionInfo ex
+          (is (= :peer/invalid-args (:code (ex-data ex))))
+          (is (contains? (ex-data ex) key)))))))
 
 (deftest call-peer-unknown-op-domain-error-is-structured-test
   (with-two-runtimes
