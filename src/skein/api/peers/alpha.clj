@@ -11,7 +11,7 @@
 
 (declare state-root weaver-metadata-files read-peer-metadata row
          resolved-peer
-         ensure-peer-protocol! operation-name call-frame request-envelope
+         ensure-peer-protocol! operation-name validate-args! call-frame request-envelope
          socket-roundtrip! reject-stream-response! verify-response! unwrap-result!
          canonical-path peer-identity)
 
@@ -33,7 +33,9 @@
   path. `op` is an op name (string or unqualified symbol/keyword); pass `\"status\"`
   for the minimal lifecycle op. Optional `args`
   is a map with `:argv` (vector of strings) and `:payloads` (name→value map) for
-  the invoke envelope. Domain error envelopes become `ExceptionInfo` with
+  the invoke envelope; malformed `args` fail loudly with
+  `:code :peer/invalid-args` before any socket work. Domain error envelopes
+  become `ExceptionInfo` with
   `:code :peer/domain-error`; a peer that answers with a stream header fails
   loudly with `:code :peer/stream-unsupported` (streams are out of scope for
   `call!`). Transport failures are loud and include peer identity. No retries or
@@ -44,7 +46,7 @@
                   (resolved-peer peers)
                   (ensure-peer-protocol!))
          op (operation-name op)
-         [operation arguments] (call-frame op args)
+         [operation arguments] (call-frame op (validate-args! op args))
          request-id (str (UUID/randomUUID))]
      (->> (request-envelope peer operation arguments request-id)
           (socket-roundtrip! peer op)
@@ -225,6 +227,24 @@
             :peer (peer-identity peer)
             :operation op}
            cause))
+
+(defn- validate-args!
+  "Return `args` after checking the shapes the `call!` contract declares.
+
+  This fn is the grammar authority: `args` must be a map, `:argv` nil or a
+  sequential collection of strings, and `:payloads` nil or a map. Anything
+  else fails loudly with `:code :peer/invalid-args` before any socket work."
+  [op args]
+  (let [{:keys [argv payloads]} (when (map? args) args)
+        problem (cond
+                  (not (map? args)) {:args args}
+                  (not (or (nil? argv)
+                           (and (sequential? argv) (every? string? argv)))) {:argv argv}
+                  (not (or (nil? payloads) (map? payloads))) {:payloads payloads})]
+    (when problem
+      (throw (ex-info "Peer call args are malformed"
+                      (merge {:code :peer/invalid-args :operation op} problem))))
+    args))
 
 (defn- call-frame
   "Build the request frame for a peer op name.
