@@ -50,7 +50,7 @@ Read attribute `k` from a normalized strand, tolerating keyword- or
 
   Fails loudly if the selected value is a lean-read omission descriptor, because
   trusted spool readers require a raw full-fidelity attribute value.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/spool/alpha.clj#L124-L149">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/spool/alpha.clj#L112-L137">Source</a></sub></p>
 
 ## <a name="skein.api.spool.alpha/attr-key->str">`attr-key->str`</a>
 ``` clojure
@@ -63,7 +63,7 @@ Coerce an attribute key to its string wire form.
   Keyword keys render as their bare name (dropping the leading colon), preserving
   any namespace; string keys pass through. This is the write-side key coercion,
   not a tolerant reader.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/spool/alpha.clj#L71-L78">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/spool/alpha.clj#L99-L106">Source</a></sub></p>
 
 ## <a name="skein.api.spool.alpha/entity-projection">`entity-projection`</a>
 ``` clojure
@@ -75,7 +75,7 @@ Return the canonical exact strand entity projection.
 
   Fails loudly when any of `:id`, `:title`, `:state`, or `:attributes` is
   absent. Other fields are discarded.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/spool/alpha.clj#L36-L46">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/spool/alpha.clj#L48-L58">Source</a></sub></p>
 
 ## <a name="skein.api.spool.alpha/fail!">`fail!`</a>
 ``` clojure
@@ -88,11 +88,11 @@ Throw an `ex-info` carrying `message` and a contextual `data` map (TEN-003).
 
   The optional `cause` arity threads an underlying throwable so a spool can fail
   loudly without discarding the original exception.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/spool/alpha.clj#L24-L32">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/spool/alpha.clj#L27-L35">Source</a></sub></p>
 
 ## <a name="skein.api.spool.alpha/poll-until-deadline!">`poll-until-deadline!`</a>
 ``` clojure
-(poll-until-deadline! {:keys [deadline poll-ms check pred->result on-timeout]})
+(poll-until-deadline! {:keys [deadline poll-ms check pred->result on-timeout], :as opts})
 ```
 Function.
 
@@ -109,11 +109,12 @@ The shared spool-tier long-poll skeleton behind `skein.spools.workflow/await!`
   its return value becomes the result. `deadline` and `poll-ms` are both
   required — this helper does not supply timeout/cadence defaults; those stay
   owned by each caller so existing behavior is unchanged. Fails loudly
-  (TEN-003) when `deadline` is not a long, `poll-ms` is not a non-negative
-  integer, or `check`/`pred->result`/`on-timeout` is not a function, rather
-  than surfacing a bare NPE/`IllegalArgumentException` once the loop actually
+  (TEN-003) on option keys outside the five named here, when `deadline` is
+  not a long, when `poll-ms` is not a non-negative integer, or when
+  `check`/`pred->result`/`on-timeout` is not a function, rather than
+  surfacing a bare NPE/`IllegalArgumentException` once the loop actually
   runs.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/spool/alpha.clj#L84-L113">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/spool/alpha.clj#L154-L190">Source</a></sub></p>
 
 ## <a name="skein.api.spool.alpha/reject-unknown-keys!">`reject-unknown-keys!`</a>
 ``` clojure
@@ -126,7 +127,7 @@ Return `m`, failing loudly when it carries keys outside `allowed`.
   `context` is a label (typically the builder/op name) that names the offending
   surface in the message, so a spool never silently ignores a mistyped option
   key. `allowed` is a set of permitted keys.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/spool/alpha.clj#L48-L58">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/spool/alpha.clj#L64-L74">Source</a></sub></p>
 
 ## <a name="skein.api.spool.alpha/require-valid!">`require-valid!`</a>
 ``` clojure
@@ -139,4 +140,4 @@ Return `value`, failing loudly with spec explain data when it is invalid.
   The canonical spool boundary-shape seam: pairs a `clojure.spec` check with an
   `:explain` payload (`s/explain-data`) so a rejected shape carries actionable
   context, not just the raw value.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/spool/alpha.clj#L60-L69">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/spool/alpha.clj#L84-L93">Source</a></sub></p>

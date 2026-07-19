@@ -1,8 +1,52 @@
 (ns skein.api.spool-test
-  "Tests for skein.api.spool.alpha: shared arg-spec, validation, attribute, and
+  "Tests for skein.api.spool.alpha: shared fail-loud, validation, attribute, and
   polling seams that other spools compose from."
   (:require [clojure.test :refer [deftest is]]
             [skein.api.spool.alpha :as util]))
+
+(deftest fail!-throws-ex-info-with-contextual-data-and-optional-cause
+  (let [e (is (thrown-with-msg? clojure.lang.ExceptionInfo #"boundary rejected"
+                                (util/fail! "boundary rejected" {:op :add})))]
+    (is (= {:op :add} (ex-data e))))
+  (let [cause (RuntimeException. "disk full")
+        e (is (thrown? clojure.lang.ExceptionInfo
+                       (util/fail! "write failed" {:path "x"} cause)))]
+    (is (identical? cause (ex-cause e)))))
+
+(deftest reject-unknown-keys!-returns-m-and-names-the-offending-surface
+  (let [m {:feature "f" :branch "b"}]
+    (is (identical? m (util/reject-unknown-keys! "claim" #{:feature :branch} m)))
+    (is (= {} (util/reject-unknown-keys! "claim" #{:feature} {})))
+    (let [e (is (thrown-with-msg? clojure.lang.ExceptionInfo #"claim received unknown keys"
+                                  (util/reject-unknown-keys! "claim" #{:feature}
+                                                             {:feature "f" :brnch "typo"})))]
+      (is (= {:unknown [:brnch] :allowed [:feature]} (ex-data e))))))
+
+(deftest require-valid!-returns-value-or-attaches-spec-explain-data
+  (is (= 42 (util/require-valid! int? 42 "must be an int")))
+  (let [e (is (thrown-with-msg? clojure.lang.ExceptionInfo #"must be an int"
+                                (util/require-valid! int? "42" "must be an int")))]
+    (is (= "42" (:value (ex-data e))))
+    (is (some? (:explain (ex-data e))))))
+
+(deftest attr-key->str-renders-the-wire-form
+  (is (= "lane" (util/attr-key->str :lane)))
+  (is (= "kanban/lane" (util/attr-key->str :kanban/lane)))
+  (is (= "kanban/lane" (util/attr-key->str "kanban/lane"))))
+
+(deftest attr-get-prefers-keyword-keys-and-tolerates-wire-string-keys
+  (is (= "doing" (util/attr-get {:attributes {:status "doing"}} :status)))
+  (is (= "doing" (util/attr-get {:attributes {"status" "doing"}} :status)))
+  (is (= "doing" (util/attr-get {:attributes {"kanban/lane" "doing"}} :kanban/lane)))
+  (is (= "doing" (util/attr-get {:attributes {:status "doing"}} "status")))
+  (is (= "keyword-wins" (util/attr-get {:attributes {:status "keyword-wins"
+                                                     "status" "string-loses"}}
+                                       :status)))
+  (is (nil? (util/attr-get {:attributes {:status "doing"}} :missing))))
+
+(deftest attr-get-reads-falsey-keyword-values-instead-of-falling-through
+  (is (false? (util/attr-get {:attributes {:hitl false "hitl" true}} :hitl)))
+  (is (nil? (util/attr-get {:attributes {:hitl nil "hitl" true}} :hitl))))
 
 (deftest entity-projection-is-exact-and-requires-every-canonical-field
   (let [strand {:id "abc123" :title "Work" :state "active"
@@ -60,6 +104,18 @@
                           (util/poll-until-deadline! (dissoc valid :pred->result))))
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #":on-timeout must be a function"
                           (util/poll-until-deadline! (dissoc valid :on-timeout))))))
+
+(deftest poll-until-deadline!-rejects-unknown-option-keys
+  (let [e (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                                #"poll-until-deadline! received unknown keys"
+                                (util/poll-until-deadline!
+                                 {:deadline (System/currentTimeMillis)
+                                  :poll-ms 1
+                                  :check (constantly true)
+                                  :pred->result (constantly :done)
+                                  :on-timeout (constantly :timeout)
+                                  :timeout-secs 5})))]
+    (is (= [:timeout-secs] (:unknown (ex-data e))))))
 
 (deftest attr-get-rejects-omitted-attribute-descriptors
   (let [strand {:id "abc123"
