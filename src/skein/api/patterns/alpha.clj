@@ -52,10 +52,12 @@
 
   Missing patterns or unregistered input specs fail loudly."
   [runtime pattern-name]
-  ;; :fn is renamed on destructure: a local named `fn` shadows the fn macro.
-  (let [{:keys [name doc input-spec] fn-sym :fn} (resolve-pattern runtime pattern-name)
+  ;; :fn and :name are renamed on destructure: locals named `fn` and `name`
+  ;; shadow the clojure.core vars.
+  (let [{:keys [doc input-spec] fn-sym :fn registered-name :name}
+        (resolve-pattern runtime pattern-name)
         contract (pattern-input-contract input-spec)]
-    (cond-> (merge {:name name
+    (cond-> (merge {:name registered-name
                     :fn (str fn-sym)
                     :input-spec (str input-spec)
                     :spec-form (:spec-form contract)}
@@ -208,7 +210,7 @@
 
   Requires `batch` to be a vector; strands without attributes pass through."
   [runtime req-ctx pattern-name input batch]
-  (mapv (fn [{:keys [ref attributes] :as strand}]
+  (mapv (fn [{:keys [attributes] strand-ref :ref :as strand}]
           (if (nil? attributes)
             strand
             (assoc strand :attributes
@@ -217,7 +219,7 @@
                                         (merge req-ctx
                                                {:hook/value attributes
                                                 :mutation/operation :batch/apply
-                                                :batch/ref ref
+                                                :batch/ref strand-ref
                                                 :strand/patch strand
                                                 :pattern/name pattern-name
                                                 :pattern/input input})))))
@@ -229,10 +231,10 @@
   {:refs {}
    :strands (mapv #(dissoc % :edges) strands)
    :edges (into []
-                (mapcat (fn [{:keys [ref edges]}]
+                (mapcat (fn [{:keys [edges] strand-ref :ref}]
                           (map (fn [edge]
                                  (merge {:op :upsert
-                                         :from (some-> ref str)
+                                         :from (some-> strand-ref str)
                                          :to (cond-> (:to edge)
                                                (symbol? (:to edge)) str)}
                                         (select-keys edge [:type :attributes])))
