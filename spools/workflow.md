@@ -490,4 +490,4 @@ The test suite in [`test/skein/spools/workflow_test.clj`](../test/skein/spools/w
 - [`skein.spools.executors.shell`](./executors/shell.md) — shipped classpath executor that fulfills
   workflow `:shell` gates by running their command.
 
-[subagent-contract]: https://github.com/codethread/agent-harness.spool/blob/25933eb3400f0f8175878b2fc66e351f960fd211/agent-run/subagent.md
+[subagent-contract]: https://github.com/codethread/agent-harness.spool/blob/d01e6ce6555d370dc5c9e4e0371cdabe10fab491/agent-run/subagent.md
