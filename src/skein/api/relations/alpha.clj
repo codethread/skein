@@ -3,7 +3,8 @@
 
   The catalog is source-visible data for agents, config, and REPL workflows. It
   is not a storage allowlist or runtime relation-semantics registry; valid
-  relation names outside this catalog remain valid userland annotations.")
+  relation names outside this catalog remain valid userland annotations."
+  (:require [skein.api.format.alpha :as format-alpha]))
 
 (def catalog
   "Shipped operational relation batteries and behavior-free annotation
@@ -27,12 +28,16 @@
     :family :operational
     :direction "run --serves--> served-target"
     :declared-acyclic? true
-    :help "Engine-owned delegation battery: this run is a delegation of that strand's own work."}
+    :help (format-alpha/reflow
+           "|Engine-owned delegation battery: this run is a delegation of that
+            |strand's own work.")}
    {:relation "notes"
     :family :operational
     :direction "note --notes--> target"
     :declared-acyclic? true
-    :help "Append-only memory: a closed note strand attached to its target; its note/text/note/at content is storage-enforced write-once."}
+    :help (format-alpha/reflow
+           "|Append-only memory: a closed note strand attached to its target; its
+            |note/text/note/at content is storage-enforced write-once.")}
    {:relation "related-to"
     :family :annotation
     :direction "source --related-to--> target"
@@ -42,7 +47,9 @@
     :family :annotation
     :direction "duplicate --duplicates--> canonical-or-other-duplicate"
     :declared-acyclic? false
-    :help "Behavior-free duplicate marker convention; use supersedes for lifecycle replacement."}
+    :help (format-alpha/reflow
+           "|Behavior-free duplicate marker convention; use supersedes for
+            |lifecycle replacement.")}
    {:relation "references"
     :family :annotation
     :direction "source --references--> referenced"
