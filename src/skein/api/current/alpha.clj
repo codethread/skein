@@ -4,8 +4,14 @@
   This namespace is the blessed public facade for trusted in-process config,
   spool, and REPL code that must capture the active weaver runtime explicitly and
   then pass it to `skein.api.*.alpha` functions. It never falls back to client or
-  connected REPL state."
-  (:require [skein.core.weaver.runtime :as weaver-runtime]))
+  connected REPL state.
+
+  The public interfaces are identified by the `s/fdef`s and the `::runtime`
+  spec at the foot of this file: a runtime is an opaque non-nil handle — hold
+  it and pass it on, never reach inside it."
+  (:require [clojure.spec.alpha :as s]
+            [skein.api.format.alpha :as format-alpha]
+            [skein.core.weaver.runtime :as weaver-runtime]))
 
 (defn runtime-or-nil
   "Return the thread-bound or published in-process weaver runtime, or nil.
@@ -29,9 +35,10 @@
   branch rather than an error."
   []
   (or (runtime-or-nil)
-      (throw (ex-info (str "No active Skein weaver runtime; scope one with"
-                           " (with-runtime rt ...) or with-runtime*, or run"
-                           " inside a started or published weaver.")
+      (throw (ex-info (format-alpha/reflow
+                       "|No active Skein weaver runtime; scope one with
+                        |(with-runtime rt ...) or with-runtime*, or run
+                        |inside a started or published weaver.")
                       {:skein/runtime :absent}))))
 
 (defn with-runtime*
@@ -49,3 +56,22 @@
   "Evaluate `body` with `runtime` bound as the thread-local ambient runtime."
   [runtime & body]
   `(with-runtime* ~runtime (fn [] ~@body)))
+
+;; --- Interface specs (SPEC-003.C19a) ---
+;;
+;; The runtime handle is deliberately opaque: non-nil is the whole public
+;; shape promise, and `with-runtime*`'s nil guard is its runtime-checked
+;; twin. Structure beyond that belongs to `skein.core.weaver.runtime`.
+
+(s/def ::runtime some?)
+
+(s/fdef runtime-or-nil
+  :args (s/cat)
+  :ret (s/nilable ::runtime))
+
+(s/fdef runtime
+  :args (s/cat)
+  :ret ::runtime)
+
+(s/fdef with-runtime*
+  :args (s/cat :runtime ::runtime :thunk ifn?))
