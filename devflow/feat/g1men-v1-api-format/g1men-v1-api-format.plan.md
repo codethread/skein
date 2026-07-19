@@ -23,7 +23,7 @@ Each remaining card under epic `9nu0q` converts one module and should run this l
 4. Hard-wrap docstrings and comments; nothing past column 96 in the module's files; every public alpha var carries a docstring.
 5. Delete the module's entry from `quality.api-form/pending` — this is your card's deliberate act; nothing forces it. `make lint` then gates the conversion: any undocumented public var, wide line, or dependency-rule breach fails (private story helpers in alpha are fine — SPEC-003.C19a).
 6. `make api-docs` when any docstring changed; focused cold test run for the module's namespaces; the full quality gates.
-7. `strand agent review <task-id> --roster change-review --cwd <worktree> --commit-range <base>..HEAD` — the `source-form` seat carries the form lens.
+7. `strand agent review <task-id> --roster change-review --cwd <worktree> --base origin/main` — the `source-form` seat carries the form lens; `--base` pins the merge-base surface so an advanced main never bleeds into the diff.
 
 ## PLAN-Vaf-001.P3 Risks
 

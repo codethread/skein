@@ -12,10 +12,13 @@
   diff lives, and name the diff surface so reviewers stop re-deriving it:
 
       strand agent review <task-id> --roster change-review --cwd <worktree> \\
-        --commit-range <base>..HEAD
+        --base origin/main
 
-  The commit range is expanded to its changed files and injected into every
-  reviewer prompt as the authoritative diff surface. Discover the live
+  --base pins merge-base(<ref>, HEAD)..HEAD at spawn, so the surface covers
+  only the branch's own work even when the base ref has advanced (an explicit
+  --commit-range is still accepted; a two-dot range whose base is not an
+  ancestor of its tip is refused). The range is expanded to its changed files
+  and injected into every reviewer prompt as the authoritative diff surface. Discover the live
   registered roster with `strand agent rosters`. The registry is
   weaver-lifetime state: edits here need a weaver restart or config reload to
   take effect.
