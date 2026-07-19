@@ -122,11 +122,13 @@
   ;; must see no ambient runtime and fail loudly.
   (binding [weaver-runtime/*runtime* nil]
     (is (nil? (current/runtime-or-nil)))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                          #"No active Skein weaver runtime"
-                          (current/runtime)))))
+    (let [ex (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                                   #"No active Skein weaver runtime"
+                                   (current/runtime)))]
+      (is (= :absent (:skein/runtime (ex-data ex)))))))
 
 (deftest current-with-runtime*-rejects-nil-runtime
-  (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                        #"Cannot scope a nil Skein runtime"
-                        (current/with-runtime* nil (constantly :never)))))
+  (let [ex (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                                 #"Cannot scope a nil Skein runtime"
+                                 (current/with-runtime* nil (constantly :never))))]
+    (is (= :nil (:skein/runtime (ex-data ex))))))
