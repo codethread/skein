@@ -3,6 +3,7 @@
   explain, compile semantics (calls, conditions, loops, splicing), and the
   run-driving surface (start!/complete!/choose!, gates, checkpoints, bonds)."
   (:require [clojure.test :refer [deftest is testing]]
+            [skein.api.batch.alpha :as batch]
             [skein.api.graph.alpha :as graph]
             [skein.api.vocab.alpha :as vocab]
             [skein.spools.test-support :refer [with-runtime]]
@@ -589,16 +590,20 @@
       (is (= "Orient" (:title (workflow/ready-step "keyword-start")))))))
 
 (deftest workflow-describe-accepts-registered-keyword
-  (workflow/register-workflow! :loopy-describe 'skein.spools.workflow-test/loopy-workflow)
-  (is (= "Loopy" (:name (workflow/describe :loopy-describe {})))))
+  (with-runtime
+    (fn [_rt _]
+      (workflow/register-workflow! :loopy-describe 'skein.spools.workflow-test/loopy-workflow)
+      (is (= "Loopy" (:name (workflow/describe :loopy-describe {})))))))
 
 (deftest workflow-start-and-describe-reject-unknown-registered-keyword
   (with-runtime
     (fn [_rt _]
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unknown registered workflow"
                             (workflow/start! "missing-keyword-start" :missing-workflow {})))))
-  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unknown registered workflow"
-                        (workflow/describe :missing-workflow {}))))
+  (with-runtime
+    (fn [_rt _]
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unknown registered workflow"
+                            (workflow/describe :missing-workflow {}))))))
 
 (deftest workflow-revise-choice-loops-back-to-a-fresh-revision-round
   (with-runtime
@@ -640,11 +645,10 @@
             signoff-id (:id (workflow/ready-step "loopy-fail"))]
         ;; a failed continuation apply must not leave the run in a false
         ;; terminal state; the checkpoint close and continuation pour are folded
-        ;; into one batch, so a failing apply commits nothing
-        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"batch boom"
-                              (#'workflow/choose!* "loopy-fail" :revise {} {}
-                                                   (fn [_ _]
-                                                     (throw (ex-info "batch boom" {}))))))
+        ;; into one batch/apply!, so a failing apply commits nothing
+        (with-redefs [batch/apply! (fn [_ _] (throw (ex-info "batch boom" {})))]
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"batch boom"
+                                (workflow/choose! "loopy-fail" :revise))))
         (let [root (workflow/current-root "loopy-fail")]
           (is (some? root))
           (is (= old-root-id (:id root)))
@@ -1508,5 +1512,7 @@
       (is (= :self (:waiter (ex-data e)))))))
 
 (deftest executors-reflects-registrations
-  (workflow/register-executor! :registry-test-executor (constantly nil))
-  (is (contains? (workflow/executors) :registry-test-executor)))
+  (with-runtime
+    (fn [_rt _]
+      (workflow/register-executor! :registry-test-executor (constantly nil))
+      (is (contains? (workflow/executors) :registry-test-executor)))))

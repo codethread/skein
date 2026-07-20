@@ -13,8 +13,8 @@
           skein.spools/cron {:local/root "../spools/cron"}
           skein.macros/macros {:local/root "spools/macros"}
           codethread/devflow {:git/url "https://github.com/codethread/devflow.spool.git"
-                              :git/sha "9b0296a37b7ad8968c4630bbe676c3a4a0cf5df5"
-                              :git/tag "v1"
+                              :git/sha "1e65e1bc5ce43cbea462a33f51b24b669928ef4b"
+                              :git/tag "v2"
                               :roots {codethread/devflow "."}}
           codethread/kanban {:git/url "https://github.com/codethread/kanban.spool.git"
                              :git/sha "f40cdd6b489564385b5e8dbcf4b4285541c9cb88"
