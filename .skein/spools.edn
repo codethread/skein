@@ -17,6 +17,6 @@
                               :git/tag "v2"
                               :roots {codethread/devflow "."}}
           codethread/kanban {:git/url "https://github.com/codethread/kanban.spool.git"
-                             :git/sha "f40cdd6b489564385b5e8dbcf4b4285541c9cb88"
-                             :git/tag "v3"
+                             :git/sha "424daed8dbaa29e7c8600234f8c0fd3c73eda473"
+                             :git/tag "v4"
                              :roots {codethread/kanban "."}}}}
