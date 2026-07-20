@@ -300,7 +300,7 @@ function statusToGraph(payload: StatusPayload): { nodes: GraphNode[]; parentEdge
 
 // ── runs view ──────────────────────────────────────────────────────────────
 
-const RUNS_HINT = "[runs] ↑↓/jk move · ⌃d/⌃u page · ⏎ attrs · ⌃g open · a all/active · r refresh · v plans · ⇥ tab · q quit";
+const RUNS_HINT = "[runs] ↑↓/jk move · ⌃d/⌃u page · ⏎ attrs · ⌃g open · y copy · a all/active · r refresh · v plans · ⇥ tab · q quit";
 
 function RunsTable({
   rows: runs,
@@ -376,7 +376,7 @@ function RunsTable({
 
 // ── plans view ─────────────────────────────────────────────────────────────
 
-const PLANS_HINT = "[plans] ↑↓/jk move · ⌃d/⌃u page · ⏎ detail · d graph · r refresh · v runs · ⇥ tab · q quit";
+const PLANS_HINT = "[plans] ↑↓/jk move · ⌃d/⌃u page · ⏎ detail · y copy · d graph · r refresh · v runs · ⇥ tab · q quit";
 
 function PlansTree({
   rows,
@@ -454,6 +454,14 @@ export const agentsTab = defineTab<AgentsView>({
   // strand focus.
   editTarget: (v) =>
     v.mode === "runs" ? (v.runs.rows[v.runs.s.selected] ?? null) : v.mode === "plans" ? (v.plans.detail?.row ?? null) : null,
+  // y target: the runs/plans row under the cursor (an open plan detail names the
+  // same id), or the graphed root when the graph pane has no per-node cursor.
+  copyId: (v) =>
+    v.mode === "runs"
+      ? (v.runs.rows[v.runs.s.selected]?.id ?? null)
+      : v.mode === "plans"
+        ? (v.plans.detail?.id ?? v.plans.rows[v.plans.s.selected]?.id ?? null)
+        : (v.graph?.root ?? null),
   // Fetch the mode's dataset, then fold it into the latest view — but only if the
   // mode is unchanged: a result for a view the user toggled away from mid-fetch
   // drops itself rather than overwriting the other view.

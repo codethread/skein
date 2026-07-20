@@ -225,7 +225,7 @@ function featureGraph(sub: SubgraphResult, gates: Gate[]): { nodes: GraphNode[];
 
 // ── list view ──────────────────────────────────────────────────────────────
 
-const LIST_HINT = "↑↓/jk move · ⌃d/⌃u page · ⏎ attrs+frontier · d graph · a all/active · r refresh · ⇥ tab · q quit";
+const LIST_HINT = "↑↓/jk move · ⌃d/⌃u page · ⏎ attrs+frontier · y copy · d graph · a all/active · r refresh · ⇥ tab · q quit";
 
 const frontierText = (r: DevflowRow): string =>
   r.flowError
@@ -305,6 +305,8 @@ export const devflowTab = defineTab<DevflowView>({
   inDetail: (v) => v.mode === "list" && v.s.view === "detail",
   // ⌃g opens the selected run strand; the graph pane has no single strand focus.
   editTarget: (v) => (v.mode === "list" ? (v.rows[v.s.selected] ?? null) : null),
+  // y copies the selected run's id, or the graphed run's id from the graph pane.
+  copyId: (v) => (v.mode === "list" ? (v.rows[v.s.selected]?.id ?? null) : (v.graph?.root ?? null)),
   refresh: async (v, all) => {
     if (v.mode === "list") {
       try {

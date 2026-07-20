@@ -7,7 +7,7 @@
 import { appendFileSync } from "node:fs";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Box, render, useApp, useInput, useStdin, type Key } from "ink";
-import { editorArgv, editorFileFor, opts, workspaceRoot, type DetailRow } from "./data";
+import { copyToClipboard, editorArgv, editorFileFor, opts, workspaceRoot, type DetailRow } from "./data";
 import { Header, TableRow, useTerminalSize, type Cell } from "./ui";
 
 // ── reusable list+detail view state ──────────────────────────────────────────
@@ -108,6 +108,10 @@ export type Tab<V> = {
   // focused (empty list, or a view with no single strand like the graph pane). The
   // shell opens it in $EDITOR on ⌃g.
   editTarget: (v: V) => DetailRow | null;
+  // The strand id under the cursor, or null when nothing is focused. Broader than
+  // editTarget — a bare tree/task row has an id even where no full DetailRow is in
+  // hand (kanban tasks, an unopened plans row) — so the shell can copy it on y.
+  copyId: (v: V) => string | null;
   // The all/active axis applies in the tab's current view.
   allApplies: (v: V) => boolean;
   render: (v: V, ctx: RenderCtx) => React.ReactElement;
@@ -149,6 +153,17 @@ function App({
   // Bumped after an $EDITOR round-trip to force Ink to repaint the clobbered frame.
   const [, setRedraw] = useState(0);
   const [active, setActive] = useState(0);
+  // A transient one-line status (a y-copy result), shown in the header and cleared
+  // after a moment. The timer is held in a ref so a fresh flash resets it rather
+  // than leaving an older timer to blank the newer message.
+  const [flash, setFlash] = useState<string | null>(null);
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showFlash = useCallback((msg: string) => {
+    setFlash(msg);
+    if (flashTimer.current) clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => setFlash(null), 2000);
+  }, []);
+  useEffect(() => () => void (flashTimer.current && clearTimeout(flashTimer.current)), []);
   const [envs, setEnvs] = useState<Env[]>(() =>
     tabs.map((t, i) => ({
       all: opts.all,
@@ -226,6 +241,17 @@ function App({
     [fullscreen, frame, setRawMode],
   );
 
+  // Copy the id under the cursor to a clipboard, flashing the result. The copy is
+  // best-effort across tmux/OS tools (copyToClipboard); a world with none reachable
+  // flashes the failure with the id still shown so it can be read off the screen.
+  const copyCursorId = useCallback(
+    async (id: string) => {
+      const how = await copyToClipboard(id);
+      showFlash(how ? `copied ${id} · ${how}` : `no clipboard — ${id}`);
+    },
+    [showFlash],
+  );
+
   // Re-poll on tab entry and whenever the active tab's fetch key changes (an
   // agents view toggle swaps datasets); the interval then refreshes only the
   // active tab. Toggling all/active refetches directly from its key handler, so
@@ -270,6 +296,11 @@ function App({
         if (target) openInEditor(target);
         return;
       }
+      if (input === "y") {
+        const id = t.copyId(v);
+        if (id) void copyCursorId(id);
+        return;
+      }
       const ctx: KeyCtx<unknown> = {
         input,
         key,
@@ -296,7 +327,7 @@ function App({
   // keeps a miscounted view from scrolling the alt screen.
   return (
     <Box flexDirection="column" height={fullscreen ? termRows : undefined} overflow={fullscreen ? "hidden" : undefined}>
-      <Header all={env.all} noun={tabs[active].label.toLowerCase()} refreshedAt={env.refreshedAt} cols={cols} />
+      <Header all={env.all} noun={tabs[active].label.toLowerCase()} refreshedAt={env.refreshedAt} cols={cols} flash={flash} />
       <TabBar tabs={tabs} active={active} cols={cols} />
       <Box marginTop={1} flexDirection="column">
         {tabs[active].render(env.v, rctx)}
