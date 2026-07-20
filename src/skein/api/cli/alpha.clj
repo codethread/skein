@@ -56,10 +56,13 @@
 (declare parse-selected)
 
 (def reserved-subcommand-names
-  "Subcommand names reserved for dispatch-level help aliases.
+  "Subcommand names reserved from op declaration for the help grammar.
 
-  The single source of truth: registration/parse/explain validation here and
-  the weaver's dispatch-time help alias must agree on this set."
+  The single source of truth for the reserved set: registration/parse/explain
+  validation here blocks any op from declaring these as subcommands. The weaver
+  rewrites only the dash-prefixed flag forms (`--help`/`-h`) of a trailing token
+  to the `help` op (DELTA-Dtf-002.CC3); the bare word `help` stays reserved but
+  is the retired sugar that flows to normal parsing."
   #{"help" "-h" "--help"})
 
 (defn validate!

@@ -57,6 +57,12 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if p.version {
 		return printJSON(stdout, stderr, map[string]any{"bin_version": Version, "protocol_version": client.ProtocolVersion})
 	}
+	// A pre-op --help/-h can only be seen before the op token (flag parsing stops
+	// at the first non-flag token). With an op named, --help must trail the op
+	// (DELTA-Dtf-001.CC6): redirect rather than print static usage.
+	if p.help && p.haveOp {
+		return fail(stderr, fmt.Errorf("--help must follow the op: run `strand help %s` or `strand %s --help`", p.opName, p.opName))
+	}
 	if p.help || !p.haveOp {
 		if _, err := fmt.Fprint(stdout, helpText); err != nil {
 			return fail(stderr, err)

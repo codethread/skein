@@ -2035,19 +2035,52 @@
           (is (= [{:operation "emitted-item"}] @emitted))
           (is (= {:operation "streaming-subcommand run" :result :streamed}
                  result))))
-      (testing "help aliases return detail and skip the handler for subcommand ops"
-        (let [expected (weaver/op! rt 'help ["subbed"])]
-          (doseq [token ["help" "-h" "--help"]]
-            (let [actual (weaver/op! rt 'subbed [token])]
-              (is (= expected actual))
-              ;; The alias returns the help envelope, not the routed handler's
-              ;; context (which would carry :op/argv).
-              (is (not (contains? actual :op/argv)))))))
-      (testing "unknown subcommands fail during parse before the handler runs"
+      (weaver/register-op! rt 'flat-no-positionals
+                           {:arg-spec {:op "flat-no-positionals"
+                                       :flags {:verbose {:type :boolean}}}}
+                           'skein.weaver-test/context-echo-op)
+      (weaver/register-op! rt 'raw 'skein.weaver-test/context-echo-op)
+      (testing "a trailing --help/-h flag rewrites to help detail for every op class"
+        ;; subbed = subcommand, flat-no-positionals = flat, raw = raw-envelope.
+        (doseq [op '[subbed flat-no-positionals raw]
+                flag ["--help" "-h"]]
+          (let [expected (weaver/op! rt 'help [(name op)])
+                actual (weaver/op! rt op [flag])]
+            ;; the rewrite is a read-class projection: it returns the op's help
+            ;; detail, never the routed handler context (which carries :op/argv).
+            (is (= expected actual) (str op " " flag))
+            (is (not (contains? actual :op/argv)) (str op " " flag)))))
+      (testing "a trailing --help flag rewrites even after a leading verb token"
+        (is (= (weaver/op! rt 'help ["subbed"])
+               (weaver/op! rt 'subbed ["add" "--help"]))))
+      (testing "the bare word help is retired sugar: not rewritten, fails loudly"
+        (let [e (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                                      #"Unknown subcommand"
+                                      (weaver/op! rt 'subbed ["help"])))]
+          (is (= :unknown-subcommand (:reason (ex-data e)))))
+        (let [e (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                                      #"Unexpected extra arguments"
+                                      (weaver/op! rt 'flat-no-positionals ["help"])))]
+          (is (= :trailing-tokens (:reason (ex-data e)))))
+        ;; a raw-envelope op has no parser, so the bare word rides to the handler.
+        (let [ctx (weaver/op! rt 'raw ["help"])]
+          (is (not (contains? ctx :op/args)))
+          (is (= ["help"] (:op/argv ctx)))))
+      (testing "non-clean --help shapes are not rewritten and surface loud errors"
         (weaver/register-op! rt 'subbed-side-effect
                              {:arg-spec {:op "subbed-side-effect"
                                          :subcommands {"ok" {:doc "Run"}}}}
                              'skein.weaver-test/side-effecting-op)
+        (reset! op-side-effects [])
+        (doseq [[argv envelope] [[["--help" "add"] {}]                        ; non-final
+                                 [["--force" "--help"] {}]                     ; another flag
+                                 [["--help"] {:payloads {"stdin" "attached"}}]]] ; payloads
+          (let [e (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                                        #"Unknown subcommand"
+                                        (weaver/op! rt 'subbed-side-effect argv envelope)))]
+            (is (= :unknown-subcommand (:reason (ex-data e))) (pr-str argv))))
+        (is (empty? @op-side-effects)))
+      (testing "unknown subcommands fail during parse before the handler runs"
         (reset! op-side-effects [])
         (let [e (is (thrown-with-msg? clojure.lang.ExceptionInfo
                                       #"Unknown subcommand"
@@ -2055,27 +2088,6 @@
           (is (= :unknown-subcommand (:reason (ex-data e))))
           (is (= ["ok"] (:available-subcommands (ex-data e))))
           (is (empty? @op-side-effects))))
-      (testing "help aliases do not mask malformed subcommand invocations"
-        (doseq [[argv envelope] [[["help" "extra"] {}]
-                                 [["help"] {:payloads {"stdin" "attached"}}]]]
-          (let [e (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                                        #"Unknown subcommand|Attached payloads"
-                                        (weaver/op! rt 'subbed-side-effect argv envelope)))]
-            (is (#{:unknown-subcommand :unused-payloads} (:reason (ex-data e)))))))
-      (testing "flat and raw-envelope ops do not trigger help aliases"
-        (weaver/register-op! rt 'flat-no-positionals
-                             {:arg-spec {:op "flat-no-positionals"
-                                         :flags {:verbose {:type :boolean}}}}
-                             'skein.weaver-test/context-echo-op)
-        (let [e (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                                      #"Unexpected extra arguments"
-                                      (weaver/op! rt 'flat-no-positionals ["help"])))]
-          (is (= :trailing-tokens (:reason (ex-data e)))))
-        (weaver/register-op! rt 'raw 'skein.weaver-test/context-echo-op)
-        (let [ctx (weaver/op! rt 'raw ["help"])]
-          (is (not (contains? ctx :op/args)))
-          (is (not (contains? ctx :operation)))
-          (is (= ["help"] (:op/argv ctx)))))
       (testing "raw-envelope ops receive no :op/args and keep the raw payloads map"
         (let [ctx (weaver/op! rt 'raw ["a" "b"] {:payloads {"stdin" "hi"}})]
           (is (not (contains? ctx :op/args)))

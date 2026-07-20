@@ -148,16 +148,17 @@ Invoke a registered CLI operation with raw string argv from a root-level
   socket transport for `:stream? true` ops) into `:op/emit!`. When the resolved
   op declares an `:arg-spec`, `:op/argv` and the attached payloads are parsed
   through `skein.api.cli.alpha/parse` and the result is supplied as `:op/args`;
-  a parse failure throws before the handler runs. For subcommand ops, sole-token
-  `help`, `-h`, or `--help` invocations with no payloads return the op's help
-  detail instead of running the handler. Subcommand map results receive a
+  a parse failure throws before the handler runs. A trailing `--help`/`-h` flag
+  (the final argv token, no other flags, no payloads) is rewritten to the op's
+  help detail instead of running the handler, for every op class
+  (DELTA-Dtf-002.CC3). Subcommand map results receive a
   canonical `:operation` label containing the registered op name and full
   resolved path, including a nested `:action`. A handler-supplied `:operation`
   equal to the derived label is preserved; any other value, including explicit
   nil, fails loudly with the expected and actual labels. Raw-envelope ops (no
   `:arg-spec`) receive the context unchanged, still carrying the raw
   `:op/payloads` map.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L456-L512">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L456-L513">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/ops">`ops`</a>
 ``` clojure

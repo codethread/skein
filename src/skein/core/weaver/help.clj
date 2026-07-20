@@ -28,7 +28,8 @@
   only reach the alpha module dynamically — the two `requiring-resolve` calls
   here (`register-op!`, `resolve-op`) are call-time reaches into the public
   surface, the same idiom the socket transport uses for `op!`."
-  (:require [skein.api.cli.alpha :as cli]
+  (:require [clojure.string :as str]
+            [skein.api.cli.alpha :as cli]
             [skein.api.format.alpha :as format-alpha]
             [skein.api.return-shape.alpha :as return-shape]))
 
@@ -215,21 +216,41 @@
   {:schema-version schema-version
    :ops (mapv catalog-entry (registered-op-entries runtime))})
 
+(def ^:private help-flag-tokens
+  "The `--help`/`-h` flag forms the weaver rewrites to the `help` op.
+
+  The dash-prefixed subset of `skein.api.cli.alpha/reserved-subcommand-names`:
+  only the flag forms trigger the trailing rewrite, while the bare word `help`
+  stays reserved but flows to normal parsing (DELTA-Dtf-002.CC3)."
+  (into #{} (filter #(str/starts-with? % "-")) cli/reserved-subcommand-names))
+
 (defn help-alias-result
-  "Return the canonical help envelope when argv/envelope form a help alias.
+  "Return the op's canonical help envelope for a trailing `--help`/`-h` rewrite.
 
-  The alias applies only to ops whose arg-spec declares `:subcommands`, argv is
-  exactly one reserved help token, and the envelope carries no payloads. Returns
-  nil when the invocation must flow through normal parsing and handler dispatch.
+  The weaver rewrites a trailing `--help`/`-h` **flag** token — the final argv
+  token, with no other flag token before it and no attached payloads — to the
+  `help` op, for **every** op (flat, subcommand, and raw-envelope), returning
+  that op's detail envelope instead of running the handler (DELTA-Dtf-002.CC3).
+  Both `op!` and the socket transport consult this before hook gating, so the
+  rewrite is a read-class projection and the target op's mutating hooks never
+  fire.
 
-  The reserved-token set is `skein.api.cli.alpha/reserved-subcommand-names`, the
-  single source of truth so validation and dispatch cannot drift."
+  Only the flag forms rewrite: the bare word `help` (and `about`/`prime`) in
+  verb position is the retired `<op> help` sugar (TEN-000@1) and is not rewritten
+  — it returns nil and flows through normal parsing, failing loudly. Any
+  non-clean `--help` shape (a non-final flag, another flag alongside it, or
+  attached payloads) likewise returns nil and surfaces its own loud parse error.
+
+  Supersedes SPEC-004.C63e's subcommand-only sole-token alias. `help`/`-h`/
+  `--help` remain reserved subcommand names (`help-flag-tokens` derives from
+  `skein.api.cli.alpha/reserved-subcommand-names`), so the rewrite shadows
+  nothing."
   [entry argv envelope]
   (let [argv (vec argv)
         payloads (or (:payloads envelope) {})]
-    (when (and (contains? (:arg-spec entry) :subcommands)
-               (= 1 (count argv))
-               (contains? cli/reserved-subcommand-names (first argv))
+    (when (and (seq argv)
+               (contains? help-flag-tokens (peek argv))
+               (not-any? #(str/starts-with? % "-") (pop argv))
                (empty? payloads))
       (op-envelope entry))))
 
