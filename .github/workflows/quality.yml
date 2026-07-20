@@ -196,14 +196,7 @@ jobs:
         with:
           go-version-file: cli/go.mod
           cache-dependency-path: cli/go.sum
-      - id: gofumpt
-        uses: actions/cache@v4
-        with:
-          path: ~/go/bin/gofumpt
-          key: gofumpt-${{ runner.os }}-${{ hashFiles('Makefile') }}
-      - if: steps.gofumpt.outputs.cache-hit != 'true'
-        run: make install-gofumpt
-      - run: PATH="$HOME/go/bin:$PATH" GOFUMPT=gofumpt make fmt-check-go
+      - run: make fmt-check-go
 
   format-check:
     name: Format check
@@ -301,14 +294,7 @@ jobs:
         with:
           go-version-file: cli/go.mod
           cache-dependency-path: cli/go.sum
-      - id: golangci-lint
-        uses: actions/cache@v4
-        with:
-          path: ~/go/bin/golangci-lint
-          key: golangci-lint-${{ runner.os }}-${{ hashFiles('Makefile') }}
-      - if: steps.golangci-lint.outputs.cache-hit != 'true'
-        run: make install-golangci-lint
-      - run: PATH="$HOME/go/bin:$PATH" GOLANGCI_LINT=golangci-lint make lint-go
+      - run: make lint-go
 
   lint:
     name: lint
@@ -413,14 +399,7 @@ jobs:
         with:
           go-version-file: cli/go.mod
           cache-dependency-path: cli/go.sum
-      - id: govulncheck
-        uses: actions/cache@v4
-        with:
-          path: ~/go/bin/govulncheck
-          key: govulncheck-${{ runner.os }}-${{ hashFiles('Makefile') }}
-      - if: steps.govulncheck.outputs.cache-hit != 'true'
-        run: make install-govulncheck
-      - run: PATH="$HOME/go/bin:$PATH" GOVULNCHECK=govulncheck make security-report-go
+      - run: make security-report-go
 
   security-report:
     name: Security report
