@@ -1,0 +1,56 @@
+tasks:
+  - id: 1
+    description: Pilot family and checkpoint ownership
+    task_file: tasks/001-pilot-family-checkpoint-ownership.md
+    status: pending
+    blocked_by: []
+  - id: 2
+    description: Ephemeral seats and lease
+    task_file: tasks/002-ephemeral-seats-lease.md
+    status: pending
+    blocked_by: [1]
+  - id: 3
+    description: Dispatcher and pilot ops
+    task_file: tasks/003-dispatcher-pilot-ops.md
+    status: pending
+    blocked_by: [2]
+  - id: 4
+    description: Review cycle as routing
+    task_file: tasks/004-review-cycle-routing.md
+    status: pending
+    blocked_by: [3]
+  - id: 5
+    description: CI gates and land-family gap closes
+    task_file: tasks/005-ci-gates-land-gaps.md
+    status: pending
+    blocked_by: [4]
+  - id: 6
+    description: Auto-signoff and merge train
+    task_file: tasks/006-auto-signoff-merge-train.md
+    status: pending
+    blocked_by: [5]
+  - id: 7
+    description: Hang budgets and anomaly recovery
+    task_file: tasks/007-hang-budgets-anomaly-recovery.md
+    status: pending
+    blocked_by: [6]
+  - id: 8
+    description: Escalation chime rules
+    task_file: tasks/008-escalation-chime-rules.md
+    status: pending
+    blocked_by: [7]
+  - id: 9
+    description: Operator guide
+    task_file: tasks/009-operator-guide.md
+    status: pending
+    blocked_by: [8]
+  - id: 10
+    description: Anomaly and audit drills
+    task_file: tasks/010-anomaly-audit-drills.md
+    status: pending
+    blocked_by: [9]
+  - id: 11
+    description: "[HITL] Real feature end-to-end acceptance"
+    task_file: tasks/011-real-feature-acceptance.md
+    status: blocked
+    blocked_by: [10]
