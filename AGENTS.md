@@ -20,8 +20,6 @@ Read `./devflow/TENETS.md` and `./devflow/PHILOSOPHY.md` before all work. This f
 
 ## Commands
 
-Use Homebrew OpenJDK when Java is not on the default PATH: `PATH="/opt/homebrew/opt/openjdk/bin:$PATH" <cmd>`.
-
 ```sh
 make build                              # repo-local ./bin/strand, ./bin/mill — the agent path for CLI changes
 mill start                              # supervisor, in a durable terminal
@@ -60,6 +58,7 @@ The repo's `.skein` workspace is the shared coordination world — kanban board,
 - Spool state is runtime-owned via `skein.api.runtime.alpha/spool-state`; no module-level atoms in spools.
 
 <!-- mill:skein-prime -->
+
 ## Skein / strand
 
 This repo uses Skein strands to track work. Orientation ships in the `mill` CLI:
