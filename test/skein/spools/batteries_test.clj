@@ -549,6 +549,55 @@
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"active or closed"
                                 (weaver/op! rt 'update [id "--state" "replaced"]))))))))
 
+(deftest update-typed-attributes-merge-patch
+  (with-batteries
+    (fn [rt]
+      (testing "typed --attributes merges below --attr; JSON types preserved"
+        (let [created (weaver/add! rt {:title "Merge" :attributes {:owner "old"}})
+              updated (weaver/op! rt 'update
+                                  [(:id created) "--attributes" ":payload/attrs" "--attr" "owner=flag"]
+                                  {:payloads {"attrs" "{\"owner\":\"json\",\"count\":2}"}})]
+          (is (= {:owner "flag" :count 2} (:attributes updated)))))
+      (testing "JSON null removes the addressed key"
+        (let [created (weaver/add! rt {:title "Drop" :attributes {:owner "old" :keep "yes"}})
+              updated (weaver/op! rt 'update
+                                  [(:id created) "--attributes" ":payload/attrs"]
+                                  {:payloads {"attrs" "{\"owner\":null}"}})]
+          (is (= {:keep "yes"} (:attributes updated)))))
+      (testing "JSON empty string stores an empty string, not absence"
+        (let [created (weaver/add! rt {:title "Blank" :attributes {:owner "old"}})
+              updated (weaver/op! rt 'update
+                                  [(:id created) "--attributes" ":payload/attrs"]
+                                  {:payloads {"attrs" "{\"owner\":\"\"}"}})]
+          (is (= {:owner ""} (:attributes updated)))))
+      (testing "--attr key= stores an empty string and wins over a typed null"
+        (let [created (weaver/add! rt {:title "Raw blank" :attributes {:owner "old"}})
+              updated (weaver/op! rt 'update
+                                  [(:id created) "--attributes" ":payload/attrs" "--attr" "owner="]
+                                  {:payloads {"attrs" "{\"owner\":null}"}})]
+          (is (= {:owner ""} (:attributes updated)))))
+      (testing "no attribute flag leaves attributes untouched"
+        (let [created (weaver/add! rt {:title "Keep" :attributes {:owner "old"}})
+              updated (weaver/op! rt 'update [(:id created) "--title" "Renamed"])]
+          (is (= "Renamed" (:title updated)))
+          (is (= {:owner "old"} (:attributes updated)))))
+      (testing "blank --attributes key fails loudly"
+        (let [created (weaver/add! rt {:title "Bad" :attributes {}})]
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"blank attribute key"
+                                (weaver/op! rt 'update
+                                            [(:id created) "--attributes" ":payload/attrs"]
+                                            {:payloads {"attrs" "{\"\":\"x\"}"}})))))
+      (testing "supplied JSON null for --attributes fails loudly, not as an empty patch"
+        (let [created (weaver/add! rt {:title "Null" :attributes {:owner "old"}})]
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"must reference a JSON object"
+                                (weaver/op! rt 'update
+                                            [(:id created) "--attributes" ":payload/attrs"]
+                                            {:payloads {"attrs" "null"}})))
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"must reference a JSON object"
+                                (weaver/op! rt 'add
+                                            ["Null add" "--attributes" ":payload/attrs"]
+                                            {:payloads {"attrs" "null"}}))))))))
+
 (deftest show-supersede-burn
   (with-batteries
     (fn [rt]

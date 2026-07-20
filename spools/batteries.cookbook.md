@@ -109,6 +109,32 @@ Honest source: the payload-reference rules in [`batteries.md`](./batteries.md) �
 
 ---
 
+## Recipe: Remove an attribute key with a typed JSON null
+
+**Situation.** A strand carries an attribute that no longer applies — a transient `gate/error`, a stale claim marker — and you want the key *gone*, not set to blank. `--attr key=` stores an empty string, which is data, not absence. Whether removal is even the right model — versus an enum value or a recorded outcome — is the [attribute-value modeling guidance](../docs/spools/writing-shared-spools.md#modeling-attribute-values-enums-absence-empty-history); this recipe is the mechanics once you've decided a key should go absent.
+
+**Composition.** `update` treats `--attributes` as a JSON Merge Patch. A JSON `null` value deletes the addressed key; other keys are left untouched. Keep raw `--attr` for the string writes you want on top.
+
+```sh
+# delete gate/error; owner is rewritten in the same call
+printf '{"gate/error":null}' \
+  | strand --stdin update "$id" --attr owner=next --attributes :stdin
+# => the gate/error key is absent; owner is "next"
+
+# blank is NOT removal: this stores the empty string ""
+strand update "$id" --attr gate/error=
+```
+
+**Why this shape.**
+
+- **Absence is a typed null, never a blank string.** JSON `null` lowers to the Clojure nil merge-patch the trusted path uses (`skein.api.weaver.alpha/update!` with `{:attributes {"key" nil}}`); an empty string stays stored as `""`. Modeling an attribute's disappearance as blank text conflates "no value" with "the value is empty", so the CLI keeps them distinct.
+- **`--attr` wins on collision, so a raw `key=` beats a typed null.** If you pass both, the string write lands — reach for a JSON `null` in the `--attributes` object when you mean removal.
+- **Omitting all attribute flags leaves the map untouched.** `update --title …` with no `--attr`/`--attributes` never rewrites attributes.
+
+Honest source: the `update`/BAT-C6/BAT-C20 contract in [`batteries.md`](./batteries.md), the `update-typed-attributes-merge-patch` test in `test/skein/spools/batteries_test.clj`, and the core merge-patch nil deletion in `skein.core.db/update-strand!`.
+
+---
+
 ## Recipe: Preview a mutation with `--dry-run` before it touches anything
 
 **Situation.** You've assembled a gnarly `add` or `weave` invocation — payload refs, several flags — and you want to see exactly what the dispatcher will send before a single strand is created.

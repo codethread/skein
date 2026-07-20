@@ -431,8 +431,8 @@
                                       " ready, then run `gh pr merge --squash` with the approved"
                                       " subject and body. Branch protection refuses the merge unless"
                                       " required checks are green on an up-to-date branch. A failure"
-                                      " stamps `gate/error`: fix the cause, then clear the stamp"
-                                      " (`strand update <gate-id> --attr gate/error=`) to re-run. The"
+                                      " stamps `gate/error`: fix the cause, then remove the stamp"
+                                      " (`strand update <gate-id> --attributes '{\"gate/error\":null}'`) to re-run. The"
                                       " script first checks PR state, so re-running after a successful"
                                       " merge is safe and reports that the PR is already merged."))})
    (workflow/gate :pull-main
@@ -449,8 +449,8 @@
                                  |directory, verify that checkout is on main, then run `git pull
                                  |--ff-only origin main`. It never stashes or resets. A non-fast-forward,
                                  |a conflicting dirty file, or a canonical checkout on another branch
-                                 |stamps `gate/error`: fix the checkout, then clear the stamp
-                                 |(`strand update <gate-id> --attr gate/error=`) to re-run.")})
+                                 |stamps `gate/error`: fix the checkout, then remove the stamp
+                                 |(`strand update <gate-id> --attributes '{\"gate/error\":null}'`) to re-run.")})
    (workflow/gate :main-ci-green
                   "Watch main CI to green at the merged sha"
                   :shell
@@ -469,8 +469,8 @@
                                  |across two consecutive polls, so late-registering workflows are
                                  |caught. Any conclusion besides success or skipped stamps
                                  |`gate/error` with the run listing: re-run transient infra failures
-                                 |(`gh run rerun <run-id>`), then clear the stamp
-                                 |(`strand update <gate-id> --attr gate/error=`) to re-watch. The
+                                 |(`gh run rerun <run-id>`), then remove the stamp
+                                 |(`strand update <gate-id> --attributes '{\"gate/error\":null}'`) to re-watch. The
                                  |gate closing asserts green CI on the main sha; run output is
                                  |recorded on the gate.")})
    (workflow/step :cleanup
@@ -544,8 +544,8 @@
                                     |--watch --fail-fast`. It closes this gate only when all checks are
                                     |green; `land complete` refuses gates. A startup timeout, red check,
                                     |or command failure stamps `gate/error` with captured output. Fix the
-                                    |cause, commit and push when needed, then clear the stamp (`strand
-                                    |update <gate-id> --attr gate/error=`) to retry. The exit code and
+                                    |cause, commit and push when needed, then remove the stamp (`strand
+                                    |update <gate-id> --attributes '{\"gate/error\":null}'`) to retry. The exit code and
                                     |output tail are recorded on the gate."
                                    branch branch)))})
    (workflow/step :signoff-review
@@ -641,8 +641,8 @@
                  |green CI at HEAD — the ci-green shell gate enforces that ordering
                  |mechanically: the shell executor runs the recorded `gh pr checks`
                  |watch and only its green exit opens signoff-review. A red watch
-                 |stamps gate/error on the gate; fix, push, and clear the stamp
-                 |(`strand update <gate-id> --attr gate/error=`) to re-run it. For
+                 |stamps gate/error on the gate; fix, push, and remove the stamp
+                 |(`strand update <gate-id> --attributes '{\"gate/error\":null}'`) to re-run it. For
                  |card-backed runs, completing push-draft-pr moves the card to
                  |in_review, and aborting sign-off moves it back to claimed. The
                  |lock is acquired after sign-off approval, immediately before the

@@ -213,7 +213,7 @@ const rowBranch = (r: FlatRow): string => (r.kind === "card" ? r.card.branch : "
 const rowTitle = (r: FlatRow): string =>
   "  ".repeat(r.depth) + (r.kind === "card" ? MARK[r.marker] : "  ") + oneLine(r.kind === "card" ? r.card.title ?? "" : r.task.title);
 
-const HINT = "↑↓/jk move · ⌃d/⌃u page · = expand · - collapse · ⏎ attrs · ⌃g open · a all/active · r refresh · ⇥ tab · q quit";
+const HINT = "↑↓/jk move · ⌃d/⌃u page · = expand · - collapse · ⏎ attrs · ⌃g open · y copy · a all/active · r refresh · ⇥ tab · q quit";
 
 function KanbanTree({
   rows,
@@ -397,6 +397,12 @@ export const kanbanTab = defineTab<KanbanView>({
   allApplies: () => true,
   inDetail: (v) => v.s.view === "detail",
   editTarget: (v) => cardAt(flatten(v.rows, v.collapsed, v.expanded), v.s.selected) ?? null,
+  // Unlike editTarget (cards only — a task has no openable source), y copies the id
+  // of whatever row is under the cursor, task rows included: they are strands too.
+  copyId: (v) => {
+    const row = flatten(v.rows, v.collapsed, v.expanded)[v.s.selected];
+    return row ? rowId(row) : null;
+  },
   refresh: async (_v, all) => {
     // The board is the tab's primary data: a kanban-tree failure surfaces as the
     // full-pane <Failure>. The merge-lock scan is isolated inside fetchMergeLock

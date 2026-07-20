@@ -402,6 +402,11 @@ Because attributes are userland, your own config and spools should define the co
 workspace. Prefer documenting those conventions in source-controlled docs or in your spool docs.
 Attribute names and cleanup behavior are userland choices, not Skein core.
 
+[Modeling attribute values](spools/writing-shared-spools.md#modeling-attribute-values-enums-absence-empty-history)
+covers how to model a value once you own the convention: when a finite state wants an enum, when an
+optional fact should go absent rather than blank, when an empty string is real data, and when a fact
+belongs in recorded history.
+
 ## Queries
 
 Queries can be registered in weaver memory, then consumed by the REPL or CLI.

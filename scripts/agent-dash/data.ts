@@ -180,6 +180,49 @@ export async function renderBoxart(dot: string, format = "boxart"): Promise<{ li
   }
 }
 
+// Copy `text` to a clipboard reachable from wherever the dash runs, returning the
+// method(s) that took it for the status flash (or null when nothing is available).
+// tmux is tried first: it is the path that works when ssh'd into a remote host —
+// `set-buffer -w` also forwards to the outer terminal's clipboard via OSC 52, and
+// on a tmux too old for `-w` the plain buffer set still lands so prefix-] paste
+// works. The local OS clipboard is layered on when its tool is on PATH, so a mac
+// running the dash inside tmux gets both the tmux buffer and the system pasteboard.
+// Every child runs with no controlling pty (stdin is a pipe or ignored, never
+// inherited) so it can't reset terminal modes and drop Ink out of raw mode.
+export async function copyToClipboard(text: string): Promise<string | null> {
+  const spawnOk = async (cmd: string[], feedStdin: boolean): Promise<boolean> => {
+    try {
+      const proc = Bun.spawn(cmd, { stdin: feedStdin ? "pipe" : "ignore", stdout: "ignore", stderr: "ignore" });
+      if (feedStdin) {
+        proc.stdin!.write(text);
+        await proc.stdin!.end();
+      }
+      return (await proc.exited) === 0;
+    } catch {
+      // binary missing or spawn failed — treat as unavailable
+      return false;
+    }
+  };
+
+  const ok: string[] = [];
+  if (process.env.TMUX) {
+    // tmux takes the text as an argv, so its stdin stays ignored.
+    if ((await spawnOk(["tmux", "set-buffer", "-w", "--", text], false)) || (await spawnOk(["tmux", "set-buffer", "--", text], false))) {
+      ok.push("tmux");
+    }
+  }
+  if (process.platform === "darwin") {
+    if (await spawnOk(["pbcopy"], true)) ok.push("pbcopy");
+  } else if (process.env.WAYLAND_DISPLAY) {
+    if (await spawnOk(["wl-copy"], true)) ok.push("wl-copy");
+  } else if (await spawnOk(["xclip", "-selection", "clipboard"], true)) {
+    ok.push("xclip");
+  } else if (await spawnOk(["xsel", "--clipboard", "--input"], true)) {
+    ok.push("xsel");
+  }
+  return ok.length ? ok.join("+") : null;
+}
+
 export async function branchFor(cwd: string, cache: Map<string, string>): Promise<string> {
   const hit = cache.get(cwd);
   if (hit !== undefined) return hit;
