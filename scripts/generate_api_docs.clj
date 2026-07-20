@@ -23,7 +23,10 @@
      {:name nm
       :source (str "src/skein/api/" (if (= nm "return-shape") "return_shape" nm) "/alpha.clj")
       :outfile (str "docs/api/" nm ".api.md")})
-   [{:name "test"
+   [{:name "runtime-glossary"
+     :source "src/skein/api/runtime/glossary/alpha.clj"
+     :outfile "docs/api/runtime-glossary.api.md"}
+    {:name "test"
      :source "src/skein/test/alpha.clj"
      :outfile "docs/api/test.api.md"}]))
 

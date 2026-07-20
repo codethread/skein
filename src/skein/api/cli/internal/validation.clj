@@ -43,6 +43,47 @@
                 :supported-types (vec (sort-by name supported-arg-types))}
          subcommand (assoc :subcommand subcommand))))))
 
+(def annotation-keys
+  "The closed key set of an arg-spec node's authored annotation sub-map: each is
+  an optional array of strings; `failure-modes` entries are glossary
+  outcome-name references (DELTA-Dtf-003.CC2)."
+  #{:use-when :notes :failure-modes})
+
+(defn validate-annotations!
+  "Structurally validate an arg-spec node's `:annotations` sub-map.
+
+  Purely structural (SPEC-003.C64/C63d, no runtime dependency): a present
+  `:annotations` must be a map with only `use-when`/`notes`/`failure-modes` keys,
+  each a sequential collection of non-blank strings. The glossary-ref existence
+  check for `failure-modes` names runs separately at `register-op!` time
+  (DELTA-Dtf-003.CC2), which holds the runtime glossary."
+  [op subcommand annotations]
+  (when (some? annotations)
+    (let [reason (if subcommand :invalid-subcommand-annotations :invalid-annotations)
+          ctx (cond-> {:op op :field :annotations}
+                subcommand (assoc :subcommand subcommand))]
+      (when-not (map? annotations)
+        (shared/fail!
+         reason
+         ":annotations must be a map of use-when/notes/failure-modes to string arrays"
+         (assoc ctx :value annotations)))
+      (when-let [unknown (seq (remove annotation-keys (keys annotations)))]
+        (shared/fail!
+         reason
+         (str ":annotations has unknown keys " (pr-str (vec unknown)))
+         (assoc ctx
+                :unknown (vec unknown)
+                :allowed (vec (sort-by name annotation-keys)))))
+      (doseq [key annotation-keys
+              :when (contains? annotations key)
+              :let [value (get annotations key)
+                    non-blank-string? #(and (string? %) (not (str/blank? %)))]]
+        (when-not (and (sequential? value) (every? non-blank-string? value))
+          (shared/fail!
+           reason
+           (str ":annotations " (name key) " must be an array of non-blank strings")
+           (assoc ctx :annotation key :value value)))))))
+
 (defn validate-flags!
   "Validate a :flags container and its entries."
   [op subcommand flags]
@@ -118,6 +159,7 @@
   (when (contains? arg-spec :subcommands)
     (let [op (:op arg-spec)
           subcommands (:subcommands arg-spec)]
+      (validate-annotations! op nil (:annotations arg-spec))
       (when (contains? arg-spec :flags)
         (shared/fail!
          :invalid-subcommands
@@ -169,6 +211,7 @@
             :value (:subcommands nested)}))
         (validate-flags! op subcommand (:flags nested))
         (validate-positionals! op subcommand (:positionals nested))
+        (validate-annotations! op subcommand (:annotations nested))
         (when (some #(= "subcommand" (name %)) (keys (:flags nested)))
           (shared/fail!
            :reserved-subcommand

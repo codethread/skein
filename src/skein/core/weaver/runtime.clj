@@ -270,6 +270,7 @@
   (reset! (:query-registry runtime) {})
   (reset! (:pattern-registry runtime) {})
   (reset! (:op-registry runtime) {})
+  (reset! (:glossary-registry runtime) {})
   (reset! (:hook-registry runtime) {})
   (clear-event-system-for-reload! runtime)
   (install-built-in-ops! runtime))
@@ -556,6 +557,7 @@
                         :query-registry (atom {})
                         :pattern-registry (atom {})
                         :op-registry (atom {})
+                        :glossary-registry (atom {})
                         :hook-registry (atom {})
                         :generation-id (str (java.util.UUID/randomUUID))
                         :release-marker resolved-release-marker

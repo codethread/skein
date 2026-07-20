@@ -79,6 +79,7 @@
     (let [op (:op arg-spec)]
       (validation/validate-flags! op nil (:flags arg-spec))
       (validation/validate-positionals! op nil (:positionals arg-spec))
+      (validation/validate-annotations! op nil (:annotations arg-spec))
       arg-spec)))
 
 (defn parse

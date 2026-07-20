@@ -44,6 +44,11 @@
   [runtime]
   (:op-registry runtime))
 
+(defn glossary-registry
+  "Return the runtime's reload-cleared glossary-outcome registry atom."
+  [runtime]
+  (:glossary-registry runtime))
+
 (defn hook-registry
   "Return the runtime's lifecycle-hook registry atom."
   [runtime]

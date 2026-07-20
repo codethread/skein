@@ -66,7 +66,7 @@ Render `arg-spec` as JSON-safe help data.
 
   Includes arguments, types, docs, required flags, subcommands, and payload-parse
   declarations for the `help <op>` projection.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/cli/alpha.clj#L121-L133">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/cli/alpha.clj#L122-L134">Source</a></sub></p>
 
 ## <a name="skein.api.cli.alpha/parse">`parse`</a>
 ``` clojure
@@ -85,7 +85,7 @@ Parse `argv` against `arg-spec`, resolving payload references from `payloads`.
   malformed key=value tokens, trailing unconsumed tokens, missing/unknown
   subcommands, dangling or unused payload references, and malformed
   :json/:jsonl payloads.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/cli/alpha.clj#L84-L119">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/cli/alpha.clj#L85-L120">Source</a></sub></p>
 
 ## <a name="skein.api.cli.alpha/reserved-subcommand-names">`reserved-subcommand-names`</a>
 
@@ -110,4 +110,4 @@ Validate any parser arg-spec shape, returning it unchanged on success.
   arg-specs additionally enforce the one-level subcommand contract and reserved
   `:subcommand` result key. Throws structured `ex-info` on malformed specs so
   op registration fails before help or invocation can drift from the contract.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/cli/alpha.clj#L65-L82">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/cli/alpha.clj#L65-L83">Source</a></sub></p>

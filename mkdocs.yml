@@ -79,6 +79,7 @@ nav:
       - skein.api.relations.alpha: docs/api/relations.api.md
       - skein.api.return-shape.alpha: docs/api/return-shape.api.md
       - skein.api.runtime.alpha: docs/api/runtime.api.md
+      - skein.api.runtime.glossary.alpha: docs/api/runtime-glossary.api.md
       - skein.api.scheduler.alpha: docs/api/scheduler.api.md
       - skein.api.spool.alpha: docs/api/spool.api.md
       - skein.api.vocab.alpha: docs/api/vocab.api.md

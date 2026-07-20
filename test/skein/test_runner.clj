@@ -20,6 +20,8 @@
    'skein.api.return-shape.alpha-test
    'skein.api.format.alpha-test
    ;; drives its own unpublished runtime per test — no JVM-global state.
+   'skein.api.runtime.glossary.alpha-test
+   ;; drives its own unpublished runtime per test — no JVM-global state.
    'skein.api.batch.alpha-test
    'skein.api.graph.alpha-test
    ;; drives its own unpublished runtime per test — no JVM-global state.

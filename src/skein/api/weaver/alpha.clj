@@ -29,6 +29,7 @@
             [next.jdbc :as jdbc]
             [skein.api.cli.alpha :as cli]
             [skein.api.return-shape.alpha :as return-shape]
+            [skein.api.runtime.glossary.alpha :as glossary]
             [skein.api.weaver.internal.op-entry :as op-entry]
             [skein.core.db :as db]
             [skein.core.query :as query]
@@ -42,7 +43,7 @@
 
 (declare apply-edges! reject-unknown-update-keys! supersede-context
          require-archive-result! require-lean-result!
-         validated-op-entry operation-label)
+         validated-op-entry check-op-glossary-refs! operation-label)
 
 ;; A runtime is an opaque, non-nil handle; callers select it and pass it first.
 (s/def ::runtime some?)
@@ -387,6 +388,7 @@
    (register-op! runtime op-name nil fn-sym))
   ([runtime op-name opts fn-sym]
    (let [entry (validated-op-entry op-name opts fn-sym)]
+     (check-op-glossary-refs! runtime entry)
      (swap! (op-registry runtime)
             (fn [registry]
               (when-let [existing (get registry (:name entry))]
@@ -412,6 +414,7 @@
    (replace-op! runtime op-name nil fn-sym))
   ([runtime op-name opts fn-sym]
    (let [entry (validated-op-entry op-name opts fn-sym)]
+     (check-op-glossary-refs! runtime entry)
      (swap! (op-registry runtime)
             (fn [registry]
               (when-not (contains? registry (:name entry))
@@ -606,6 +609,32 @@
     (when (contains? opts :returns)
       (validate-op-returns! op-name (:arg-spec opts) stream? (:returns opts)))
     (op-entry/assemble op-name opts fn-sym)))
+
+(defn- arg-spec-failure-modes
+  "Return every `failure-modes` outcome name referenced across `arg-spec`'s
+  annotation sub-maps — the flat/root node plus each declared subcommand's node."
+  [arg-spec]
+  (when (map? arg-spec)
+    (into (vec (get-in arg-spec [:annotations :failure-modes]))
+          (mapcat (fn [[_ nested]] (get-in nested [:annotations :failure-modes])))
+          (:subcommands arg-spec))))
+
+(defn- check-op-glossary-refs!
+  "Fail loudly unless every `failure-modes` name in `entry`'s arg-spec references
+  an already-registered glossary outcome.
+
+  The unconditional glossary-ref existence check (DELTA-Dtf-003.CC2), run at
+  registration because that is where the runtime glossary is in hand. It enforces
+  the load-order contract: an op's outcomes must be registered — from the owning
+  spool's `install!` or trusted config — before the op that references them."
+  [runtime entry]
+  (doseq [outcome-name (arg-spec-failure-modes (:arg-spec entry))]
+    (when-not (glossary/outcome-registered? runtime outcome-name)
+      (throw (ex-info "Operation failure-mode references an unregistered glossary outcome"
+                      {:operation (:name entry)
+                       :failure-mode outcome-name
+                       :available-outcomes (mapv :name
+                                                 (glossary/glossary-outcomes runtime))})))))
 
 ;; -- op dispatch helpers --
 
