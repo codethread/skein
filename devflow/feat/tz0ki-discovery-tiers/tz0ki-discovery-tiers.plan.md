@@ -254,3 +254,17 @@ wording adjustment (no `@N` bump); `docs/reference.md` Discovery-tiers and
 ## PLAN-Dtf-001.P9 Developer Notes
 
 Append notes here. Do not rewrite earlier notes.
+
+### PLAN-Dtf-001.DN1 Task 1: help envelope + node projection — 2026-07-21
+
+- Implemented by opus (run z1a96), commit `9f364f1`. `src/skein/core/weaver/help.clj` reworked to the
+  `{schema-version, operation, source, glossary, node}` envelope + uniform fractal node; per-verb
+  slicing; versioned no-arg catalog `{schema-version, ops[]}`; `check-op-return!` covers all help
+  leaves. `source` nil / `glossary` {} placeholders per contract (Tasks 3/4 fill them).
+- The frozen `test/skein/surface_baseline.edn` was regenerated to the new envelope (large but expected
+  diff); `config_test`/`peers_test`/`roster_test`/`batteries_test` help-shape consumers and the smoke
+  CLI help assertions updated. Verified: full flocked suite 757 tests 0-fail (worker), plus coordinator
+  re-run of weaver-test/smoke/go-test/fmt-check-lint-reflect-check-docs-check all green; terra-med PASS
+  (run fddjh).
+- Note for later slices: the help arg-spec gained an optional `:verb` positional for slicing; the
+  `<op> help` alias now returns the same envelope (Task 5 changes its grammar).

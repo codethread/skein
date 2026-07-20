@@ -2,12 +2,12 @@ tasks:
   - id: 1
     description: Help envelope + fractal node projection
     task_file: tasks/001-help-envelope-node-projection.md
-    status: in_progress
+    status: complete
     blocked_by: []
   - id: 2
     description: Glossary registry + annotation validation + existence check
     task_file: tasks/002-glossary-registry-and-validation.md
-    status: pending
+    status: in_progress
     blocked_by: [1]
   - id: 3
     description: Help glossary-closure integration
