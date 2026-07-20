@@ -76,7 +76,7 @@ jobs:
   cli-go-test:
     name: CLI Go tests
     needs: changes
-    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.go == 'true' || needs.changes.outputs.shared == 'true' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.clojure == 'true' || needs.changes.outputs.go == 'true' || needs.changes.outputs.shared == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -89,6 +89,18 @@ jobs:
         with:
           go-version-file: cli/go.mod
           cache-dependency-path: cli/go.sum
+      - uses: DeLaGuardo/setup-clojure@13.4
+        with:
+          cli: latest
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.m2/repository
+            ~/.gitlibs
+            ~/.deps.clj
+          key: clojure-deps-${{ runner.os }}-${{ hashFiles('deps.edn') }}
+          restore-keys: |
+            clojure-deps-${{ runner.os }}-
       - run: go test ./...
         working-directory: cli
 
