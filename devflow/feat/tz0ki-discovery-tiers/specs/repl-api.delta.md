@@ -37,7 +37,8 @@ and authoring mechanics; the wire contract is DELTA-Dtf-001 and the runtime mach
   registry that could drift from arg-spec names. `use-when`/`notes` are string arrays; `failure-modes`
   is an array of glossary outcome **names**. Validation splits across two seams, both at
   **registration**: the arg-spec **structural validator** (`skein.api.cli`, SPEC-003.C64/C63d)
-  validates the sub-map's shape — closed keys, correct types — with no runtime dependency; the
+  validates the sub-map's shape — closed keys, arrays of **non-blank** strings (consistent with the
+  non-blank `:about`/`:prime` rule, DELTA-Dtf-002.CC4) — with no runtime dependency; the
   **unconditional glossary-ref existence** check runs at `register-op!`/`replace-op!` (SPEC-004.C63d),
   which has the runtime glossary, and every `failure-modes` name must reference an already-registered
   glossary outcome (DELTA-Dtf-002.CC5/CC7), failing loudly if absent. This existence rule imposes a

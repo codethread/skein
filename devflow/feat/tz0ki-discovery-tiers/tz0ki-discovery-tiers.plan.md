@@ -268,3 +268,15 @@ Append notes here. Do not rewrite earlier notes.
   (run fddjh).
 - Note for later slices: the help arg-spec gained an optional `:verb` positional for slicing; the
   `<op> help` alias now returns the same envelope (Task 5 changes its grammar).
+
+### PLAN-Dtf-001.DN2 Task 2: glossary registry + validation — 2026-07-21
+
+- Implemented by opus (run sfn20), commit `4f16850`. Net-new blessed `skein.api.runtime.glossary.alpha`
+  (reload-cleared; register/replace/introspect; `outcome-registered?` predicate); annotation structural
+  validation in `skein.api.cli`; unconditional glossary-ref existence check at `register-op!`/
+  `replace-op!`. Authored annotations live under the `:annotations` key on each arg-spec node
+  (`{:use-when [] :notes [] :failure-modes []}`) — the key Task 3's help projection reads.
+- terra-med review (run bwrdx) resolved (see card note gewes / DECISION LOG 8): two minor post-sign-off
+  delta reconciliations (CC5 replace-is-trusted-override; CC2 non-blank strings) and one scope seam —
+  **raw-envelope root `:annotations` op-metadata is now owned by Task 4 (TASK-Dtf-004.MI1a)**. No Task 2
+  code change. Flag the two delta reconciliations for the final sol-med sign-off.

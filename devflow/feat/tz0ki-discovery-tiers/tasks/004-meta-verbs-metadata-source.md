@@ -15,6 +15,14 @@ Task 2 — serialized) and `help.clj`/meta projection (serialized after Task 3).
 - **TASK-Dtf-004.MI1:** Extend SPEC-004.C63a's accepted op-metadata key set (`op_entry.clj:34`) with
   optional `:about` and `:prime`, each a **non-blank prose string** validated at registration
   (blank/non-string fails loudly). `:arg-spec` stays optional for raw-envelope ops. Per DELTA-Dtf-002.CC4.
+- **TASK-Dtf-004.MI1a (raw-envelope root annotations — carried over from Task 2 review):** Add an
+  optional `:annotations` op-metadata key (closed `{:use-when [] :notes [] :failure-modes []}` sub-map,
+  same structural validation as Task 2's arg-spec annotations) so **raw-envelope ops that declare no
+  arg-spec** have the **root annotation surface** DELTA-Dtf-003.CC2 requires. Extend Task 2's
+  `register-op!`/`replace-op!` glossary-ref existence check to also gather `failure-modes` from this
+  root `:annotations` metadata, and fold it into the help root node's `use-when`/`notes`/
+  `failure-modes` at projection. Ops that declare an arg-spec carry annotations on the arg-spec node
+  (Task 2), not here.
 - **TASK-Dtf-004.MI2:** Install builtin read-class ops `about` and `prime` beside `help`
   (SPEC-004.C63c): each takes one op-name positional and returns `{about|prime, source}`
   (DELTA-Dtf-001.CC7). Missing declared prose → loud `discovery/unavailable` (TEN-003). Arity-1: a

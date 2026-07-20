@@ -81,9 +81,12 @@ wire-compat key.
   referenced-term **closure** for the returned subtree (every outcome any node references, resolved
   once to its definition). Defining once and referencing by name is what keeps lifecycle-failure
   prose from drifting across verbs; a recursive renderer receives the envelope glossary as context
-  without per-level branching. Discipline: outcome names are **qualified and stable**; a name
-  collision between registrants fails loudly naming both; changed semantics require a **new name**,
-  never a redefinition (TEN-000@1 no-migration alpha). The glossary is a **distinct layer** from the
+  without per-level branching. Discipline: outcome names are **qualified and stable**;
+  `register-glossary-outcome!` fails loudly on any name collision naming both registrants, so a name
+  is never **silently** redefined (the anti-drift guarantee). A deliberate change goes through the
+  trusted `replace-glossary-outcome!` override (CC7, mirroring `replace-op!`, SPEC-004.C63a; TEN-002)
+  or, preferably, a new qualified name — authors reserve new names for genuinely different semantics.
+  The glossary is a **distinct layer** from the
   `vocab-registry` (`skein.api.vocab.alpha`), a runtime-owned registry of stored-attribute
   namespace/edge-type vocabularies; the glossary does not reuse vocab machinery. **v1 scopes the
   glossary to failure outcomes only** — the sole reachable reference path (`failure-modes`);
