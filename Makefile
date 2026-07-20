@@ -1,4 +1,4 @@
-.PHONY: build install dash api-docs docs-site docs-serve docs-check fmt fmt-check lint lint-go lint-clj lint-splint lint-conventions reflect-check deps-report security-report test-warm test-warm-stop spool-suite-gate
+.PHONY: build install dash api-docs docs-site docs-serve docs-check fmt fmt-check install-gofumpt lint lint-go install-golangci-lint lint-clj lint-splint lint-conventions reflect-check deps-report security-report install-govulncheck test-warm test-warm-stop spool-suite-gate
 
 GO_CLI := ./cli/cmd/strand
 MILL_CLI := ./cli/cmd/mill
@@ -77,11 +77,14 @@ docs-serve:
 
 fmt:
 	clojure -M:format/fix
-	cd cli && go run mvdan.cc/gofumpt@$(GOFUMPT_VERSION) -w .
+	cd cli && $${GOFUMPT:-go run mvdan.cc/gofumpt@$(GOFUMPT_VERSION)} -w .
 
 fmt-check:
 	clojure -M:format
-	cd cli && test -z "$$(go run mvdan.cc/gofumpt@$(GOFUMPT_VERSION) -l .)"
+	cd cli && out="$$($${GOFUMPT:-go run mvdan.cc/gofumpt@$(GOFUMPT_VERSION)} -l .)" && test -z "$$out"
+
+install-gofumpt:
+	cd cli && go install mvdan.cc/gofumpt@$(GOFUMPT_VERSION)
 
 lint: lint-clj lint-splint lint-conventions lint-go
 
@@ -102,7 +105,10 @@ lint-conventions:
 	clojure -M:lint/conventions
 
 lint-go:
-	cd cli && go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION) run --config ../.golangci.yml ./...
+	cd cli && $${GOLANGCI_LINT:-go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)} run --config ../.golangci.yml ./...
+
+install-golangci-lint:
+	cd cli && go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
 
 reflect-check:
 	clojure -M:reflect-check
@@ -115,7 +121,10 @@ deps-report:
 
 security-report:
 	-clojure -M:security/clj-watson
-	-cd cli && go run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
+	-cd cli && $${GOVULNCHECK:-go run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION)} ./...
+
+install-govulncheck:
+	cd cli && go install golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION)
 
 # Per-worktree warm test loop: probe-or-boot the worktree's warm REPL and run the
 # NS-named namespaces through it. Iteration only — never a Done-when gate; the

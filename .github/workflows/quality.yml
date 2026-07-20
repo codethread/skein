@@ -143,7 +143,14 @@ jobs:
           key: clojure-deps-${{ runner.os }}-${{ hashFiles('deps.edn') }}
           restore-keys: |
             clojure-deps-${{ runner.os }}-
-      - run: make fmt-check
+      - id: gofumpt
+        uses: actions/cache@v4
+        with:
+          path: ~/go/bin/gofumpt
+          key: gofumpt-${{ runner.os }}-${{ hashFiles('Makefile') }}
+      - if: steps.gofumpt.outputs.cache-hit != 'true'
+        run: make install-gofumpt
+      - run: PATH="$HOME/go/bin:$PATH" GOFUMPT=gofumpt make fmt-check
 
   clj-kondo:
     name: clj-kondo
@@ -200,12 +207,14 @@ jobs:
         with:
           go-version-file: cli/go.mod
           cache-dependency-path: cli/go.sum
-      - uses: golangci/golangci-lint-action@v9
+      - id: golangci-lint
+        uses: actions/cache@v4
         with:
-          version: v2.1.6
-          install-mode: goinstall
-          working-directory: cli
-          args: --config ../.golangci.yml ./...
+          path: ~/go/bin/golangci-lint
+          key: golangci-lint-${{ runner.os }}-${{ hashFiles('Makefile') }}
+      - if: steps.golangci-lint.outputs.cache-hit != 'true'
+        run: make install-golangci-lint
+      - run: PATH="$HOME/go/bin:$PATH" GOLANGCI_LINT=golangci-lint make lint-go
 
   reflection:
     name: Reflection warnings
@@ -281,6 +290,13 @@ jobs:
           key: clojure-deps-${{ runner.os }}-${{ hashFiles('deps.edn') }}
           restore-keys: |
             clojure-deps-${{ runner.os }}-
-      - run: make security-report
+      - id: govulncheck
+        uses: actions/cache@v4
+        with:
+          path: ~/go/bin/govulncheck
+          key: govulncheck-${{ runner.os }}-${{ hashFiles('Makefile') }}
+      - if: steps.govulncheck.outputs.cache-hit != 'true'
+        run: make install-govulncheck
+      - run: PATH="$HOME/go/bin:$PATH" GOVULNCHECK=govulncheck make security-report
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
