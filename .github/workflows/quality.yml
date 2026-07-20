@@ -7,8 +7,44 @@ on:
   workflow_dispatch:
 
 jobs:
+  changes:
+    name: Changed paths
+    runs-on: ubuntu-latest
+    outputs:
+      clojure: ${{ steps.filter.outputs.clojure }}
+      go: ${{ steps.filter.outputs.go }}
+      shared: ${{ steps.filter.outputs.shared }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: filter
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            clojure:
+              - 'src/**'
+              - 'test/**'
+              - 'dev/**'
+              - 'spools/**'
+              - '.skein/**'
+              - 'deps.edn'
+              - '.clj-kondo/**'
+              - '.cljfmt.edn'
+              - '.splint.edn'
+            go:
+              - 'cli/**'
+              - 'go.work'
+              - '.golangci.yml'
+            shared:
+              - '.github/workflows/**'
+              - 'Makefile'
+              - 'scripts/quality/**'
+
   clojure-test:
     name: Clojure test suite
+    needs: changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.clojure == 'true' || needs.changes.outputs.shared == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -20,15 +56,6 @@ jobs:
       - uses: DeLaGuardo/setup-clojure@13.4
         with:
           cli: latest
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.m2/repository
-            ~/.gitlibs
-            ~/.deps.clj
-          key: clojure-${{ runner.os }}-${{ hashFiles('deps.edn') }}
-          restore-keys: |
-            clojure-${{ runner.os }}-
       # Hosted runners have ~2 cores, so the suite's fixed cross-thread poll
       # deadlines run under far more fork/CPU pressure than a dev machine.
       # Widen every await budget through the single test-support knob instead
@@ -39,6 +66,8 @@ jobs:
 
   cli-go-test:
     name: CLI Go tests
+    needs: changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.clojure == 'true' || needs.changes.outputs.go == 'true' || needs.changes.outputs.shared == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -54,20 +83,13 @@ jobs:
       - uses: DeLaGuardo/setup-clojure@13.4
         with:
           cli: latest
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.m2/repository
-            ~/.gitlibs
-            ~/.deps.clj
-          key: go-clojure-${{ runner.os }}-${{ hashFiles('deps.edn') }}
-          restore-keys: |
-            go-clojure-${{ runner.os }}-
       - run: go test ./...
         working-directory: cli
 
   smoke-test:
     name: Smoke test
+    needs: changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.clojure == 'true' || needs.changes.outputs.go == 'true' || needs.changes.outputs.shared == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -83,19 +105,12 @@ jobs:
       - uses: DeLaGuardo/setup-clojure@13.4
         with:
           cli: latest
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.m2/repository
-            ~/.gitlibs
-            ~/.deps.clj
-          key: smoke-clojure-${{ runner.os }}-${{ hashFiles('deps.edn') }}
-          restore-keys: |
-            smoke-clojure-${{ runner.os }}-
       - run: clojure -M:smoke
 
   spool-suites:
     name: Spool suites
+    needs: changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.clojure == 'true' || needs.changes.outputs.shared == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -107,19 +122,12 @@ jobs:
       - uses: DeLaGuardo/setup-clojure@13.4
         with:
           cli: latest
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.m2/repository
-            ~/.gitlibs
-            ~/.deps.clj
-          key: spool-suites-clojure-${{ runner.os }}-${{ hashFiles('deps.edn') }}
-          restore-keys: |
-            spool-suites-clojure-${{ runner.os }}-
       - run: make spool-suite-gate
 
-  format-check:
-    name: Format check
+  clojure-format:
+    name: Clojure format check
+    needs: changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.clojure == 'true' || needs.changes.outputs.shared == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -127,17 +135,38 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
+      - uses: DeLaGuardo/setup-clojure@13.4
+        with:
+          cli: latest
+      - run: make fmt-check-clj
+
+  go-format:
+    name: Go format check
+    needs: changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.go == 'true' || needs.changes.outputs.shared == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: cli/go.mod
           cache-dependency-path: cli/go.sum
-      - uses: DeLaGuardo/setup-clojure@13.4
-        with:
-          cli: latest
-      - run: make fmt-check
+      - run: make fmt-check-go
+
+  format-check:
+    name: Format check
+    needs: [clojure-format, go-format]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          test "${{ needs.clojure-format.result }}" != failure
+          test "${{ needs.go-format.result }}" != failure
 
   clj-kondo:
     name: clj-kondo
+    needs: changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.clojure == 'true' || needs.changes.outputs.shared == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -152,6 +181,8 @@ jobs:
 
   splint:
     name: splint
+    needs: changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.clojure == 'true' || needs.changes.outputs.shared == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -164,8 +195,26 @@ jobs:
           cli: latest
       - run: make lint-splint
 
+  lint-conventions:
+    name: Lint conventions
+    needs: changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.clojure == 'true' || needs.changes.outputs.shared == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: DeLaGuardo/setup-clojure@13.4
+        with:
+          cli: latest
+      - run: make lint-conventions
+
   golangci-lint:
     name: golangci-lint
+    needs: changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.go == 'true' || needs.changes.outputs.shared == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -175,8 +224,22 @@ jobs:
           cache-dependency-path: cli/go.sum
       - run: make lint-go
 
+  lint:
+    name: lint
+    needs: [clj-kondo, splint, lint-conventions, golangci-lint]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          test "${{ needs.clj-kondo.result }}" != failure
+          test "${{ needs.splint.result }}" != failure
+          test "${{ needs.lint-conventions.result }}" != failure
+          test "${{ needs.golangci-lint.result }}" != failure
+
   reflection:
     name: Reflection warnings
+    needs: changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.clojure == 'true' || needs.changes.outputs.shared == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -204,8 +267,10 @@ jobs:
       - uses: astral-sh/setup-uv@v8.2.0
       - run: make docs-check
 
-  security-report:
-    name: Security report
+  clojure-security-report:
+    name: Clojure security report
+    needs: changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.clojure == 'true' || needs.changes.outputs.shared == 'true' }}
     runs-on: ubuntu-latest
     continue-on-error: true
     timeout-minutes: 15
@@ -215,13 +280,32 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
+      - uses: DeLaGuardo/setup-clojure@13.4
+        with:
+          cli: latest
+      - run: make security-report-clj
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  go-security-report:
+    name: Go security report
+    needs: changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.go == 'true' || needs.changes.outputs.shared == 'true' }}
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: cli/go.mod
           cache-dependency-path: cli/go.sum
-      - uses: DeLaGuardo/setup-clojure@13.4
-        with:
-          cli: latest
-      - run: make security-report
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - run: make security-report-go
+
+  security-report:
+    name: Security report
+    needs: [clojure-security-report, go-security-report]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: true

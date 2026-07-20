@@ -1,4 +1,4 @@
-.PHONY: build install dash api-docs docs-site docs-serve docs-check fmt fmt-check lint lint-go lint-clj lint-splint lint-conventions reflect-check deps-report security-report test-warm test-warm-stop spool-suite-gate
+.PHONY: build install dash api-docs docs-site docs-serve docs-check fmt fmt-check fmt-check-clj fmt-check-go lint lint-go lint-clj lint-splint lint-conventions reflect-check deps-report security-report security-report-clj security-report-go test-warm test-warm-stop spool-suite-gate
 
 GO_CLI := ./cli/cmd/strand
 MILL_CLI := ./cli/cmd/mill
@@ -79,9 +79,13 @@ fmt:
 	clojure -M:format/fix
 	cd cli && go run mvdan.cc/gofumpt@$(GOFUMPT_VERSION) -w .
 
-fmt-check:
+fmt-check: fmt-check-clj fmt-check-go
+
+fmt-check-clj:
 	clojure -M:format
-	cd cli && test -z "$$(go run mvdan.cc/gofumpt@$(GOFUMPT_VERSION) -l .)"
+
+fmt-check-go:
+	cd cli && out="$$(go run mvdan.cc/gofumpt@$(GOFUMPT_VERSION) -l .)" && test -z "$$out"
 
 lint: lint-clj lint-splint lint-conventions lint-go
 
@@ -113,8 +117,12 @@ deps-report:
 	# local-only deep NVD scan; needs CLJ_WATSON_NVD_API_KEY exported
 	-clojure -M:security/clj-watson-nvd
 
-security-report:
+security-report: security-report-clj security-report-go
+
+security-report-clj:
 	-clojure -M:security/clj-watson
+
+security-report-go:
 	-cd cli && go run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
 
 # Per-worktree warm test loop: probe-or-boot the worktree's warm REPL and run the
