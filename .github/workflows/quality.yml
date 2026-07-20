@@ -26,9 +26,9 @@ jobs:
             ~/.m2/repository
             ~/.gitlibs
             ~/.deps.clj
-          key: clojure-${{ runner.os }}-${{ hashFiles('deps.edn') }}
+          key: clojure-deps-${{ runner.os }}-${{ hashFiles('deps.edn') }}
           restore-keys: |
-            clojure-${{ runner.os }}-
+            clojure-deps-${{ runner.os }}-
       # Hosted runners have ~2 cores, so the suite's fixed cross-thread poll
       # deadlines run under far more fork/CPU pressure than a dev machine.
       # Widen every await budget through the single test-support knob instead
@@ -60,9 +60,9 @@ jobs:
             ~/.m2/repository
             ~/.gitlibs
             ~/.deps.clj
-          key: go-clojure-${{ runner.os }}-${{ hashFiles('deps.edn') }}
+          key: clojure-deps-${{ runner.os }}-${{ hashFiles('deps.edn') }}
           restore-keys: |
-            go-clojure-${{ runner.os }}-
+            clojure-deps-${{ runner.os }}-
       - run: go test ./...
         working-directory: cli
 
@@ -89,9 +89,9 @@ jobs:
             ~/.m2/repository
             ~/.gitlibs
             ~/.deps.clj
-          key: smoke-clojure-${{ runner.os }}-${{ hashFiles('deps.edn') }}
+          key: clojure-deps-${{ runner.os }}-${{ hashFiles('deps.edn') }}
           restore-keys: |
-            smoke-clojure-${{ runner.os }}-
+            clojure-deps-${{ runner.os }}-
       - run: clojure -M:smoke
 
   spool-suites:
@@ -113,9 +113,9 @@ jobs:
             ~/.m2/repository
             ~/.gitlibs
             ~/.deps.clj
-          key: spool-suites-clojure-${{ runner.os }}-${{ hashFiles('deps.edn') }}
+          key: clojure-deps-${{ runner.os }}-${{ hashFiles('deps.edn') }}
           restore-keys: |
-            spool-suites-clojure-${{ runner.os }}-
+            clojure-deps-${{ runner.os }}-
       - run: make spool-suite-gate
 
   format-check:
@@ -134,6 +134,15 @@ jobs:
       - uses: DeLaGuardo/setup-clojure@13.4
         with:
           cli: latest
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.m2/repository
+            ~/.gitlibs
+            ~/.deps.clj
+          key: clojure-deps-${{ runner.os }}-${{ hashFiles('deps.edn') }}
+          restore-keys: |
+            clojure-deps-${{ runner.os }}-
       - run: make fmt-check
 
   clj-kondo:
@@ -148,6 +157,15 @@ jobs:
       - uses: DeLaGuardo/setup-clojure@13.4
         with:
           cli: latest
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.m2/repository
+            ~/.gitlibs
+            ~/.deps.clj
+          key: clojure-deps-${{ runner.os }}-${{ hashFiles('deps.edn') }}
+          restore-keys: |
+            clojure-deps-${{ runner.os }}-
       - run: make lint-clj
 
   splint:
@@ -162,6 +180,15 @@ jobs:
       - uses: DeLaGuardo/setup-clojure@13.4
         with:
           cli: latest
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.m2/repository
+            ~/.gitlibs
+            ~/.deps.clj
+          key: clojure-deps-${{ runner.os }}-${{ hashFiles('deps.edn') }}
+          restore-keys: |
+            clojure-deps-${{ runner.os }}-
       - run: make lint-splint
 
   golangci-lint:
@@ -187,6 +214,15 @@ jobs:
       - uses: DeLaGuardo/setup-clojure@13.4
         with:
           cli: latest
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.m2/repository
+            ~/.gitlibs
+            ~/.deps.clj
+          key: clojure-deps-${{ runner.os }}-${{ hashFiles('deps.edn') }}
+          restore-keys: |
+            clojure-deps-${{ runner.os }}-
       - run: make reflect-check
 
   docs-check:
@@ -202,6 +238,15 @@ jobs:
         with:
           cli: latest
       - uses: astral-sh/setup-uv@v8.2.0
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.m2/repository
+            ~/.gitlibs
+            ~/.deps.clj
+          key: clojure-deps-${{ runner.os }}-${{ hashFiles('deps.edn') }}
+          restore-keys: |
+            clojure-deps-${{ runner.os }}-
       - run: make docs-check
 
   security-report:
@@ -222,6 +267,15 @@ jobs:
       - uses: DeLaGuardo/setup-clojure@13.4
         with:
           cli: latest
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.m2/repository
+            ~/.gitlibs
+            ~/.deps.clj
+          key: clojure-deps-${{ runner.os }}-${{ hashFiles('deps.edn') }}
+          restore-keys: |
+            clojure-deps-${{ runner.os }}-
       - run: make security-report
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
