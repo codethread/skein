@@ -200,7 +200,11 @@ jobs:
         with:
           go-version-file: cli/go.mod
           cache-dependency-path: cli/go.sum
-      - run: make lint-go
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.1.6
+          working-directory: cli
+          args: --config ../.golangci.yml ./...
 
   reflection:
     name: Reflection warnings
