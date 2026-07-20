@@ -219,7 +219,7 @@ export function GraphPane({ g, cols, termRows, label }: { g: GraphState; cols: n
       </Box>
       <Box marginTop={1}>
         <Text dimColor>
-          {clip(`[${label}] ↑↓/jk scroll · ⌃d/⌃u page · <> pan · g/G ends · esc back · r refresh · ⇥ tab · q quit${scrollInfo}`, cols)}
+          {clip(`[${label}] ↑↓/jk scroll · ⌃d/⌃u page · <> pan · g/G ends · y copy · esc back · r refresh · ⇥ tab · q quit${scrollInfo}`, cols)}
         </Text>
       </Box>
     </Box>
