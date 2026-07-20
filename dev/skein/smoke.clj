@@ -299,10 +299,11 @@
         ;; Live op discovery through the core help op.
         (let [help-list (parse-json (run-strand-config! workspace "help"))
               help-add (parse-json (run-strand-config! workspace "help" "add"))]
-          (assert (some #(= "add" (:name %)) (:ops help-list)) "strand help lists the add batteries op")
-          (assert (some #(= "test-stream" (:name %)) (:ops help-list)) "strand help lists the fixture stream op")
-          (assert= "add" (:name help-add) "strand help <op> returns the op detail")
-          (assert (contains? help-add :arg-spec) "strand help <op> renders the op arg-spec"))
+          (assert (= 1 (:schema-version help-list)) "strand help catalog carries the versioned schema")
+          (assert (some #(= "add" (get-in % [:operation :name])) (:ops help-list)) "strand help lists the add batteries op")
+          (assert (some #(= "test-stream" (get-in % [:operation :name])) (:ops help-list)) "strand help lists the fixture stream op")
+          (assert= "add" (get-in help-add [:operation :name]) "strand help <op> returns the op detail envelope")
+          (assert (= "add" (get-in help-add [:node :name])) "strand help <op> projects the op's fractal node"))
         ;; Unknown ops fail non-zero with the registry's available-names domain error.
         (assert-contains (run-strand-config-fails! workspace "no-such-op")
                          "Operation not found"

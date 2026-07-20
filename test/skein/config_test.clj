@@ -285,8 +285,9 @@
 (deftest converted-config-surface-is-byte-identical-to-pre-refactor
   ;; TASK-Srm-009.MI1 acceptance gate. surface_baseline.edn is the config-owned
   ;; op-help + named-query surface captured via capture-config-surface; it was
-  ;; snapshotted pre-defquery/defop-conversion (base ad5d2eb) and re-captured
-  ;; when declared :returns joined the op-help surface (PLAN-Dcr-001).
+  ;; snapshotted pre-defquery/defop-conversion (base ad5d2eb), re-captured
+  ;; when declared :returns joined the op-help surface (PLAN-Dcr-001), and
+  ;; re-captured again for the canonical help envelope (TASK-Dtf-001).
   ;; Asserting the current converted config reproduces it byte-for-byte proves the
   ;; refactor changed no generated `help <op>` and no registered query definition;
   ;; the devflow-conventions payload is pinned by the test above. The golden is a
@@ -656,7 +657,7 @@
   (with-config-runtime
     (fn [_rt]
       (letfn [(positionals [op-name]
-                (->> (get-in (op! "help" [op-name]) [:arg-spec :positionals])
+                (->> (get-in (op! "help" [op-name]) [:node :invocation :positionals])
                      (mapv (juxt :name :required :variadic))))]
         (is (= [["feature" true false] ["worktree-check" false false]]
                (positionals "devflow-start")))
@@ -674,7 +675,7 @@
         (is (= [["feature" true false]] (positionals "devflow-squash-run")))
         (is (= [["feature" true false]] (positionals "devflow-status")))
         (is (= "Start the devflow lifecycle for a feature."
-               (get-in (op! "help" ["devflow-start"]) [:arg-spec :doc])))))))
+               (get-in (op! "help" ["devflow-start"]) [:node :doc])))))))
 
 (defn- shell-gate-complete!
   "Close the ready :shell land gate for feature the way the shell executor
@@ -1003,20 +1004,20 @@
   (with-config-runtime
     (fn [_rt]
       (let [help (op! "help" ["land"])
-            subs (get-in help [:arg-spec :subcommands])
+            subs (get-in help [:node :children])
             by-name (into {} (map (juxt :name identity)) subs)]
         (is (= "land about" (:operation (op! "land" ["about"]))))
         (is (= #{"about" "start" "next" "complete" "choose" "status" "break-lock"}
                (set (map :name subs))))
-        (is (str/starts-with? (get-in help [:arg-spec :doc])
+        (is (str/starts-with? (get-in help [:node :doc])
                               "Drive the coordinator landing workflow"))
         ;; flags render sorted by key: branch, card, worktree
         (is (= [["branch" true] ["card" false] ["worktree" true]]
-               (mapv (juxt :name :required) (get-in by-name ["start" :flags]))))
+               (mapv (juxt :name :required) (get-in by-name ["start" :invocation :flags]))))
         (is (= [["feature" true false]]
-               (mapv (juxt :name :required :variadic) (get-in by-name ["start" :positionals]))))
+               (mapv (juxt :name :required :variadic) (get-in by-name ["start" :invocation :positionals]))))
         (is (= [["feature" true false] ["choice" true false] ["tail" false true]]
-               (mapv (juxt :name :required :variadic) (get-in by-name ["choose" :positionals])))))
+               (mapv (juxt :name :required :variadic) (get-in by-name ["choose" :invocation :positionals])))))
       ;; required flags and positionals fail loudly at parse
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Missing required flag --branch"
                             (op! "land" ["start" "no-flags"])))

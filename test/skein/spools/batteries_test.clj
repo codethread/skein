@@ -788,12 +788,13 @@
           (is (string? (get explained "summary")))))
       (testing "query help renders declared subcommands"
         (let [detail (weaver/op! rt 'help ["query"])]
-          (is (= ["explain" "list"] (mapv :name (get-in detail [:arg-spec :subcommands]))))
+          (is (= ["explain" "list"] (mapv :name (get-in detail [:node :children]))))
           (is (= [{:name "name" :type "string" :required true
                    :variadic false :parse nil :doc "Query name."}]
-                 (->> (get-in detail [:arg-spec :subcommands])
+                 (->> (get-in detail [:node :children])
                       (filter #(= "explain" (:name %)))
                       first
+                      :invocation
                       :positionals)))))
       (testing "unknown query subcommand fails in the parser with available names"
         (let [e (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unknown subcommand"
@@ -918,4 +919,4 @@
                                 (weaver/op! rt 'vocab ["--kind" "bogus"]))))
         (testing "vocab help renders the generated --kind arg-spec"
           (let [detail (weaver/op! rt 'help ["vocab"])]
-            (is (contains? (set (map :name (get-in detail [:arg-spec :flags]))) "kind"))))))))
+            (is (contains? (set (map :name (get-in detail [:node :invocation :flags]))) "kind"))))))))

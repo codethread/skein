@@ -1667,10 +1667,10 @@
              (weaver/op! rt 'custom ["--flag" "value"])))
       (weaver/register-op! rt 'undocumented 'skein.weaver-test/test-op)
       (let [help (weaver/op! rt 'help [])]
-        (is (some #(= "help" (:name %)) (:ops help)))
-        ;; A docless registration is legal, so the declared help return shape
-        ;; must accept a summary item that carries no :doc.
-        (is (some #(= "undocumented" (:name %)) (:ops help)))
+        (is (some #(= "help" (get-in % [:operation :name])) (:ops help)))
+        ;; A docless registration is legal; the summary node projects an empty
+        ;; doc, and the declared help return shape accepts the catalog entry.
+        (is (some #(= "undocumented" (get-in % [:operation :name])) (:ops help)))
         (t/check-op-return! rt 'help help))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo
                             #"Operation not found"
@@ -2040,7 +2040,9 @@
           (doseq [token ["help" "-h" "--help"]]
             (let [actual (weaver/op! rt 'subbed [token])]
               (is (= expected actual))
-              (is (not (contains? actual :operation)))))))
+              ;; The alias returns the help envelope, not the routed handler's
+              ;; context (which would carry :op/argv).
+              (is (not (contains? actual :op/argv)))))))
       (testing "unknown subcommands fail during parse before the handler runs"
         (weaver/register-op! rt 'subbed-side-effect
                              {:arg-spec {:op "subbed-side-effect"
@@ -2109,51 +2111,98 @@
                                                :result [:nullable :boolean]}}}
                            'skein.weaver-test/test-op)
       (weaver/register-op! rt 'raw "Raw op" 'skein.weaver-test/context-echo-op)
-      (testing "no argv lists every op summary sorted by name"
-        (let [{:keys [ops]} (weaver/op! rt 'help [])]
-          (is (= ["custom" "help" "raw" "streamed" "subbed"] (mapv :name ops)))
-          (is (every? #(not (contains? % :returns)) ops))
-          (let [help-entry (first (filter #(= "help" (:name %)) ops))]
-            (is (= "read" (:hook-class help-entry)))
-            (is (= "skein.core.weaver.help" (:provenance help-entry)))
-            (is (false? (:stream? help-entry)))
-            (is (= "standard" (:deadline-class help-entry)))
-            (is (string? (:doc help-entry))))))
-      (testing "op name returns arg-spec detail via explain"
-        (let [detail (weaver/op! rt 'help ["custom"])]
-          (is (= "Echo argv" (:doc detail)))
-          (is (= "custom" (get-in detail [:arg-spec :op])))
+      (testing "no argv returns the versioned catalog of shallow per-op envelopes"
+        (let [{:keys [schema-version ops]} (weaver/op! rt 'help [])]
+          (is (= 1 schema-version))
+          (is (= ["custom" "help" "raw" "streamed" "subbed"]
+                 (mapv #(get-in % [:operation :name]) ops)))
+          ;; Every catalog node is a summary node: op-wide facts stay in
+          ;; :operation and :source, never merged onto the node.
+          (is (every? #(nil? (:source %)) ops))
+          (is (every? #(nil? (get-in % [:node :returns])) ops))
+          (is (every? #(= [] (get-in % [:node :children])) ops))
+          (let [help-entry (first (filter #(= "help" (get-in % [:operation :name])) ops))]
+            (is (= "read" (get-in help-entry [:operation :hook-class])))
+            (is (= "skein.core.weaver.help" (get-in help-entry [:operation :provenance])))
+            (is (false? (get-in help-entry [:operation :stream?])))
+            (is (= "standard" (get-in help-entry [:operation :deadline-class])))
+            (is (false? (get-in help-entry [:operation :raw-envelope])))
+            (is (= "declared" (get-in help-entry [:node :invocation :mode])))
+            (is (= [] (get-in help-entry [:node :invocation :flags])))
+            (is (string? (get-in help-entry [:node :doc]))))
+          (let [raw-entry (first (filter #(= "raw" (get-in % [:operation :name])) ops))]
+            (is (true? (get-in raw-entry [:operation :raw-envelope])))
+            (is (= "raw-envelope" (get-in raw-entry [:node :invocation :mode]))))))
+      (testing "op name returns the detail envelope with a flat-op fractal node"
+        (let [{:keys [schema-version operation source glossary node]}
+              (weaver/op! rt 'help ["custom"])]
+          (is (= 1 schema-version))
+          (is (nil? source))
+          (is (= {} glossary))
+          (is (= "custom" (:name operation)))
+          (is (false? (:raw-envelope operation)))
+          (is (= "custom" (:name node)))
+          (is (= "Echo argv" (:doc node)))
+          (is (= "declared" (get-in node [:invocation :mode])))
           (is (= [{:name "limit" :flag "--limit" :type "int" :required false
                    :repeat false :parse nil :doc "Max"}]
-                 (get-in detail [:arg-spec :flags])))
-          (is (= {:type "collection" :items "string"} (:returns detail)))
-          (is (not (contains? detail :raw-envelope)))))
-      (testing "subcommand op detail includes parser-rendered subcommands"
-        (let [detail (weaver/op! rt 'help ["subbed"])]
-          (is (= "Subcommand op" (:doc detail)))
-          (is (= "subbed" (get-in detail [:arg-spec :op])))
-          (is (= ["add" "list"] (mapv :name (get-in detail [:arg-spec :subcommands]))))
+                 (get-in node [:invocation :flags])))
+          (is (= [{:name "name" :type "string" :required false
+                   :variadic false :parse nil :doc nil}]
+                 (get-in node [:invocation :positionals])))
+          (is (= {:type "collection" :items "string"} (:returns node)))
+          (is (= [] (:use-when node) (:notes node) (:failure-modes node) (:children node)))))
+      (testing "subcommand op yields a root node with one child per subcommand"
+        (let [node (:node (weaver/op! rt 'help ["subbed"]))]
+          (is (= "subbed" (:name node)))
+          ;; node doc is the arg-spec's doc (the node is its projection).
+          (is (= "Subcommands" (:doc node)))
+          (is (= "declared" (get-in node [:invocation :mode])))
+          ;; The subcommand parent delegates to children: empty invocation and
+          ;; a null root return, with routing carried on each child.
+          (is (= [] (get-in node [:invocation :flags])))
+          (is (= [] (get-in node [:invocation :positionals])))
+          (is (nil? (:returns node)))
+          (is (= ["add" "list"] (mapv :name (:children node))))
           (is (= {:name "add"
                   :doc "Add an item"
-                  :flags [{:name "force" :flag "--force" :type "boolean" :required false
-                           :repeat false :parse nil :doc "Force add"}]
-                  :positionals [{:name "title" :type "string" :required true
-                                 :variadic false :parse nil :doc "Item title"}]}
-                 (first (get-in detail [:arg-spec :subcommands]))))
-          (is (= {:subcommands
-                  {"add" {:type "map"
-                          :required {"id" "integer"}
-                          :optional {}}
-                   "list" {:type "collection" :items "string"}}}
-                 (:returns detail)))))
-      (testing "streaming op detail includes its channel projections"
-        (is (= {:stream {:emits "string"
-                         :result ["nullable" "boolean"]}}
-               (:returns (weaver/op! rt 'help ["streamed"])))))
-      (testing "raw-envelope op detail carries a marker instead of an arg-spec"
-        (let [detail (weaver/op! rt 'help ["raw"])]
-          (is (true? (:raw-envelope detail)))
-          (is (not (contains? detail :arg-spec)))))
+                  :invocation {:mode "declared"
+                               :flags [{:name "force" :flag "--force" :type "boolean"
+                                        :required false :repeat false :parse nil :doc "Force add"}]
+                               :positionals [{:name "title" :type "string" :required true
+                                              :variadic false :parse nil :doc "Item title"}]}
+                  :returns {:type "map" :required {"id" "integer"} :optional {}}
+                  :use-when [] :notes [] :failure-modes [] :children []}
+                 (first (:children node))))))
+      (testing "verb slice narrows node to the child; op-wide facts unchanged"
+        (let [detail (weaver/op! rt 'help ["subbed"])
+              sliced (weaver/op! rt 'help ["subbed" "add"])]
+          (is (= (:schema-version detail) (:schema-version sliced)))
+          (is (= (:operation detail) (:operation sliced)))
+          (is (= (:source detail) (:source sliced)))
+          (is (= (:glossary detail) (:glossary sliced)))
+          (is (= "add" (get-in sliced [:node :name])))
+          (is (= (first (get-in detail [:node :children])) (:node sliced)))))
+      (testing "unknown verb fails loudly carrying the available verbs"
+        (let [e (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                                      #"Help verb not found"
+                                      (weaver/op! rt 'help ["subbed" "nope"])))]
+          (is (= ["add" "list"] (:available-verbs (ex-data e))))))
+      (testing "raw-envelope ops (declared or streaming) project a raw-envelope node"
+        (let [{:keys [operation node]} (weaver/op! rt 'help ["streamed"])]
+          (is (true? (:raw-envelope operation)))
+          (is (true? (:stream? operation)))
+          (is (= "raw-envelope" (get-in node [:invocation :mode])))
+          (is (= {:stream {:emits "string" :result ["nullable" "boolean"]}}
+                 (:returns node))))
+        (let [{:keys [operation node]} (weaver/op! rt 'help ["raw"])]
+          (is (true? (:raw-envelope operation)))
+          (is (= "raw-envelope" (get-in node [:invocation :mode])))
+          (is (nil? (:returns node)))
+          (is (= [] (:children node)))))
+      (testing "every help projection satisfies the declared return shape"
+        (doseq [argv [[] ["custom"] ["subbed"] ["subbed" "add"] ["streamed"] ["raw"]]]
+          (t/check-op-return! rt 'help (weaver/op! rt 'help argv))))
       (testing "unknown op name fails loudly carrying available names"
         (let [e (is (thrown-with-msg? clojure.lang.ExceptionInfo
                                       #"Operation not found"
@@ -2331,11 +2380,14 @@
       (testing "the built-in help op is reachable through invoke"
         (let [help (invoke-request rt "help" [])]
           (is (true? (get help "ok")))
-          (is (some #(= "help" (get % "name")) (get-in help ["result" "ops"]))))
+          (is (= 1 (get-in help ["result" "schema-version"])))
+          (is (some #(= "help" (get-in % ["operation" "name"]))
+                    (get-in help ["result" "ops"]))))
         (let [detail (invoke-request rt "help" ["help"])]
           (is (true? (get detail "ok")))
-          (is (= "help" (get-in detail ["result" "arg-spec" "op"])))
-          (is (nil? (get-in detail ["result" "raw-envelope"])))))
+          (is (= "help" (get-in detail ["result" "operation" "name"])))
+          (is (= "help" (get-in detail ["result" "node" "name"])))
+          (is (false? (get-in detail ["result" "operation" "raw-envelope"])))))
       (testing "context envelope fields ride the invoke arguments"
         (weaver/register-op! rt 'ctx 'skein.weaver-test/envelope-echo-op)
         (let [echoed (invoke-request rt "ctx" ["a"] {"body" "hi"} {"cwd" "/tmp/work"

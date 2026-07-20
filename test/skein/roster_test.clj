@@ -287,7 +287,7 @@
       (testing "help projections list the declared verb surface"
         (let [detail (weaver/op! rt 'help ["roster"])
               alias (op! rt "help")
-              verbs (mapv :name (get-in detail [:arg-spec :subcommands]))]
+              verbs (mapv :name (get-in detail [:node :children]))]
           (is (= detail alias))
           (is (= ["about" "await-quiet" "finish" "heartbeat" "list" "prime" "start"] verbs))))
       (testing "missing and unknown verbs fail during parser routing with available names"
