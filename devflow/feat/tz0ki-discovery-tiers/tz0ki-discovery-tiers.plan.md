@@ -1,0 +1,256 @@
+# Discovery-tier factoring Plan
+
+**Document ID:** `PLAN-Dtf-001`
+**Feature:** `tz0ki-discovery-tiers`
+**Proposal:** [proposal.md](./proposal.md)
+**RFC:** [RFC-Dtf-001](../../rfcs/2026-07-20-discovery-tier-factoring.md)
+**Root specs:** [cli.md](../../specs/cli.md) (SPEC-002), [daemon-runtime.md](../../specs/daemon-runtime.md) (SPEC-004), [repl-api.md](../../specs/repl-api.md) (SPEC-003)
+**Feature specs:** [specs/cli.delta.md](./specs/cli.delta.md) (DELTA-Dtf-001), [specs/daemon-runtime.delta.md](./specs/daemon-runtime.delta.md) (DELTA-Dtf-002), [specs/repl-api.delta.md](./specs/repl-api.delta.md) (DELTA-Dtf-003)
+**Status:** Reviewed
+**Last Updated:** 2026-07-20
+
+## PLAN-Dtf-001.P1 Goal and scope
+
+Refactor the three discovery tiers (`help` / `about` / `prime`) so each kind of op-knowledge is
+filed in exactly one tier, driven by **one canonical, versioned, fractal help schema** verbose by
+default and sliceable per verb. Deliver it against two op families — batteries (this repo) and the
+`agent` family (the separate `agent-harness.spool` repo) — with batteries exporting the reference
+recursive help transformer as the forcing function that proves the schema renders at every nesting
+level without per-level code. Why it matters and the full contract: the proposal and the three
+spec deltas (sol-med API SIGN-OFF, run `qbtej`; terra-med validity clean).
+
+## PLAN-Dtf-001.P2 Approach
+
+- **PLAN-Dtf-001.A1 (schema first, transformer second, adoption last):** Build the canonical
+  envelope + fractal node projection and the runtime plumbing (glossary, source, meta-verbs,
+  `--help` grammar, transform slot) in this repo **before** the batteries reference transformer,
+  whose forcing-function value depends on the schema being real (RFC-Dtf-001.C6). Op-family
+  **adoption** (batteries, then `agent`) comes after the transformer exists.
+- **PLAN-Dtf-001.A2 (project, don't re-model):** The help schema is a **projection/normalization**
+  over today's registry data — the op-entry envelope, the arg-spec `explain` (SPEC-003.C64/C65), and
+  the return-shape `explain` (SPEC-003.C60b) — into the response envelope `{schema-version,
+  operation, source, glossary, node}` with a uniform recursive `node` (op-wide facts and `source` in
+  the envelope; the node identical in shape at every depth, DELTA-Dtf-003.D1).
+- **PLAN-Dtf-001.A3 (net-new runtime surfaces, reload-cleared; distinct registration ownership):**
+  Two net-new runtime-owned, reload-cleared surfaces follow the op-registry lifecycle
+  (SPEC-004.C46/C63c), never reload-surviving `spool-state`. Their **registration ownership
+  differs**: the at-most-one default-help-transform slot is **config-election-only**, never
+  registered from a spool `install!` (so a fresh world keeps the raw-JSON default,
+  DELTA-Dtf-002.CC1). The glossary registry is registered by **each owning spool's `install!`
+  before its ops** (or by trusted config), so a spool ships its outcomes portably and the load-order
+  contract holds (DELTA-Dtf-002.CC7). The unconditional glossary-ref existence check runs at
+  `register-op!`/`replace-op!`, not in the arg-spec structural validator (DELTA-Dtf-003.CC2).
+- **PLAN-Dtf-001.A4 (cross-repo, coordinate-pinned, staged release):** The `agent`/`delegation` op
+  family lives in the separate `agent-harness.spool` repo, consumed here by a sha-pinned `spools.edn`
+  coordinate (`ct.spools/agent-run`, currently v7). Its delivery is **three separate phases** — (PH6)
+  producer adoption + producer tests/docs/api-docs + v7 compatibility classification; (PH7) reviewed
+  release/tag with a peeled SHA and the compatibility boundary decision; (PH8) this-repo coordinate
+  bump + whole-`spools.edn` validation + `spool-suite-gate` + disposable-world E2E — never one
+  circular phase.
+- **PLAN-Dtf-001.A5 (thin dispatcher, weaver-side rewrite):** The trailing-`--help` rewrite is
+  weaver-side (it holds the arg-spec); the Go dispatcher change is limited to making pre-op
+  `--help <op>` an error vs no-op `--help` usage (SPEC-002.C30/TEN-006 keep it from parsing arg-specs).
+- **PLAN-Dtf-001.A6 (phase dependency DAG + scope-bounded parallelism):** PH1 is the schema base;
+  its successors form a DAG, but **actual parallelism is bounded by the one-mutator-per-file-scope
+  rule** — the DAG edges below are *dependency* edges, not a promise that every non-dependent pair
+  runs concurrently. Shared scopes must serialize or split by file at task authoring:
+  - **`skein.api.weaver` op-registry scope (AA2)** is shared by PH3 (`:about`/`:prime` metadata,
+    source projection, builtin `about`/`prime` ops) and PH2's `register-op!`/`replace-op!` glossary-ref
+    existence check — these **serialize** (or split into distinct files) rather than run in parallel.
+  - **`skein.api.runtime` scope (AA4)** hosts both PH2's glossary registry and PH5a's transform slot;
+    they live in **distinct namespaces/files** so they may parallelize, otherwise serialize.
+  - PH4 (weaver help projection/rewrite in `skein.core.weaver` + Go `cli/internal/dispatch`) is
+    file-disjoint from AA2/AA4 and may run parallel to PH2/PH3/PH5a.
+  Dependency edges: PH2, PH3, PH4, PH5a depend on PH1; PH5b (batteries renderer + adoption) needs
+  PH2+PH3+PH5a; PH5c (config election + E2E) needs PH5b; PH6→PH7→PH8 (agent adoption) wait for all
+  core+batteries contracts; PH9 (spec promotion + docs) is at ship. Generated tasks preserve these
+  edges via `depends-on`, and siblings that would touch a shared file scope get a sequential
+  `depends-on` link instead of running as concurrent mutators.
+
+## PLAN-Dtf-001.P3 Affected areas
+
+| ID                | Area                                                    | Expected change                                                                                     |
+| ----------------- | ------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| PLAN-Dtf-001.AA1  | `src/skein/core/weaver` (help projection + rewrite)     | `{schema-version, operation, source, glossary, node}` envelope + fractal node projection; supersede the C63e sole-token alias with the trailing-`--help` rewrite for all ops. |
+| PLAN-Dtf-001.AA2  | `src/skein/api/weaver` (op registry, op-entry)          | Accept `:about`/`:prime` metadata (non-blank); op-wide `source` at projection via `requiring-resolve` under the spool classloader; builtin `about`/`prime` ops; glossary-ref existence check at `register-op!`/`replace-op!`. |
+| PLAN-Dtf-001.AA3  | `src/skein/api/cli` (arg-spec validator)                | Closed annotation sub-map (`use-when`/`notes`/`failure-modes`) **structural** validation (shape only, no runtime dependency); reserved-name/`invocation.mode` handling. |
+| PLAN-Dtf-001.AA4  | `src/skein/api/runtime` (new runtime surfaces)          | Net-new reload-cleared glossary registry (`register-glossary-outcome!`/`replace-`/introspect) and at-most-one default-help-transform slot (full-envelope input, loud failure, `--json` bypass, explicit replace, introspection). |
+| PLAN-Dtf-001.AA5  | `cli/internal/dispatch` (Go dispatcher)                 | Pre-op `--help <op>` becomes an error; no-op `--help` stays usage; `--json` leading-only within the help surface. |
+| PLAN-Dtf-001.AA6  | `spools/batteries` (+ `spools/batteries.md`)            | Export the reference recursive transformer (not auto-registered); batteries flat + subcommand ops adopt the pattern; update the batteries doc for the new discovery behavior. |
+| PLAN-Dtf-001.AA7  | `.skein/init.clj`                                        | Trusted-config election: register the batteries transformer in the canonical world; register any repo-owned glossary outcomes in load order. |
+| PLAN-Dtf-001.AA8  | `agent-harness.spool` (separate repo)                   | `agent`/`delegation` op-family adoption; redistribute the current structured `about` into per-verb help / glossary / about-prose; register shared lifecycle outcomes in `install!`; producer tests + api-docs + README/discovery docs; v7 compatibility classification. |
+| PLAN-Dtf-001.AA9  | `.skein/spools.edn`                                     | Bump the `ct.spools/agent-run` coordinate (v7 → new tag + peeled SHA) after the producer release. |
+| PLAN-Dtf-001.AA10 | `devflow/specs` + `devflow/TENETS.md`                   | Promote the three deltas into root specs at ship; editorial TEN-006 wording adjustment (no `@N` bump). |
+| PLAN-Dtf-001.AA11 | `docs/reference.md` (Discovery tiers), `docs/spools/writing-shared-spools.md` | Update the Discovery-tiers reference for the new envelope/meta-verbs; add shared-spool authoring guidance for glossary ownership, load order, and the release/compatibility boundary. |
+
+## PLAN-Dtf-001.P4 Contract and migration impact
+
+- **PLAN-Dtf-001.CM1 (durable contracts):** The three deltas (DELTA-Dtf-001/002/003). `schema-version`
+  starts at `1`; the shared release-identity **mechanism** is out of scope (NG3).
+- **PLAN-Dtf-001.CM2 (alpha migration, TEN-000@1):** No data migration. `about`'s JSON shape changes;
+  the `<op> help`/`about`/`prime` verb-position sugar is transitional and retired in alpha.
+- **PLAN-Dtf-001.CM3 (agent spool compatibility boundary):** Replacing v7's structured `agent about`
+  (`{operation, concepts, verbs}`) with `{about, source}` and redistributing content into per-verb
+  help/glossary is a **published-name behavior change** for external consumers of the shared spool
+  (SPEC-002.C4a accretion; shared-spool guidance). It is authorized under TEN-000@1 and RFC-Dtf-001.C3
+  (about-shape changes without migration). The decision: signal the break with the **new major tag**
+  (v7 → v8) as the compatibility boundary — external consumers pin v7 and opt into v8 — rather than
+  version-suffixing op names or shipping deprecation stubs. PH7 must (a) confirm no `agent-harness.spool`
+  compatibility check/alarm silently blocks the tag (update it if one exists), and (b) record the new
+  Skein API dependency floor: the spool now requires a Skein checkout shipping DELTA-Dtf-001/002/003,
+  enforced by `spool-suite-gate` (not a version-constraint mechanism, TEN-000@1).
+
+## PLAN-Dtf-001.P5 Implementation phases
+
+### PLAN-Dtf-001.PH1 Canonical envelope + fractal node projection (this repo, base)
+
+Outcome: `strand help <op>` / `help <op> <verb>` return the versioned `{schema-version, operation,
+source(present), glossary(empty until PH2), node}` envelope with the uniform node; `strand help`
+(no op) returns the shallow per-op catalog envelope; today's arg-spec/returns detail is preserved;
+SPEC-002.C39 invariant reworded. Tests verify **projection shape, slicing, catalog, and
+`invocation.mode`** invariants — *not* renderer recursion (the reference renderer does not exist
+yet; the arbitrary-depth proof moves to PH5b).
+
+### PLAN-Dtf-001.PH2 Glossary registry + annotation seam (this repo) — needs PH1
+
+Outcome: net-new reload-cleared glossary registry with `register-glossary-outcome!`/`replace-`/
+introspection (qualified names, loud collisions); closed annotation sub-map **structural** validation
+in `skein.api.cli`; **unconditional glossary-ref existence** check at `register-op!`/`replace-op!`;
+the help envelope carries the referenced-term closure for the returned subtree. Tests cover
+register/replace/introspect, reload-clear, collision, missing-ref registration failure, and
+full-tree vs sliced closure.
+
+### PLAN-Dtf-001.PH3 Meta-verbs, op metadata, source pointer (this repo) — needs PH1
+
+Outcome: `:about`/`:prime` accepted as non-blank op metadata; builtin `about`/`prime` ops return
+`{about|prime, source}`; op-wide `source` resolved best-effort at projection with precise null
+semantics; missing prose yields `discovery/unavailable`; arity-1 verb-path redirect. Tests cover the
+source success case and each exact null case under the spool classloader (without swallowing
+unrelated errors), and about/prime missing/arity/source.
+
+### PLAN-Dtf-001.PH4 `--help` grammar (weaver + Go dispatcher) — needs PH1
+
+Outcome: weaver trailing-`--help` rewrite for all ops (superseding the C63e sole-token alias, sugar
+retired in alpha, hook-gating-bypass preserved); Go dispatcher makes pre-op `--help <op>` an error
+while no-op `--help` stays usage; `--json` leading-only in the help surface. Tests: trailing-help
+matrix across flat/subcommand/raw ops × flags × payloads × hook-bypass, plus Go pre-op usage/error.
+
+### PLAN-Dtf-001.PH5a Default-transform slot plumbing + lifecycle tests (this repo) — needs PH1
+
+Outcome: the at-most-one `register-default-help-transform` slot — full-envelope input, verbatim
+output, loud failure, `--json` bypass, explicit replace, introspection, reload-clear. Tests cover
+raw/default/`--json` behavior, throwing-transform loud recovery, and reload clear/re-establish/replace.
+
+### PLAN-Dtf-001.PH5b Batteries reference renderer + arbitrary-depth proof + batteries adoption (this repo) — needs PH2 + PH3 + PH5a
+
+Outcome: batteries exports the reference recursive renderer (one function, no per-level branch) — the
+forcing-function proof; the **synthetic nested-node arbitrary-depth renderer test** lives here
+(DELTA-Dtf-003.CC3); batteries flat and subcommand ops adopt the pattern (arg-spec-driven help,
+optional `:about`/`:prime`/annotations, `spools/batteries.md` updated). `check-op-return!` coverage
+for every changed batteries leaf.
+
+### PLAN-Dtf-001.PH5c Trusted-config election + discovery E2E (this repo) — needs PH5b
+
+Outcome: `.skein/init.clj` elects the batteries transformer in the canonical world and registers any
+repo-owned glossary outcomes in load order; a disposable-world end-to-end run exercises
+`help`/`help <verb>`/`about`/`prime` for batteries under both raw-JSON and the elected transform.
+Smoke-test config changes in a disposable world first.
+
+### PLAN-Dtf-001.PH6 `agent` op-family adoption (separate repo, producer) — needs PH1–PH5c
+
+Outcome: in `agent-harness.spool`, the `agent`/`delegation` family adopts the pattern (per-verb help,
+shared lifecycle outcomes registered in `install!`, cross-verb narrative in `about`-prose,
+redistributing the structured about); producer tests + `make api-docs` + README/discovery docs
+updated; v7 compatibility classified per CM3.
+
+### PLAN-Dtf-001.PH7 Reviewed release/tag of the agent spool — needs PH6
+
+Outcome: reviewed release with a new major tag (v8) and peeled SHA; the CM3 compatibility boundary
+recorded; no producer compat-alarm silently blocking the tag; the new Skein API dependency floor noted.
+
+### PLAN-Dtf-001.PH8 Coordinate bump + cross-repo validation (this repo) — needs PH7
+
+Outcome: `.skein/spools.edn` `ct.spools/agent-run` bumped to the v8 tag + peeled SHA; whole-`spools.edn`
+validation; `make spool-suite-gate` green; disposable-world discovery E2E for `agent`
+(`help agent`, `help agent <verb>`, `about agent`, `prime agent`). The "worst offender" whole-tree
+`about` fetch is gone.
+
+### PLAN-Dtf-001.PH9 Spec promotion + docs + tenet edit (this repo) — at ship
+
+Outcome: promote DELTA-Dtf-001/002/003 into their root specs and mark them Merged; editorial TEN-006
+wording adjustment (no `@N` bump); `docs/reference.md` Discovery-tiers and
+`docs/spools/writing-shared-spools.md` updated; `devflow/README.md` index updated.
+
+## PLAN-Dtf-001.P6 Validation strategy
+
+- **PLAN-Dtf-001.V1 (per-slice gates):** Cold focused `clojure -M:test <ns...>` per slice;
+  `check-op-return!` coverage for every new/changed op leaf (SPEC-003.C28/C30 owner-suite discipline).
+- **PLAN-Dtf-001.V2 (contract matrix — the must-prove surface):**
+  - **Envelope/projection:** node field presence/types; `invocation.mode` raw vs declared-no-arg;
+    full-tree vs sliced shape; no-arg catalog shape; `schema-version` present.
+  - **Glossary:** register/replace/introspect; reload clear + re-establish; loud collision;
+    missing-ref registration failure at `register-op!`; full-tree vs sliced glossary **closure**.
+  - **Source:** success `{file,line}`; each exact null case (resolve fail / no `:file`/`:line` /
+    non-readable file) under spool classloaders; unrelated projection errors are **not** swallowed.
+  - **Transform slot:** raw default; elected-transform render; `--json` bypass; throwing-transform
+    loud recovery (help never bricked); reload clear/re-establish; explicit replace; introspection.
+  - **Grammar:** trailing `--help` across flat/subcommand/raw × flags × payloads; lifecycle-hook
+    bypass; Go pre-op `--help <op>` error vs no-op usage; `--json` leading-only.
+  - **Meta-verbs:** `about`/`prime` present/missing (`discovery/unavailable`)/arity-1 redirect/source.
+- **PLAN-Dtf-001.V3 (CI-blocking + cross-repo):** `(cd cli && go test ./...)`, `clojure -M:smoke`,
+  `make fmt-check lint reflect-check docs-check`, `make api-docs` after any spool/`skein.api.*.alpha`
+  docstring change, and the full flocked `clojure -M:test` at queue acceptance. Cross-repo: producer
+  tests + api-docs in `agent-harness.spool` (PH6), whole-`spools.edn` validation + `make
+  spool-suite-gate` + disposable-world `agent` discovery E2E after the bump (PH8).
+- **PLAN-Dtf-001.V4 (reviews):** terra-med validation seats per slice; sol-med cross-vendor sign-off
+  on the claude-authored change before landing.
+
+## PLAN-Dtf-001.P7 Risks and open questions
+
+- **PLAN-Dtf-001.R1 (cross-repo sequencing):** `agent` adoption spans a producer release and a
+  consumer bump; mitigated by the PH6→PH7→PH8 split with `spool-suite-gate` gating the bump, not the
+  release.
+- **PLAN-Dtf-001.R2 (Go dispatcher grammar):** Making pre-op `--help <op>` an error changes
+  established behavior; mitigate with dispatcher tests distinguishing no-op usage from op-present
+  error. Kept in-feature (DELTA-Dtf-001.Q1; sol-med concurs).
+- **PLAN-Dtf-001.R3 (sugar retirement):** Retiring `<op> help/about/prime` sugar in alpha could
+  surprise a consumer; mitigate via reserved-name validation and the loud redirect error.
+- **PLAN-Dtf-001.R4 (spool compatibility break):** The v8 about-shape break (CM3) affects external
+  consumers; mitigated by the major-tag boundary and explicit release-note guidance in
+  `writing-shared-spools.md`.
+- **PLAN-Dtf-001.Q1:** _None blocking task generation_ — the glossary registration surface
+  (DELTA-Dtf-002.Q2) and the structural-vs-existence validation split (DELTA-Dtf-003.CC2) are
+  resolved; glossary concepts remain deferred (DELTA-Dtf-002.Q1, out of v1).
+
+## PLAN-Dtf-001.P8 Task context
+
+- **PLAN-Dtf-001.TC1:** Read the three spec deltas and decision notes `k7sgl` (LOG-5) / `lddql`
+  (LOG-6) / `0xo2p` (plan review) first — they carry the folded API sign-off and plan decisions.
+  Verified source anchors (terra-med runs `ntyg7`/`h9n4p` + re-validations): help projection
+  `src/skein/core/weaver/help.clj` (C63e alias `:54-67`); op-entry accepted keys
+  `src/skein/api/weaver/internal/op_entry.clj:34`; `register-op!` stores an unresolved symbol
+  `src/skein/api/weaver/alpha.clj:591-608`, spool-classloader resolve `:499`; nested subcommands
+  rejected `src/skein/api/cli/internal/validation.clj:162`; C63e socket path
+  `src/skein/core/weaver/socket.clj:273-288`; Go pre-op `--help`
+  `cli/internal/dispatch/dispatch.go:55-60,108-163`; vocab-registry (distinct)
+  `src/skein/api/vocab/alpha.clj`; batteries `spools/batteries/src/skein/spools/batteries.clj`
+  (flat: add/update/show/list/ready; subcommand: query/pattern/spool), activated by `.skein/init.clj`.
+  The `agent` family lives in `agent-harness.spool` (local checkout
+  `/Users/ct/dev/projects/agent-harness.spool`), pinned in `.skein/spools.edn` as `ct.spools/agent-run`
+  v7; the current structured `agent about` returns `{operation, concepts, verbs}` (the redistribution
+  target).
+- **PLAN-Dtf-001.TC2:** Disposable `--workspace` worlds for all tests/smoke (guard `${ws:?}`); never
+  restart the canonical weaver (use `make build` / `runtime/reload!` / `reload-spool!` per the pickup
+  ladder); commit on the feature branch in the worktree only when the coordinator asks.
+- **PLAN-Dtf-001.TC3 (task strategy):** The 12-task queue (`tasks/index.yml`) is one vertical slice per
+  DAG edge. The `help.clj` projection is the serialized hub (Task 1 → 3 → 4 → 6); Task 2 (glossary/
+  validation) and Task 5 (`--help` grammar) run file-disjoint alongside it; Task 7 (batteries renderer/
+  adoption) is the forcing-function proof gated on 3+4+6; Tasks 9–11 are the cross-repo `agent`
+  producer → release → bump chain, with Task 10 the sole HITL (a published spool release). Each AFK
+  slice is delegated as a tracked agent run, gets a terra-med validation review before the coordinator
+  verifies and closes it, and the whole change takes sol-med cross-vendor sign-off before `land`
+  (PLAN-Dtf-001.V4).
+
+## PLAN-Dtf-001.P9 Developer Notes
+
+Append notes here. Do not rewrite earlier notes.
