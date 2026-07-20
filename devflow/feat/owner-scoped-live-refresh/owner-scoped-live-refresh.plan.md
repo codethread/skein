@@ -1,0 +1,118 @@
+# Owner-scoped live refresh plan
+
+**Document ID:** `PLAN-Olr-001`
+**Feature:** `owner-scoped-live-refresh`
+**Proposal:** [proposal.md](./proposal.md)
+**RFC:** none
+**Root specs:** [REPL API](../../specs/repl-api.md), [Weaver Runtime](../../specs/daemon-runtime.md), [Alpha Surface](../../specs/alpha-surface.md)
+**Feature specs:** [REPL API delta](./specs/repl-api.delta.md), [Weaver Runtime delta](./specs/daemon-runtime.delta.md), [Alpha Surface delta](./specs/alpha-surface.delta.md)
+**Status:** Reviewed
+**Last Updated:** 2026-07-20
+
+## PLAN-Olr-001.P1 Goal and scope
+
+Deliver the owner-scoped live refresh contracts in [PROP-Olr-001](./proposal.md): a stable module graph, complete declarative owner replacement, cumulative loaded-code accounting, explicit definition binding points, domain-owned resource reconciliation, one normal refresh/status surface, and one coordinated TEN-000@1 cutover across Skein and the affected peer spools. Implementation stops treating process replacement as the routine answer to config and source edits, while retaining one explicit generation replacement for the migration itself and for genuine later JVM conflicts.
+
+## PLAN-Olr-001.P2 Approach
+
+- **PLAN-Olr-001.A1:** Build one internal owner-registry kernel first. It stores complete partitions by stable owner, validates an effective view before publication, supports explicit cross-owner replacement with stored shadowed entries and deterministic restoration when an override disappears, and exposes snapshot reads suitable for dispatch. Core registries adopt it without changing their external behavior until the kernel is proven.
+- **PLAN-Olr-001.A2:** Split module work into two contracts. A contribution function produces declarative core entries that can be staged and published by owner; an optional reconcile function handles domain registries and resources with no generic rollback promise. Live handles and in-flight state remain in versioned spool-state or their current durable stores.
+- **PLAN-Olr-001.A3:** Make startup and refresh share one collector. `init.clj` and `init.local.clj` declare modules under stable keys; the runtime validates the complete layered graph before applying it. A targeted refresh reads the active graph and refreshes selected owners plus dependents. Direct REPL registration remains possible with an explicit direct owner.
+- **PLAN-Olr-001.A4:** Preserve live dispatch by snapshot, not global shutdown. Registry readers capture one effective entry/set for the call already beginning. Later calls see a newly published owner partition. Event queues, recent failures, active agent processes, scheduler rows, and unrelated resource state are never globally cleared by refresh.
+- **PLAN-Olr-001.A5:** Add append-only load evidence at the source-loader boundary. Every successful namespace load records root, source, owner, exact bytes, and order. Current approved source discovery classifies the ledger into current bindings, prior bindings, orphaned residuals, transfers, and hard conflicts. The ledger, not a rescan of current paths, controls clean/pending state.
+- **PLAN-Olr-001.A6:** Migrate declaration domains onto owner-complete replacement while leaving each domain's effects local. Chime owns rule baseline seeding, cron owns wake reconciliation, workflow owns constructors/executor function values, and agent-run owns harness/default/in-flight migration. The shared kernel supplies ownership and deletion semantics, not a universal effects engine.
+- **PLAN-Olr-001.A7:** Develop the new lifecycle beside the old one only on unlanded feature branches so each phase can be tested. The coordinated cutover removes old blessed functions, old `install!`-only activation, workspace remember/forget/install state, and temporary adapters before any release or Skein merge. No dual lifecycle ships.
+- **PLAN-Olr-001.A8:** Use separate feature worktrees for `skein-src`, `agent-harness.spool`, `kanban.spool`, and `devflow.spool`. Peer branches test against the Skein feature worktree through local test coordinates. They release immutable successor markers first; Skein then updates all tag/SHA pins and config declarations in one branch before the final canonical-world cutover.
+- **PLAN-Olr-001.A9:** Keep the canonical coordination weaver on its existing Skein checkout and v7/v4/v2 peer pins throughout implementation. All startup, refresh, source-removal, and cross-repo experiments run in disposable worlds. After landing and after active runs drain, one user-approved generation replacement adopts the new base-classpath code and pins.
+
+## PLAN-Olr-001.P3 Affected areas
+
+| ID | Area | Expected change |
+| --- | --- | --- |
+| PLAN-Olr-001.AA1 | `skein.core.weaver` | Owner-registry kernel, module graph, refresh coordinator, dispatch snapshots, loaded-code ledger, residual/hard-conflict classification, startup/stop integration |
+| PLAN-Olr-001.AA2 | `skein.api.runtime.alpha` | New `module!`, `refresh!`, `status`, and `reload-code!` story; removal of sync/use/reload peer lifecycle and separate introspection |
+| PLAN-Olr-001.AA3 | `skein.api.weaver/graph/patterns/events/hooks.alpha` | Explicit owner semantics for direct mutation; effective registry reads over owner partitions |
+| PLAN-Olr-001.AA4 | `skein.test.alpha` | Disposable-world fixtures and assertions for module graphs, targeted refresh, dispatch snapshots, residuals, and hard conflicts |
+| PLAN-Olr-001.AA5 | `spools/workflow` and shell executor, `spools/roster`, `spools/text-search`, `spools/chime`, `spools/cron`, batteries | Owner-complete domain declaration APIs, binding semantics, resource reconcile behavior, status projections, updated install/activation contracts |
+| PLAN-Olr-001.AA6 | `.skein` workspace config and macros | Stable module declarations, contribution functions, removal of remember/forget/install shadow registries, harness/reviewer/workflow/rule ownership |
+| PLAN-Olr-001.AA7 | Go bootstrap, smoke, config tests | Fresh-world module declaration template and end-to-end startup/refresh coverage |
+| PLAN-Olr-001.AA8 | `agent-harness.spool` v7 family | Agent-run harness/alias/backend owner partitions, delegation rosters, bench definitions, preserved in-flight/resource state, v8 exception release |
+| PLAN-Olr-001.AA9 | `kanban.spool` v4 | Owner contribution, peering declarations, tracker state reconciliation, removal of ad hoc register-or-replace logic, v5 exception release |
+| PLAN-Olr-001.AA10 | `devflow.spool` v2 | Owner-complete workflow route contribution while preserving live stage-transition re-pointing, v3 exception release |
+| PLAN-Olr-001.AA11 | Docs, root specs, spool contracts, generated API docs | New normal workflow, sharp-tool guidance, binding-time table, residual interpretation, compatibility exception and cutover runbook |
+| PLAN-Olr-001.AA12 | `skein.api.registry.alpha` | Blessed reusable owner-partition registry for spool domains without generic effect management |
+
+## PLAN-Olr-001.P4 Contract and migration impact
+
+- **PLAN-Olr-001.CM1:** This is an in-place pre-Skein-v1 rewrite of `skein.api.runtime.alpha` and owner-bearing registry mutation signatures. Root-spec deltas enumerate the removed and added contracts; old names do not forward.
+- **PLAN-Olr-001.CM2:** Workspace startup config changes from executing ordered `use!` activations to declaring a stable module graph with contribution and reconcile symbols. Source order is not module dependency order; `:after` remains explicit graph data.
+- **PLAN-Olr-001.CM3:** Existing runtime business data in SQLite remains valid. The loaded-code ledger and module/owner state are weaver-lifetime data initialized in the new generation; no persistent database migration is introduced.
+- **PLAN-Olr-001.CM4:** Existing peer SHAs remain reproducible. Successors publish as agent-harness v8, kanban v5, and devflow v3 unless intervening markers land. Their normal accretion rule is explicitly waived for this change; expected previous-marker alarm failures are recorded and unrelated failures remain blocking.
+- **PLAN-Olr-001.CM5:** Card `uxc5f` closes only after regression tests prove path shrinkage and deleted loaded sources remain attributed as residuals, cannot produce a false clean result, and cannot clear pending/residual state through a partially failed classification.
+- **PLAN-Olr-001.CM6:** The migration itself may need one clean weaver generation because the base Skein API and peer roots change incompatibly. That one-time rollout cost is not part of the post-migration refresh contract.
+
+## PLAN-Olr-001.P5 Implementation phases
+
+### PLAN-Olr-001.PH1 Owner registry and load evidence
+
+Outcome: Skein has tested internal primitives for complete owner partitions, collision/override validation, dispatch snapshots, and append-only namespace load attribution. Existing public behavior remains green while the new primitives prove deletion, rename, transfer, and `uxc5f` cases.
+
+### PLAN-Olr-001.PH2 Module graph and deep runtime surface
+
+Outcome: Disposable worlds can declare stable modules, perform full and targeted live refresh, publish core contributions by owner, reconcile resources separately, inspect joined status, and use code-only reload. Event queues and unrelated contributions remain live. New API tests cover partial source and effect failures while the old public path remains temporary branch-only scaffolding.
+
+### PLAN-Olr-001.PH3 First-party and workspace conversion
+
+Outcome: Batteries, workflow and its shell executor, roster, text-search, Chime, cron, generated bootstrap config, and this repository's `.skein` modules use owner declarations and domain reconciliation. The four remember/forget/install macro registries are gone. Core tests, smoke, and disposable config worlds use only the new lifecycle; old blessed functions and temporary adapters are removed from the Skein feature branch.
+
+### PLAN-Olr-001.PH4 Peer-spool conversion
+
+Outcome: Agent-run/delegation/bench, kanban/peering, and devflow routes use the new owner and binding contracts in independent peer worktrees. Long-running agent tests prove a harness alias change affects a later process launch without interrupting an already-running process. Each peer owner suite passes against the Skein feature worktree.
+
+### PLAN-Olr-001.PH5 Contract, release, and consumer cutover
+
+Outcome: Root specs, spool docs, customisation/testing guidance, bootstrap docs, and generated API references describe only the new model. Peer compatibility alarms and the approved exception record are reviewed, v8/v5/v3 successors are tagged, and Skein pins their peeled SHAs atomically. Full Skein and external spool gates pass in disposable worlds.
+
+### PLAN-Olr-001.PH6 Landing and live adoption
+
+Outcome: Peer branches and the Skein branch land in dependency order without changing the running canonical world's pins. After no active agent run depends on the old process, a user-approved generation replacement starts the canonical world on the landed configuration; status reports no unexplained residual or hard conflict and board/devflow/agent operations pass a focused live smoke.
+
+## PLAN-Olr-001.P6 Validation strategy
+
+- **PLAN-Olr-001.V1:** Owner-registry property/example tests prove complete-owner deletion, stable-owner rename, deterministic effective views, unauthorized collision refusal before publication, explicit override with both partitions visible, displaced-owner refresh while shadowed, restoration when an override disappears, displaced-entry removal, and snapshot readers observing either old or new partitions rather than mixtures.
+- **PLAN-Olr-001.V2:** Loader regression tests cover changed bytes, deleted files, shrunk `:paths`, namespace rename, cross-root transfer, duplicate providers, failed roots, partial reload, Maven conflict, and classpath-owned namespaces. The `uxc5f` cases assert residual visibility and no false pending clear.
+- **PLAN-Olr-001.V3:** Runtime integration tests use unpublished disposable worlds to prove full/targeted refresh, layered config collection, module dependency order, optional/required outcomes, retained previous contribution on contribution failure, resource degradation, unchanged event queue/failure history, and joined offline status.
+- **PLAN-Olr-001.V4:** Binding tests pin every family in DELTA-OlrDrt-001.CC10/CC11. The keystone external test launches a long-running cheap shell harness, changes the alias used for later launches, proves the first process continues and its supervise/capture/stop operations use the launch-captured backend, and proves a later run resolves the new harness definition.
+- **PLAN-Olr-001.V5:** First-party domain suites cover Chime baseline replacement/deletion; cron job replacement/removal together with durable wake preservation/reschedule/cancel; workflow route re-pointing and executor deletion/replacement; roster handler/op/query deletion; text-search op deletion; scheduler orphaned handler reporting; and resource-state migration without handle loss. Peer suites separately prove harness/alias/backend, roster, bench, kanban/peering, and devflow owner deletion completeness.
+- **PLAN-Olr-001.V6:** Each peer repository runs focused and full owner suites against the Skein feature worktree, then its compatibility alarm against the previous marker. Expected lifecycle-break failures are reviewed against the exception manifest; every unrelated failure is fixed.
+- **PLAN-Olr-001.V7:** Skein gates are cold focused tests per slice, then the full locked Clojure suite once at queue acceptance, Go tests, smoke, spool-suite gate, format, lint, reflection, docs, API-doc generation, and a clean generated-artifact status.
+- **PLAN-Olr-001.V8:** The cutover runbook is rehearsed in a disposable workspace using the exact released peer pins. It covers startup, full refresh, targeted harness change, source deletion residual, scheduler/cron re-arm, and clean stop before the canonical world is touched.
+
+## PLAN-Olr-001.P7 Risks and open questions
+
+- **PLAN-Olr-001.R1:** An owner registry that also owns resource atoms could orphan active processes. Mitigation: declaration partitions and live-resource state have separate types and lifecycle paths; state-shape tests reject accidental co-location.
+- **PLAN-Olr-001.R2:** Dynamic owner context could leak across async work. Mitigation: contribution evaluation returns data synchronously; async handlers receive already-published entries and never depend on a thread-local contribution collector.
+- **PLAN-Olr-001.R3:** A source reload can mutate some Vars before failing. Mitigation: preserve code-only partial results, retain the previous declarative contribution when contribution evaluation fails, and never claim source rollback.
+- **PLAN-Olr-001.R4:** Cross-repository work may drift against moving peer heads or release markers. Mitigation: record exact bases when worktrees are created, test through local coordinates, recalculate successor markers before tagging, and update tag plus peeled SHA atomically.
+- **PLAN-Olr-001.R5:** The broad rewrite may absorb domains that need no ownership change. Mitigation: migrate only declaration registries requiring deletion completeness or binding contracts; business logic and resource engines remain in their existing modules. Confirm and either repair or explicitly exclude the reportedly stale `devflow.spool/.skein/init.clj` before changing that repository.
+- **PLAN-Olr-001.R6:** The final restart can interrupt the system this feature is meant to protect. Mitigation: no canonical pin changes during implementation, roster/agent quiet check before approval, and one rehearsed cutover by PID/supervisor rather than iterative restarts.
+
+No open question blocks task generation.
+
+## PLAN-Olr-001.P8 Task context
+
+- **PLAN-Olr-001.TC1:** TEN-000@1 authorizes removal, but PHILOSOPHY is the controlling product constraint: preserve the live image and future-work re-pointing. Do not “simplify” by making ordinary source/config edits restart-bound.
+- **PLAN-Olr-001.TC2:** Stable module key is the owner. Namespace, source file, root lib, and handler provenance are evidence, not owner identity.
+- **PLAN-Olr-001.TC3:** `uxc5f` is required acceptance, not adjacent cleanup. Every loader task reads the card and tests loaded-minus-current accounting.
+- **PLAN-Olr-001.TC4:** The Opus architecture review is note `a22m2` on task `e9us1`; the terra-med fact check is note `vovp1` on task `x5a08`. Task authors must preserve their accepted corrections.
+- **PLAN-Olr-001.TC5:** Current peer pins are agent-harness v7, kanban v4, and devflow v2. The user explicitly approved an in-place next-marker exception; do not describe these repositories as unversioned or pre-v1.
+- **PLAN-Olr-001.TC6:** Never experiment against the canonical `.skein` weaver. Use unpublished disposable worlds and local peer coordinates. Never restart the canonical weaver without the final explicit sign-off.
+- **PLAN-Olr-001.TC7:** Once task files exist, `tasks/index.yml` owns exact sequencing and acceptance. This phase list remains architecture context rather than a parallel progress tracker.
+- **PLAN-Olr-001.TC8:** Task 24 publishes the shared owner-registry alpha primitive immediately after Task 1 even though its appended ID sorts later. Peer tasks use one dedicated immutable Skein baseline worktree recorded after Tasks 7 and 24; they never test against a moving Skein worktree.
+
+## PLAN-Olr-001.P9 Developer Notes
+
+### PLAN-Olr-001.DN1 Proposal review: 2026-07-20
+
+- Opus run `gkt3x` required per-family binding units, declarative/resource separation, stable module-key ownership, load-time namespace attribution, preservation of a code-only seam, async snapshot/defer semantics, and an honest one-time generation migration.
+- terra-med run `0r7fv` corrected peer markers to v7/v4/v2, added durable scheduler-wake policy, separated workflow constructor symbols from executor function values, narrowed the forget-* claim, and expanded the affected root inventory.
