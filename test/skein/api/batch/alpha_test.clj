@@ -52,3 +52,25 @@
       (is (thrown-with-msg? clojure.lang.ExceptionInfo
                             #"Batch strand entry requires :ref"
                             (batch/apply! rt {:strands [{:title "No ref"}]}))))))
+
+(deftest apply-rejects-malformed-remove-ops-loudly
+  ;; PROP-Xer-001.PO2 shape matrix at the public surface: the closed `:remove`
+  ;; grammar rejects an extra key, `:attributes`, and a missing endpoint before
+  ;; the transaction opens, so a malformed remove never reaches storage.
+  (t/with-weaver-world [ctx {:storage :sqlite-memory}]
+    (let [rt (:runtime ctx)
+          refs {:a "strand-a" :b "strand-b"}]
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                            #"Unknown keys"
+                            (batch/apply! rt {:refs refs
+                                              :edges [{:op :remove :from :a :to :b
+                                                       :type "depends-on" :extra 1}]})))
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                            #"Unknown keys"
+                            (batch/apply! rt {:refs refs
+                                              :edges [{:op :remove :from :a :to :b
+                                                       :type "depends-on" :attributes {}}]})))
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                            #"endpoint is required"
+                            (batch/apply! rt {:refs refs
+                                              :edges [{:op :remove :to :b :type "depends-on"}]}))))))

@@ -1168,6 +1168,101 @@
           (is (= [] (:batch/created context) (:batch/updated context) (:batch/burned context)))
           (is (= (:edges result) (:batch/edge-ops context))))))))
 
+(deftest weaver-apply-batch-edge-transitions-are-decoded-and-equal-across-channels
+  ;; PROP-Xer-001.PO6, C4: one batch mixing a remove, a new upsert, and a
+  ;; replacement upsert produces before/after transitions with decoded-map
+  ;; attributes, and the result :edges, the pre-commit hook's :batch/edge-ops,
+  ;; and the :batch/applied event's :batch/edges are equal ordered vectors.
+  (with-runtime
+    (fn [rt _]
+      (weaver/init rt)
+      (let [run (weaver/add! rt {:title "Run"})
+            old-target (weaver/add! rt {:title "Old target"})
+            new-target (weaver/add! rt {:title "New target"})
+            dep (weaver/add! rt {:title "Dep"})]
+        (weaver/update! rt (:id run) {:edges [{:type "serves" :to (:id old-target)
+                                               :attributes {:since "old"}}]})
+        (weaver/update! rt (:id dep) {:edges [{:type "depends-on" :to (:id old-target)
+                                               :attributes {:reason "existing"}}]})
+        (drain-events! rt)
+        (reset! delivered-events [])
+        (reset! hook-contexts [])
+        (events/register-handler! rt :capture #{:batch/applied :strand/added :strand/updated :strand/burned}
+                                  'skein.weaver-test/capture-event {})
+        (hooks/register-hook! rt :capture-batch #{:batch/apply-before-commit} 'skein.weaver-test/capture-hook {})
+        (let [result (batch/apply! rt {:refs {:run (:id run) :old-target (:id old-target)
+                                              :new-target (:id new-target) :dep (:id dep)}
+                                       ;; remove precedes the new serves upsert so the single-serves
+                                       ;; rule is satisfied in submitted order (PROP-Xer-001.T1).
+                                       :edges [{:op :remove :from :run :to :old-target :type "serves"}
+                                               {:op :upsert :from :run :to :new-target :type "serves"
+                                                :attributes {:since "new"}}
+                                               {:op :upsert :from :dep :to :old-target :type "depends-on"
+                                                :attributes {:reason "updated"}}]})
+              batch-event (first (filter #(= :batch/applied (:event/type %)) (wait-for-events 1)))
+              context (last @hook-contexts)
+              expected [{:op :remove :from :run :to :old-target :type "serves"
+                         :before {:from_strand_id (:id run) :to_strand_id (:id old-target)
+                                  :edge_type "serves" :attributes {:since "old"}}
+                         :after nil}
+                        {:op :upsert :from :run :to :new-target :type "serves"
+                         :before nil
+                         :after {:from_strand_id (:id run) :to_strand_id (:id new-target)
+                                 :edge_type "serves" :attributes {:since "new"}}}
+                        {:op :upsert :from :dep :to :old-target :type "depends-on"
+                         :before {:from_strand_id (:id dep) :to_strand_id (:id old-target)
+                                  :edge_type "depends-on" :attributes {:reason "existing"}}
+                         :after {:from_strand_id (:id dep) :to_strand_id (:id old-target)
+                                 :edge_type "depends-on" :attributes {:reason "updated"}}}]]
+          (t/await-quiescent! rt)
+          (is (= [:batch/applied] (mapv :event/type @delivered-events))
+              "an edge-only batch emits only the batch event")
+          (is (= expected (:edges result)))
+          (is (map? (get-in result [:edges 0 :before :attributes]))
+              "remove :before carries a decoded attribute map, not storage JSON")
+          (is (map? (get-in result [:edges 2 :before :attributes]))
+              "replacement upsert :before carries the decoded pre-image map")
+          (is (every? #(not (contains? % :edge)) (:edges result))
+              "no compatibility :edge alias")
+          (is (= (:edges result) (:batch/edge-ops context) (:batch/edges batch-event))
+              "result, hook, and event carry the same ordered transition vector"))))))
+
+(deftest weaver-apply-batch-hook-veto-rolls-back-removal-with-no-event
+  ;; PROP-Xer-001.PO6, C5: a pre-commit hook can veto a removal; the edge stays
+  ;; in place, no :batch/applied event fires, and the vetoing hook still saw the
+  ;; decoded removal transition it rejected.
+  (with-runtime
+    (fn [rt _]
+      (weaver/init rt)
+      (let [a (weaver/add! rt {:title "A"})
+            b (weaver/add! rt {:title "B"})]
+        (weaver/update! rt (:id a) {:edges [{:type "depends-on" :to (:id b)
+                                             :attributes {:reason "keep"}}]})
+        (drain-events! rt)
+        (reset! delivered-events [])
+        (reset! hook-contexts [])
+        (events/register-handler! rt :capture #{:batch/applied} 'skein.weaver-test/capture-event {})
+        (hooks/register-hook! rt :reject-batch #{:batch/apply-before-commit} 'skein.weaver-test/rejecting-hook {})
+        (let [before (db-test/graph-snapshot (:datasource rt))]
+          (try
+            (batch/apply! rt {:refs {:a (:id a) :b (:id b)}
+                              :edges [{:op :remove :from :a :to :b :type "depends-on"}]})
+            (is false "expected the hook to veto the removal")
+            (catch clojure.lang.ExceptionInfo e
+              (is (= "hook/failed" (:code (ex-data e))))
+              (is (= :reject-batch (:hook/key (ex-data e))))
+              (is (= "policy/rejected" (:hook/cause-code (ex-data e))))))
+          (drain-events! rt)
+          (is (= before (db-test/graph-snapshot (:datasource rt)))
+              "the vetoed removal left the edge in place")
+          (is (empty? @delivered-events) "no batch event after a vetoed removal")
+          (let [context (last @hook-contexts)]
+            (is (= 1 (count (:batch/edge-ops context))))
+            (is (= :remove (get-in context [:batch/edge-ops 0 :op])))
+            (is (nil? (get-in context [:batch/edge-ops 0 :after])))
+            (is (= {:reason "keep"} (get-in context [:batch/edge-ops 0 :before :attributes]))
+                "the hook saw the decoded removed-edge pre-image")))))))
+
 (deftest weaver-apply-batch-hooks-normalize-context-and-reject-atomically
   (with-runtime
     (fn [rt _]
