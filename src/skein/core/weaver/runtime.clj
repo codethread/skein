@@ -42,7 +42,8 @@
   down while the lane idles; this bounds the pickup latency of the next event."
   5)
 
-(declare stop! with-spool-classloader with-runtime-binding)
+(declare stop! with-spool-classloader with-runtime-binding
+         with-runtime-and-spool-classloader)
 
 (defn- event-system-base []
   (let [handler-store (core-registry/backed-registry :events)]
@@ -259,13 +260,59 @@
     (fn []
       (mapv (fn [{:keys [file] :as startup-file}]
               (try
-                (assoc startup-file :return (with-spool-classloader runtime #(load-file file)))
+                (let [layer (case (:name startup-file)
+                              "init.clj" :init
+                              "init.local.clj" :init-local)]
+                  (assoc startup-file
+                         :return
+                         ((requiring-resolve
+                           'skein.core.weaver.module-refresh/with-startup-file)
+                          (assoc startup-file :layer layer)
+                          #(with-spool-classloader runtime (fn [] (load-file file))))))
                 (catch Throwable t
                   (throw (ex-info "Selected workspace startup file failed to load"
                                   {:config-dir (:config-dir world)
                                    :file file}
                                   t)))))
             (startup-files world)))))
+
+(defn- module-coordinator-context [runtime]
+  {:load-startup-files!
+   #(load-startup-files! runtime
+                         {:config-dir (get-in runtime [:metadata :config-dir])})
+   :with-loader #(with-runtime-and-spool-classloader runtime %)})
+
+(defn declare-module!
+  "Stage or apply one stable internal runtime module declaration.
+
+  Startup-file evaluation only stages the declaration. Outside collection the
+  declaration replaces the desired graph entry and refreshes it with affected
+  dependents. The public alpha surface is added by Task 5."
+  [runtime key opts]
+  ((requiring-resolve 'skein.core.weaver.module-refresh/module!)
+   runtime (module-coordinator-context runtime) key opts))
+
+(defn collect-module-entry!
+  "Collect one authoring-form entry for the module source being evaluated."
+  ([kind-id entry-key value]
+   ((requiring-resolve 'skein.core.weaver.module-refresh/collect-entry!)
+    kind-id entry-key value))
+  ([kind-id entry-key value opts]
+   ((requiring-resolve 'skein.core.weaver.module-refresh/collect-entry!)
+    kind-id entry-key value opts)))
+
+(defn refresh-modules!
+  "Run the internal full or targeted live-module refresh coordinator."
+  ([runtime]
+   (refresh-modules! runtime {}))
+  ([runtime opts]
+   ((requiring-resolve 'skein.core.weaver.module-refresh/refresh!)
+    runtime (module-coordinator-context runtime) opts)))
+
+(defn module-status
+  "Return offline joined state for the internal live-module coordinator."
+  [runtime]
+  ((requiring-resolve 'skein.core.weaver.module-refresh/status) runtime))
 
 (defn install-built-in-ops!
   "Install Skein's built-in CLI ops, resolving the api-tier registrar dynamically.
@@ -592,6 +639,10 @@
                         ;; deliberately leaves loaded-code evidence intact.
                         :namespace-load-ledger (atom {:last-order 0 :records []})
                         :module-use-state (atom {})
+                        :module-state
+                        (atom ((requiring-resolve
+                                'skein.core.weaver.module-refresh/initial-state)))
+                        :module-refresh-lock (Object.)
                         :spool-state (atom {})
                         :spool-classloader (clojure.lang.DynamicClassLoader.
                                             (.getContextClassLoader (Thread/currentThread)))
@@ -607,7 +658,10 @@
           (when (and publish? (not (compare-and-set! current-runtime nil runtime)))
             (throw (ex-info "A weaver runtime is already active in this process" {:metadata (:metadata @current-runtime)})))
           (install-built-in-ops! runtime)
-          (load-startup-files! runtime world)
+          (let [refresh-result (refresh-modules! runtime {:startup? true})]
+            (when-not (#{:applied :unchanged} (:status refresh-result))
+              (throw (ex-info "Initial module refresh did not complete successfully"
+                              refresh-result))))
            ;; Arm the scheduler only after startup files finish loading, so
            ;; handlers supplied by approved spools/config resolve before any
            ;; durable pending wake is re-armed (DELTA-...-runtime-001.CC5).

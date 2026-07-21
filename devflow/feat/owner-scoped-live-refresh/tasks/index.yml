@@ -17,7 +17,7 @@ tasks:
   - id: 4
     description: Build module graph and live refresh coordinator
     task_file: tasks/004-module-graph-refresh-coordinator.md
-    status: pending
+    status: complete
     blocked_by: [3]
   - id: 5
     description: Publish new runtime API and test surface

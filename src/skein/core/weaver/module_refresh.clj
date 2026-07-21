@@ -1,0 +1,626 @@
+(ns skein.core.weaver.module-refresh
+  "Internal live module refresh coordinator.
+
+  Full refresh collects and validates the layered startup graph before runtime
+  mutation. Targeted refresh uses the active graph and includes dependents.
+  Source/contribution failures retain the affected owner's prior declarations;
+  changed contributions prevalidate across all registered kinds before
+  publication; resource reconcilers run afterward with explicit degradation."
+  (:require [clojure.set :as set]
+            [skein.core.weaver.dispatch :as dispatch]
+            [skein.core.weaver.module-graph :as module-graph]
+            [skein.core.weaver.module-publication :as publication]
+            [skein.core.weaver.spool-sync :as spool-sync]))
+
+(defn initial-state
+  "Return the empty runtime-owned module coordinator state."
+  []
+  {:graph (sorted-map)
+   :layers (sorted-map)
+   :shadows (sorted-map)
+   :startup/files []
+   :contributions (sorted-map)
+   :resources (sorted-map)
+   :outcomes (sorted-map)
+   :root-outcomes (sorted-map)
+   :last-refresh nil})
+
+(defn with-startup-file
+  "Call `f` with startup-file declaration provenance dynamically bound."
+  [startup-file f]
+  (module-graph/with-startup-file startup-file f))
+
+(defn collect-entry!
+  "Collect one authoring-form entry for the module source being evaluated."
+  ([kind-id entry-key value]
+   (module-graph/collect-entry! kind-id entry-key value))
+  ([kind-id entry-key value opts]
+   (module-graph/collect-entry! kind-id entry-key value opts)))
+
+(defn- exception-data [throwable]
+  {:message (ex-message throwable)
+   :class (str (class throwable))
+   :data (ex-data throwable)})
+
+(defn- fail! [message data]
+  (throw (ex-info message data)))
+
+(defn- normalize-kind-contribution [kind-id value]
+  (when-not (keyword? kind-id)
+    (fail! "Module contribution kind must be a keyword"
+           {:kind kind-id}))
+  (when-not (map? value)
+    (fail! "Module contribution entries must be a map"
+           {:kind kind-id :value value}))
+  (let [partition? (or (contains? value :entries)
+                       (contains? value :overrides))
+        unknown (when partition?
+                  (seq (remove #{:entries :overrides} (keys value))))
+        entries (if partition? (:entries value) value)
+        overrides (if partition? (or (:overrides value) #{}) #{})]
+    (when unknown
+      (fail! "Module contribution partition contains unknown keys"
+             {:kind kind-id :unknown (vec (sort-by pr-str unknown))}))
+    (when-not (map? entries)
+      (fail! "Module contribution :entries must be a map"
+             {:kind kind-id :entries entries}))
+    (when-not (set? overrides)
+      (fail! "Module contribution :overrides must be a set"
+             {:kind kind-id :overrides overrides}))
+    (when-let [orphan (seq (remove (set (keys entries)) overrides))]
+      (fail! "Module contribution overrides absent entries"
+             {:kind kind-id :keys (vec (sort-by pr-str orphan))}))
+    {:entries entries :overrides overrides}))
+
+(defn- normalize-contribution [value]
+  (when-not (map? value)
+    (fail! "Module contribution function must return a map"
+           {:contribution value}))
+  (into (sorted-map)
+        (map (fn [[kind-id entries]]
+               [kind-id (normalize-kind-contribution kind-id entries)]))
+        value))
+
+(defn- successful-sync? [outcome]
+  (#{:loaded :already-available} (:status outcome)))
+
+(defn- sync-root-outcomes [sync-result]
+  (into (sorted-map)
+        (map (fn [[root-lib outcome]]
+               [root-lib (if (successful-sync? outcome)
+                           {:status :synced :sync outcome}
+                           {:status :failed :sync outcome
+                            :reason (:reason outcome)})]))
+        (:spools sync-result)))
+
+(defn- reloadable-diff? [diff]
+  (and (seq (:redefinitions diff))
+       (empty? (remove #{:redefinitions :namespace-residuals} (keys diff)))
+       (every? #(= :changed-bytes (:reason %))
+               (:namespace-residuals diff))))
+
+(defn- ledger-count [runtime root-lib]
+  (count (filter #(= root-lib (:root-lib %))
+                 (spool-sync/namespace-load-ledger runtime))))
+
+(defn- reload-redefined-roots! [runtime redefinitions]
+  (reduce
+   (fn [result {:keys [lib]}]
+     (let [before (ledger-count runtime lib)]
+       (try
+         (let [reload (spool-sync/reload-synced-spool! runtime lib)]
+           (assoc result lib {:status :source-reloaded
+                              :reload reload}))
+         (catch Throwable throwable
+           (let [after (ledger-count runtime lib)]
+             (assoc result lib
+                    {:status (if (< before after)
+                               :partial-source-reload
+                               :source-reload-failed)
+                     :loaded-records (- after before)
+                     :error (exception-data throwable)}))))))
+   (sorted-map)
+   redefinitions))
+
+(defn- conflict-root-libs [diff]
+  (set
+   (concat
+    (keep :lib (:removed-roots diff))
+    (keep :lib (:changed-roots diff))
+    (keep :lib (:redefinitions diff))
+    (keep #(get-in % [:binding :root-lib]) (:namespace-residuals diff))
+    (mapcat #(keep :root-lib (:providers %)) (:hard-conflicts diff)))))
+
+(defn- conflict-root-outcomes [diff error]
+  (let [root-libs (conflict-root-libs diff)
+        outcome {:status :hard-conflict
+                 :conflict diff
+                 :remedy (:remedy error)}]
+    (into (sorted-map)
+          (map (fn [root-lib] [root-lib outcome]))
+          root-libs)))
+
+(defn- sync-roots!
+  "Synchronize approvals, owning the ordinary changed-source reload path."
+  [runtime]
+  (try
+    (let [sync-result (spool-sync/sync-approved-spools runtime)]
+      {:sync sync-result
+       :roots (sync-root-outcomes sync-result)
+       :conflicts []
+       :remedies []})
+    (catch clojure.lang.ExceptionInfo throwable
+      (let [{:keys [reason diff] :as error} (ex-data throwable)]
+        (if (and (= :non-additive-sync-diff reason)
+                 (reloadable-diff? diff))
+          (let [reloads (reload-redefined-roots! runtime (:redefinitions diff))
+                failed? (some #(#{:partial-source-reload :source-reload-failed}
+                                (:status %))
+                              (vals reloads))]
+            (if failed?
+              {:sync (spool-sync/approved-spool-syncs runtime)
+               :roots reloads
+               :conflicts (vec (:namespace-residuals diff))
+               :remedies (cond-> [] (:remedy error) (conj (:remedy error)))}
+              (try
+                (let [sync-result (spool-sync/sync-approved-spools runtime)]
+                  {:sync sync-result
+                   :roots (merge (sync-root-outcomes sync-result) reloads)
+                   :conflicts []
+                   :remedies []})
+                (catch Throwable retry-failure
+                  {:fatal (exception-data retry-failure)
+                   :roots reloads
+                   :conflicts []
+                   :remedies []}))))
+          (if (= :non-additive-sync-diff reason)
+            {:sync (spool-sync/approved-spool-syncs runtime)
+             :roots (conflict-root-outcomes diff error)
+             :conflicts (vec (mapcat #(get diff %)
+                                     [:removed-roots :changed-roots
+                                      :redefinitions :namespace-residuals
+                                      :hard-conflicts :maven-version-bumps]))
+             :remedies (cond-> [] (:remedy error) (conj (:remedy error)))}
+            {:fatal (exception-data throwable)
+             :roots (sorted-map)
+             :conflicts []
+             :remedies []}))))
+    (catch Throwable throwable
+      {:fatal (exception-data throwable)
+       :roots (sorted-map)
+       :conflicts []
+       :remedies []})))
+
+(defn- current-root-state [runtime]
+  (let [sync-result (spool-sync/approved-spool-syncs runtime)]
+    {:sync sync-result
+     :roots (sync-root-outcomes sync-result)
+     :conflicts []
+     :remedies []}))
+
+(defn- module-root-problem [root-outcomes declaration]
+  (some (fn [root-lib]
+          (let [outcome (get root-outcomes root-lib)]
+            (cond
+              (nil? outcome)
+              {:reason :not-approved :root-lib root-lib}
+
+              (#{:synced :source-reloaded} (:status outcome))
+              nil
+
+              :else
+              {:reason (or (:reason outcome) (:status outcome))
+               :root-lib root-lib
+               :root/outcome outcome})))
+        (:spools declaration)))
+
+(defn- dependency-problem [outcomes declaration]
+  (some (fn [dependency]
+          (let [outcome (get outcomes dependency)]
+            (when-not (#{:ready :applied :unchanged} (:status outcome))
+              {:reason :missing-dependency
+               :dependency dependency
+               :dependency/outcome outcome})))
+        (:after declaration)))
+
+(defn- retained-outcome [key declaration problem]
+  (merge {:module/key key
+          :required? (:required? declaration)
+          :status (cond
+                    (= :hard-conflict (:reason problem)) :refused
+                    (:required? declaration) :failed
+                    :else :skipped)
+          :contribution/status :retained}
+         problem))
+
+(defn- load-source!
+  [runtime with-loader key declaration]
+  (if-let [ns-sym (:ns declaration)]
+    (with-loader #(spool-sync/load-synced-namespace! runtime ns-sym key))
+    (let [file (spool-sync/module-file runtime (:file declaration))]
+      (with-loader #(do (load-file file) {:file file})))))
+
+(defn- evaluate-module
+  [runtime with-loader key declaration previous-contribution]
+  (try
+    (let [{:keys [return contribution]}
+          (module-graph/with-contribution-collection
+            #(load-source! runtime with-loader key declaration))
+          source-status (if (and (:ns declaration) (nil? (:file return)))
+                          :unchanged
+                          :loaded)
+          contribution (if-let [contribute (:contribute declaration)]
+                         (with-loader
+                           #(let [contribute-fn (requiring-resolve contribute)]
+                              (contribute-fn {:runtime runtime
+                                              :module/key key
+                                              :module/declaration declaration})))
+                         (if (and (= :unchanged source-status)
+                                  (some? previous-contribution))
+                           previous-contribution
+                           contribution))
+          normalized (normalize-contribution contribution)]
+      {:status :ready
+       :module/key key
+       :source/status source-status
+       :source/result return
+       :contribution normalized})
+    (catch Throwable throwable
+      {:status :failed
+       :module/key key
+       :source/status :failed
+       :contribution/status :retained
+       :error (exception-data throwable)})))
+
+(defn- evaluate-affected
+  [runtime with-loader graph order root-outcomes previous-contributions]
+  (let [unaffected (set/difference (set (keys graph)) (set order))
+        seeded (into (sorted-map)
+                     (map (fn [key] [key {:status :unchanged}]))
+                     unaffected)]
+    (select-keys
+     (reduce
+      (fn [outcomes key]
+        (let [declaration (get graph key)
+              problem (or (module-root-problem root-outcomes declaration)
+                          (dependency-problem outcomes declaration))]
+          (assoc outcomes key
+                 (if problem
+                   (retained-outcome key declaration problem)
+                   (evaluate-module runtime with-loader key declaration
+                                    (get previous-contributions key))))))
+      seeded
+      order)
+     order)))
+
+(defn- previous-module [state key]
+  {:module/declaration (get-in state [:graph key])
+   :module/contribution (get-in state [:contributions key])
+   :module/outcome (get-in state [:outcomes key])
+   :module/resource (get-in state [:resources key])})
+
+(defn- stage-publications
+  [backends candidate-map graph order raw previous-contributions]
+  (let [unaffected (set/difference (set (keys graph)) (set order))
+        seeded (into (sorted-map)
+                     (map (fn [key] [key {:status :unchanged}]))
+                     unaffected)
+        staged
+        (reduce
+         (fn [{:keys [candidates outcomes] :as result} key]
+           (let [declaration (get graph key)
+                 raw-outcome (get raw key)
+                 dependency (dependency-problem outcomes declaration)]
+             (cond
+               dependency
+               (assoc-in result [:outcomes key]
+                         (retained-outcome key declaration dependency))
+
+               (not= :ready (:status raw-outcome))
+               (assoc-in result [:outcomes key] raw-outcome)
+
+               (= (get previous-contributions key) (:contribution raw-outcome))
+               (assoc-in result [:outcomes key]
+                         (-> raw-outcome
+                             (assoc :status :unchanged
+                                    :contribution/status :unchanged)
+                             (dissoc :contribution)))
+
+               :else
+               (try
+                 (let [next-candidates (publication/stage-owner
+                                        backends candidates key
+                                        (:contribution raw-outcome))]
+                   (-> result
+                       (assoc :candidates next-candidates)
+                       (assoc-in [:contributions key] (:contribution raw-outcome))
+                       (assoc-in [:outcomes key]
+                                 (-> raw-outcome
+                                     (assoc :status :applied
+                                            :contribution/status :replaced)
+                                     (dissoc :contribution)))))
+                 (catch Throwable throwable
+                   (assoc-in result [:outcomes key]
+                             (-> raw-outcome
+                                 (assoc :status :failed
+                                        :contribution/status :retained
+                                        :error (exception-data throwable))
+                                 (dissoc :contribution))))))))
+         {:candidates candidate-map
+          :outcomes seeded
+          :contributions previous-contributions}
+         order)]
+    (update staged :outcomes #(select-keys % order))))
+
+(defn- provisional-result [mode roots conflicts remedies shadows outcomes removed]
+  {:status :unchanged
+   :mode mode
+   :modules (into (sorted-map)
+                  (concat (map (fn [key]
+                                 [key {:module/key key
+                                       :status :removed
+                                       :contribution/status :removed}])
+                               removed)
+                          outcomes))
+   :roots roots
+   :residuals []
+   :conflicts conflicts
+   :remedies remedies
+   :declaration/shadows shadows})
+
+(defn- reconcile-one
+  [runtime with-loader state graph result key outcome]
+  (let [removed? (= :removed (:status outcome))
+        declaration (get graph key)
+        previous (previous-module state key)
+        reconcile (or (:reconcile declaration)
+                      (when removed? (get-in previous [:module/declaration :reconcile])))]
+    (if (or (nil? reconcile)
+            (not (#{:applied :removed} (:status outcome))))
+      {:outcome outcome}
+      (try
+        (let [return (with-loader
+                       #(let [reconcile-fn (requiring-resolve reconcile)]
+                          (reconcile-fn
+                           {:runtime runtime
+                            :module/key key
+                            :module/declaration declaration
+                            :module/previous previous
+                            :module/contribution outcome
+                            :refresh/result result})))]
+          (when-not (dispatch/data-first-value? return)
+            (fail! "Module reconcile return must be data-first"
+                   {:module/key key :return return}))
+          {:outcome (assoc outcome :reconcile/status :applied
+                           :reconcile/result return)
+           :resource {:status :applied :result return}})
+        (catch Throwable throwable
+          {:outcome (assoc outcome :status :degraded
+                           :reconcile/status :failed
+                           :reconcile/error (exception-data throwable))
+           :resource {:status :degraded
+                      :error (exception-data throwable)}})))))
+
+(defn- reconcile-modules
+  [runtime with-loader state graph result order]
+  (reduce
+   (fn [{:keys [outcomes resources]} key]
+     (let [{:keys [outcome resource]}
+           (reconcile-one runtime with-loader state graph result key
+                          (get outcomes key))]
+       {:outcomes (assoc outcomes key outcome)
+        :resources (cond-> resources resource (assoc key resource))}))
+   {:outcomes (:modules result)
+    :resources (:resources state)}
+   order))
+
+(defn- top-status [outcomes roots changed-kinds]
+  (let [module-values (vals outcomes)
+        failures (filter #(#{:failed :degraded :refused} (:status %))
+                         module-values)
+        root-failures (filter #(#{:failed :hard-conflict
+                                  :partial-source-reload
+                                  :source-reload-failed}
+                                (:status %))
+                              (vals roots))
+        changed? (or (seq changed-kinds)
+                     (some #(#{:applied :removed :degraded} (:status %))
+                           module-values))]
+    (cond
+      (and (seq failures)
+           (every? #(= :refused (:status %)) module-values)
+           (not changed?)) :refused
+      (or (seq failures) (seq root-failures)) :partial
+      changed? :applied
+      :else :unchanged)))
+
+(defn- safe-loaded-status [runtime]
+  (try
+    (spool-sync/loaded-namespace-status runtime)
+    (catch Throwable throwable
+      {:residuals []
+       :hard-conflicts []
+       :classification/error (exception-data throwable)})))
+
+(defn- record-result!
+  [runtime collection contributions resources outcomes roots result]
+  (swap! (:module-state runtime)
+         (fn [state]
+           (-> state
+               (assoc :graph (:graph collection)
+                      :layers (:layers collection)
+                      :shadows (:shadows collection)
+                      :startup/files (mapv #(dissoc % :return)
+                                           (:files collection))
+                      :contributions (into (sorted-map) contributions)
+                      :resources (into (sorted-map) resources)
+                      :outcomes (into (sorted-map) outcomes)
+                      :root-outcomes (into (sorted-map) roots)
+                      :last-refresh result))))
+  result)
+
+(defn- refused-result! [runtime mode error]
+  (let [result {:status :refused
+                :mode mode
+                :modules (sorted-map)
+                :roots (sorted-map)
+                :residuals []
+                :conflicts [error]
+                :remedies []
+                :declaration/shadows (sorted-map)}]
+    (swap! (:module-state runtime) assoc :last-refresh result)
+    result))
+
+(defn- select-refresh
+  [runtime load-startup-files! opts]
+  (let [state @(:module-state runtime)]
+    (cond
+      (:declare opts)
+      (let [[key declaration] (:declare opts)
+            declaration (module-graph/normalize-declaration key declaration)
+            graph (assoc (:graph state) key declaration)
+            {:keys [order]} (module-graph/validate-graph graph)]
+        {:mode :targeted
+         :collection (assoc (select-keys state [:layers :shadows :startup/files])
+                            :files (:startup/files state)
+                            :graph graph
+                            :order order)
+         :selected #{key}})
+
+      (contains? opts :only)
+      (let [selected (:only opts)]
+        (when-not (and (coll? selected) (seq selected) (every? keyword? selected))
+          (fail! "Targeted refresh :only must be a non-empty collection of module keys"
+                 {:only selected}))
+        (let [selected (set selected)
+              unknown (set/difference selected (set (keys (:graph state))))]
+          (when (seq unknown)
+            (fail! "Targeted refresh names unknown module keys"
+                   {:unknown (vec (sort-by pr-str unknown))}))
+          {:mode :targeted
+           :collection (assoc (select-keys state [:graph :layers :shadows])
+                              :files (:startup/files state)
+                              :order (module-graph/dependency-order (:graph state)))
+           :selected selected}))
+
+      :else
+      {:mode :full
+       :collection (module-graph/collect-modules load-startup-files!)})))
+
+(defn refresh!
+  "Collect or select modules and reconcile the live runtime.
+
+  `context` supplies `:load-startup-files!` and `:with-loader` callbacks owned
+  by the daemon runtime namespace. `opts` is empty for full refresh, carries
+  `:only` for targeted refresh, or internal `:declare` for module declaration
+  outside startup collection."
+  [runtime {:keys [load-startup-files! with-loader]} opts]
+  ;; The runtime slot is one dedicated Object monitor. Splint cannot see the
+  ;; stable object behind the map lookup; refreshes serialize so two collectors
+  ;; never publish interleaved desired graphs.
+  #_{:splint/disable [lint/locking-object]}
+  (locking (:module-refresh-lock runtime)
+    (let [selection
+          (try
+            (select-refresh runtime load-startup-files! opts)
+            (catch Throwable throwable
+              (if (:startup? opts)
+                (throw throwable)
+                (if (or (contains? opts :only) (:declare opts))
+                  (throw throwable)
+                  {:refused
+                   (refused-result! runtime :full
+                                    (exception-data throwable))}))))]
+      (if-let [refused (:refused selection)]
+        refused
+        (let [{:keys [mode collection selected]} selection
+              state @(:module-state runtime)
+              old-graph (:graph state)
+              graph (:graph collection)
+              removed (if (= :full mode)
+                        (set/difference (set (keys old-graph)) (set (keys graph)))
+                        #{})
+              selected (or selected (set (keys graph)))
+              order (module-graph/affected-modules graph selected)
+              ;; Temporary old-lifecycle startup files may still call sync!
+              ;; themselves. An empty module graph needs no second sync; this
+              ;; preserves their truthful first-load root outcomes until Task 16
+              ;; removes the scaffolding. Any desired/current module graph owns
+              ;; synchronization through the coordinator.
+              sync-result (if (or (seq graph) (seq old-graph))
+                            (sync-roots! runtime)
+                            (current-root-state runtime))]
+          (if-let [fatal (:fatal sync-result)]
+            (if (:startup? opts)
+              (throw (ex-info "Initial module refresh could not synchronize approved roots"
+                              fatal))
+              (refused-result! runtime mode fatal))
+            (try
+              (let [previous-contributions (:contributions state)
+                    raw (evaluate-affected runtime with-loader graph order
+                                           (:roots sync-result)
+                                           previous-contributions)
+                    backends (publication/backends runtime)
+                    base-candidates (reduce publication/remove-owner
+                                            (publication/candidates backends)
+                                            removed)
+                    staged (stage-publications backends base-candidates graph order raw
+                                               previous-contributions)
+                    changed-kinds (publication/publish! backends (:candidates staged))
+                    provisional (provisional-result mode (:roots sync-result)
+                                                    (:conflicts sync-result)
+                                                    (:remedies sync-result)
+                                                    (:shadows collection)
+                                                    (:outcomes staged)
+                                                    removed)
+                    removal-order (->> (module-graph/dependency-order old-graph)
+                                       reverse
+                                       (filter removed))
+                    reconcile-order (vec (concat removal-order order))
+                    reconciled (reconcile-modules runtime with-loader state graph
+                                                  provisional reconcile-order)
+                    contributions (apply dissoc (:contributions staged) removed)
+                    loaded-status (safe-loaded-status runtime)
+                    outcomes (:outcomes reconciled)
+                    state-outcomes (-> (:outcomes state)
+                                       (merge outcomes)
+                                       (#(apply dissoc % removed)))
+                    status (top-status outcomes (:roots sync-result) changed-kinds)
+                    result (assoc provisional
+                                  :status status
+                                  :modules outcomes
+                                  :residuals (:residuals loaded-status)
+                                  :conflicts (vec (concat (:conflicts provisional)
+                                                          (:hard-conflicts loaded-status)))
+                                  :publication/kinds (vec (sort-by pr-str changed-kinds)))]
+                (record-result! runtime collection contributions
+                                (:resources reconciled) state-outcomes
+                                (:roots sync-result) result))
+              (catch Throwable throwable
+                ;; Source loads may already have occurred, but no publication
+                ;; follows a coordinator-wide validation failure.
+                (if (:startup? opts)
+                  (throw throwable)
+                  (refused-result! runtime mode (exception-data throwable)))))))))))
+
+(defn module!
+  "Stage a module during startup collection, otherwise declare and refresh it."
+  [runtime context key opts]
+  (if (module-graph/collecting-modules?)
+    (module-graph/stage-module! key opts)
+    (refresh! runtime context {:declare [key opts]})))
+
+(defn status
+  "Return the coordinator's offline module state joined with loaded-code state."
+  [runtime]
+  (let [state @(:module-state runtime)
+        loaded (safe-loaded-status runtime)]
+    {:modules (:graph state)
+     :declaration/layers (:layers state)
+     :declaration/shadows (:shadows state)
+     :contributions (:contributions state)
+     :module/outcomes (:outcomes state)
+     :resource/outcomes (:resources state)
+     :root/outcomes (:root-outcomes state)
+     :loaded loaded
+     :last-refresh (:last-refresh state)}))
