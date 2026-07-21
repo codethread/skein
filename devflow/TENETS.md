@@ -18,7 +18,7 @@ TEN ids use `@N` versions. A bare TEN id means its latest version. Bump `@N` onl
 - **TEN-005**: Declared structural relations are DAGs.
   - The engine guarantees each declared acyclic relation is independently acyclic, and every engine traversal walks exactly one such relation or is explicitly cycle-aware. Annotation edges carry no acyclicity guarantee and may form cycles; consumers must not assume whole-graph acyclicity.
 - **TEN-006**: The CLI is a thin JSON control surface; the daemon/REPL is the rich semantic surface.
-  - The scripted CLI should expose simple commands, string flags, JSON machine output, and named handles to daemon-owned behavior. It should not parse, author, or debug rich Clojure/EDN userland structures.
+  - The scripted CLI should expose simple commands, string flags, JSON machine output, and named handles to daemon-owned behavior. It should not parse, author, or debug rich Clojure/EDN userland structures. A trusted transform registered in daemon config may render help output (SPEC-004.C106), but the machine schema — the versioned help envelope — stays the single contract, `--json` is the raw floor the CLI always relays, and the CLI itself still authors or debugs no userland structure.
   - Complex query definitions, runtime customization, inspection, and debugging belong in trusted daemon config and REPL workflows. The CLI can invoke those capabilities by stable names and simple JSON-shaped params.
   - The engine may translate between JSON wire data and Clojure-native/EDN data internally, but that translation is hidden behind daemon APIs.
 - **TEN-007**: Storage complexity is the core's burden; the attribute map is the contract.

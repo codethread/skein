@@ -4,8 +4,8 @@
 **Root spec:** [cli.md](../../../specs/cli.md) (SPEC-002)
 **Feature:** [../proposal.md](../proposal.md)
 **Related:** [RFC-Dtf-001](../../../rfcs/2026-07-20-discovery-tier-factoring.md); DELTA-Dtf-002 (daemon-runtime), DELTA-Dtf-003 (repl-api)
-**Status:** Draft
-**Last Updated:** 2026-07-20
+**Status:** Merged
+**Last Updated:** 2026-07-21
 
 ## DELTA-Dtf-001.P1 Summary
 

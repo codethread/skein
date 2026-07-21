@@ -16,7 +16,7 @@ Root specs are canonical for shipped behavior:
 
 ## Active features
 
-_No active features currently._
+- `tz0ki-discovery-tiers` — reworks the discovery surface around one canonical, versioned, fractal help envelope (`help`/`about`/`prime` meta-verbs, a runtime glossary of named failure outcomes, a config-electable default help transform with a `--json` raw floor, and a trailing-`--help` grammar). Contracts promoted into `cli.md` (SPEC-002.C39/C44–C47), `daemon-runtime.md` (SPEC-004.C106–C112), and `repl-api.md` (SPEC-003.C66–C69); awaiting finish/archive.
 
 ## Archived features
 
