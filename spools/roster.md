@@ -90,7 +90,7 @@ The default stale threshold is `skein.spools.roster/default-stale-after-ms` (fif
 
 ## CLI op
 
-`install!` registers one declared-subcommand `roster` op (SPEC-RosterSpool-001.P6). `strand help roster` shows the machine-readable verb/flag surface, and `strand roster help`/`-h`/`--help` return that same detail; bare `strand roster` and unknown verbs fail loudly with the available subcommand names. `await-quiet` registers the unbounded deadline class so it can block for arbitrarily long coordination waits (SPEC-RosterSpool-001.C10).
+`install!` registers one declared-subcommand `roster` op (SPEC-RosterSpool-001.P6). `strand help roster` shows the machine-readable verb/flag surface, and a trailing `strand roster --help`/`-h` flag rewrites to it; bare `strand roster` and unknown verbs fail loudly with the available subcommand names. `await-quiet` registers the unbounded deadline class so it can block for arbitrarily long coordination waits (SPEC-RosterSpool-001.C10).
 
 ```sh
 strand roster prime
