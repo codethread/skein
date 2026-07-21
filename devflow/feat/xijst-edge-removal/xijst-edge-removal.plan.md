@@ -92,3 +92,7 @@ Append notes here. Do not rewrite earlier notes.
 ### PLAN-Xer-001.DN2 Task 2: public batch contract — 2026-07-21
 
 - Commit `e89e327` documents and proves the normalized public transition path without new runtime plumbing. The cold focused gate passed with 92 tests and 934 assertions; regenerated API docs are reproducible, and Terra review `d0ici` signed off clean.
+
+### PLAN-Xer-001.DN3 Task 3: spec promotion and user docs — 2026-07-21
+
+- Commit `286f441` promoted `DELTA-Xer-001` and added user guidance. Terra review `r42by` found that the tutorial's placement could imply newly created refs were removable; `690bd36` made the pre-bound-ref rule explicit, and re-review `l71e9` signed off clean. `make docs-check` passes.

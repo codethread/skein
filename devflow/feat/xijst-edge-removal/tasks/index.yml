@@ -12,5 +12,5 @@ tasks:
   - id: 3
     description: Promote spec and finish user documentation
     task_file: tasks/003-promote-spec-and-docs.md
-    status: in_progress
+    status: complete
     blocked_by: [2]
