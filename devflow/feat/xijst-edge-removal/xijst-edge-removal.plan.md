@@ -84,3 +84,7 @@ Outcome: `DELTA-Xer-001` is merged into `SPEC-001.P6` (both `CC1` and `CC2`), th
 ## PLAN-Xer-001.P9 Developer Notes
 
 Append notes here. Do not rewrite earlier notes.
+
+### PLAN-Xer-001.DN1 Task 1: core removal and transitions — 2026-07-21
+
+- Commit `d3861da` implements the database slice. The cold focused gate passed with 68 tests and 370 assertions; Terra review `gd1yq` signed off with no findings. Core images deliberately remain storage-shaped for the existing public normalization boundary.
