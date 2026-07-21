@@ -39,10 +39,6 @@
               {:ns 'skein.spools.workflow
                :spools ['skein.spools/workflow]
                :call 'skein.spools.workflow/install!})
-(runtime/use! runtime :skein/spools-roster
-              {:ns 'skein.spools.roster
-               :spools ['skein.spools/roster]
-               :call 'skein.spools.roster/install!})
 ;; The shell executor ships in the workflow spool root and fulfils :shell workflow
 ;; gates by running the gate command directly. Its install! runs an initial
 ;; scan, so it is ordered after workflow (which owns the executor registry it

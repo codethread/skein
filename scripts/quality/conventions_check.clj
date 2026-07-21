@@ -27,7 +27,6 @@
   ["src"
    "spools/batteries/src"
    "spools/workflow/src"
-   "spools/roster/src"
    "spools/text-search/src"
    "spools/guild/src"
    "spools/chime/src"

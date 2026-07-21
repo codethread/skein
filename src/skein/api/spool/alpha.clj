@@ -154,7 +154,7 @@
 
 (defn poll-until!
   "The shared spool-tier long-poll skeleton behind `skein.spools.workflow/await!`
-  and `skein.spools.roster/await-quiet!`: call `check` (a zero-arg fn) once, test
+  and `skein.spools.cron/await-quiescent!`: call `check` (a zero-arg fn) once, test
   its value with `pred->result`, and repeat on `installed-clock` every `poll-ms`
   until either `pred->result` returns a non-nil result or `timeout-ms` has
   elapsed on that Clock.

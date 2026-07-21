@@ -7,7 +7,6 @@
                                        ct.spools/delegation "delegation"
                                        ct.spools/bench "bench"}}
           skein.spools/workflow {:local/root "../spools/workflow"}
-          skein.spools/roster {:local/root "../spools/roster"}
           skein.spools/text-search {:local/root "../spools/text-search"}
           skein.spools/chime {:local/root "../spools/chime"}
           skein.spools/cron {:local/root "../spools/cron"}

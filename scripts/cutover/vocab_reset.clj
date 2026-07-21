@@ -37,13 +37,6 @@
   requires another attribute at a given value, and `:when-sibling-key` requires
   only that the strand carry a key at all.
 
-  `:when-sibling-key` is what makes a drop safe to write down. Four of roster's
-  keys are dropped rather than renamed because the entries dual-wrote a bare
-  twin (`roster/owner` alongside `owner`), so the roster/* half is redundant —
-  but only on a strand that really carries the twin. Guarding each drop on the
-  twin's presence means the delete can never destroy the last copy of an
-  identity: a strand shaped otherwise keeps its data and is reported.
-
   Table order matters only where an entry reads a key another entry moves: the
   plan-root `kind` rename reads `workflow` \"agent-plan\", so it is listed before
   the entry that drops that key, and the `kanban/devflow` drop reads `kanban/run`
@@ -174,24 +167,6 @@
     :note "marker rows keep bench/run; judge rows carried the root id"}
    {:migration :drop-key :key "bench/aborted" :when-value "true"
     :note "redundant with bench/error = aborted on a closed strand"}
-
-   ;; roster: the entry's lifecycle is a phase, and its ending is an outcome.
-   {:migration :rename-key :from "roster/status" :to "roster/phase"}
-   {:migration :rename-key :from "roster/result" :to "roster/outcome"}
-   ;; roster/body had no bare twin — it moves rather than goes, or the entry
-   ;; loses its text. The four below did dual-write their bare convention key,
-   ;; so dropping the roster/* half keeps the surviving copy — but each guards
-   ;; on the twin it is redundant with, because the dual-write is a claim about
-   ;; the spool's writes, not about every strand in a live world. Entries
-   ;; written before the dual-write, or restamped from a root that carried only
-   ;; the roster/* form (the pre-reset `resolve-identity!` read roster/feature
-   ;; *or* feature, so that shape was reachable), hold the sole copy: without
-   ;; the guard the drop is the deletion of a durable identity.
-   {:migration :rename-key :from "roster/body" :to "body"}
-   {:migration :drop-key :key "roster/feature" :when-sibling-key "feature"}
-   {:migration :drop-key :key "roster/owner" :when-sibling-key "owner"}
-   {:migration :drop-key :key "roster/branch" :when-sibling-key "branch"}
-   {:migration :drop-key :key "roster/worktree" :when-sibling-key "worktree"}
 
    ;; kanban: the board split one status word in two — the lane an active card
    ;; sits in, and the outcome a finished one ended on. Only the lane half is in
@@ -433,11 +408,9 @@
 
   The advisory half is the guards that narrow a key to the rows whose shape
   earns the rewrite: `harness` is agent-run's word on a delegated task and
-  nobody else's, and `roster/owner` is redundant only where the bare `owner`
-  twin survives it. A row such a guard skipped is either correctly none of our
+  nobody else's. A row such a guard skipped is either correctly none of our
   business or a strand shaped unexpectedly, and only the operator can tell
-  which. For the guarded drops that reading is the point — the rows named there
-  are the ones whose only copy of an identity would have gone. The drift half is
+  which. The drift half is
   `kanban/status`, a lane only where it holds one: the guard names the whole
   vocabulary, so a declined row is a strand the new code cannot read."
   [tx reading]
