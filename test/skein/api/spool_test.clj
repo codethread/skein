@@ -1,8 +1,11 @@
 (ns skein.api.spool-test
   "Tests for skein.api.spool.alpha: shared fail-loud, validation, attribute, and
   polling seams that other spools compose from."
-  (:require [clojure.test :refer [deftest is]]
-            [skein.api.spool.alpha :as util]))
+  (:require [clojure.test :refer [deftest is testing]]
+            [skein.api.clock.alpha :as clock]
+            [skein.api.spool.alpha :as util]
+            [skein.test.alpha :as test-alpha])
+  (:import [java.time Instant]))
 
 (deftest fail!-throws-ex-info-with-contextual-data-and-optional-cause
   (let [e (is (thrown-with-msg? clojure.lang.ExceptionInfo #"boundary rejected"
@@ -59,63 +62,83 @@
                                     (util/entity-projection (dissoc strand field))))]
         (is (= [field] (:missing (ex-data e))))))))
 
-(deftest poll-until-deadline!-polls-until-pred-result-then-stops
-  (let [calls (atom 0)]
+(deftest poll-until!-polls-on-the-supplied-clock-until-a-result
+  (let [start (Instant/parse "2026-01-01T00:00:00Z")
+        manual (test-alpha/manual-clock start)
+        calls (atom 0)]
     (is (= :ready
-           (util/poll-until-deadline!
-            {:deadline (+ (System/currentTimeMillis) 60000)
-             :poll-ms 1
+           (util/poll-until!
+            manual
+            {:timeout-ms 60000
+             :poll-ms 10
              :check #(swap! calls inc)
              :pred->result (fn [n] (when (>= n 3) :ready))
              :on-timeout (constantly :timeout)})))
-    (is (= 3 @calls))))
+    (is (= 3 @calls))
+    (is (= (.plusMillis start 20) (clock/now manual)))))
 
-(deftest poll-until-deadline!-calls-on-timeout-once-the-deadline-has-passed
-  (is (= {:reason :timeout :value :still-waiting}
-         (util/poll-until-deadline!
-          {:deadline (dec (System/currentTimeMillis))
-           :poll-ms 1
-           :check (constantly :still-waiting)
-           :pred->result (constantly nil)
-           :on-timeout (fn [v] {:reason :timeout :value v})}))))
+(deftest poll-until!-times-out-with-the-last-value-on-manual-time
+  (let [start (Instant/parse "2026-01-01T00:00:00Z")
+        manual (test-alpha/manual-clock start)
+        calls (atom 0)]
+    (is (= {:reason :timeout :value 4}
+           (util/poll-until!
+            manual
+            {:timeout-ms 5
+             :poll-ms 2
+             :check #(swap! calls inc)
+             :pred->result (constantly nil)
+             :on-timeout (fn [v] {:reason :timeout :value v})})))
+    (is (= 4 @calls))
+    (is (= (.plusMillis start 6) (clock/now manual)))))
 
-(deftest poll-until-deadline!-fails-loudly-for-malformed-deadline-or-poll-ms
-  (let [valid {:deadline (System/currentTimeMillis)
+(deftest poll-until!-treats-false-as-a-non-nil-projected-result
+  (let [manual (test-alpha/manual-clock Instant/EPOCH)
+        calls (atom 0)]
+    (is (false? (util/poll-until! manual
+                                  {:timeout-ms 10
+                                   :poll-ms 1
+                                   :check #(swap! calls inc)
+                                   :pred->result (constantly false)
+                                   :on-timeout (constantly :timeout)})))
+    (is (= 1 @calls))
+    (is (= Instant/EPOCH (clock/now manual)))))
+
+(deftest poll-until!-validates-clock-and-the-complete-option-boundary-first
+  (let [manual (test-alpha/manual-clock Instant/EPOCH)
+        calls (atom 0)
+        valid {:timeout-ms 10
                :poll-ms 1
-               :check (constantly true)
+               :check #(swap! calls inc)
                :pred->result (constantly :done)
                :on-timeout (constantly :timeout)}]
-    (doseq [bad [1.5 "5" nil]]
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #":deadline must be a long"
-                            (util/poll-until-deadline! (assoc valid :deadline bad)))))
-    (doseq [bad [-1 1.5 "5" nil]]
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #":poll-ms must be a non-negative integer"
-                            (util/poll-until-deadline! (assoc valid :poll-ms bad)))))))
-
-(deftest poll-until-deadline!-fails-loudly-for-missing-required-functions
-  (let [valid {:deadline (System/currentTimeMillis)
-               :poll-ms 1
-               :check (constantly true)
-               :pred->result (constantly :done)
-               :on-timeout (constantly :timeout)}]
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #":check must be a function"
-                          (util/poll-until-deadline! (dissoc valid :check))))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #":pred->result must be a function"
-                          (util/poll-until-deadline! (dissoc valid :pred->result))))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #":on-timeout must be a function"
-                          (util/poll-until-deadline! (dissoc valid :on-timeout))))))
-
-(deftest poll-until-deadline!-rejects-unknown-option-keys
-  (let [e (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                                #"poll-until-deadline! received unknown keys"
-                                (util/poll-until-deadline!
-                                 {:deadline (System/currentTimeMillis)
-                                  :poll-ms 1
-                                  :check (constantly true)
-                                  :pred->result (constantly :done)
-                                  :on-timeout (constantly :timeout)
-                                  :timeout-secs 5})))]
-    (is (= [:timeout-secs] (:unknown (ex-data e))))))
+    (testing "Clock and map shape"
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"clock must be a"
+                            (util/poll-until! (constantly Instant/EPOCH) valid)))
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"opts must be a map"
+                            (util/poll-until! manual nil))))
+    (testing "numeric fields"
+      (doseq [bad [-1 1.5 "5" nil (inc' Long/MAX_VALUE)]]
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                              #":timeout-ms must be a non-negative integer"
+                              (util/poll-until! manual (assoc valid :timeout-ms bad)))))
+      (doseq [bad [0 -1 1.5 "5" nil (inc' Long/MAX_VALUE)]]
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                              #":poll-ms must be a positive integer"
+                              (util/poll-until! manual (assoc valid :poll-ms bad))))))
+    (testing "required functions"
+      (doseq [[key message] [[:check #":check must be a function"]
+                             [:pred->result #":pred->result must be a function"]
+                             [:on-timeout #":on-timeout must be a function"]]]
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo message
+                              (util/poll-until! manual (dissoc valid key))))))
+    (testing "exact keys"
+      (let [exception (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                                            #"poll-until! received unknown keys"
+                                            (util/poll-until! manual
+                                                              (assoc valid :timeout-secs 5))))]
+        (is (= [:timeout-secs] (:unknown (ex-data exception))))))
+    (is (zero? @calls) "invalid boundaries fail before invoking check")))
 
 (deftest attr-get-rejects-omitted-attribute-descriptors
   (let [strand {:id "abc123"

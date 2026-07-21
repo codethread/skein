@@ -694,8 +694,12 @@ Like queries, patterns are weaver-lifetime runtime state. Register them from sta
 Skein ships built-in privileged alpha namespaces for trusted runtime transformations. They are
 source-visible helper namespaces from the Skein checkout/classpath, not user/community spools that
 need `spools.edn` approval — `skein.api.spool.alpha` (the spool-authoring helpers `fail!`,
-`reject-unknown-keys!`, `require-valid!`, `attr-key->str`, `attr-get`, `poll-until-deadline!`) is
+`reject-unknown-keys!`, `require-valid!`, `attr-key->str`, `attr-get`, `poll-until!`) is
 one of them, the blessed home every reference spool builds on:
+
+`poll-until!` takes a Clock and a relative timeout. Runtime-owned callers pass
+`(skein.api.runtime.alpha/clock runtime)`, keeping time reads and sleeps on one
+authority; tests can install `skein.test.alpha/manual-clock` to avoid wall-time waits.
 
 ```clojure
 (require '[skein.api.graph.alpha :as graph])

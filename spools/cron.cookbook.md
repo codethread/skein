@@ -215,8 +215,7 @@ wait for the event lane, then wait for cron's execution executor to go idle.
 - **`await-quiescent!` counts jobs before offload.** Once the event lane has
   quiesced, any job submitted by a delivered wake is already in cron's in-flight
   latch.
-- **No sleeps or wall waits.** Manual clock advancement releases the scheduler
-  wake; the two awaits join the two execution stages.
+- **No sleeps or wall waits.** Manual clock advancement releases the scheduler wake, and cron's await uses that same runtime clock for its timeout and polling.
 
 Honest source: `fires-records-result-and-continues-cadence`, failure cases in
 [`test/skein/cron_test.clj`](../test/skein/cron_test.clj), and the restart/lane

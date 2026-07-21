@@ -68,6 +68,7 @@ nav:
       - Index: docs/api/README.md
       - skein.api.batch.alpha: docs/api/batch.api.md
       - skein.api.cli.alpha: docs/api/cli.api.md
+      - skein.api.clock.alpha: docs/api/clock.api.md
       - skein.api.current.alpha: docs/api/current.api.md
       - skein.api.events.alpha: docs/api/events.api.md
       - skein.api.format.alpha: docs/api/format.api.md

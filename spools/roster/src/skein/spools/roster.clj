@@ -29,10 +29,11 @@
             [skein.api.current.alpha :as current]
             [skein.api.events.alpha :as events]
             [skein.api.graph.alpha :as graph]
+            [skein.api.runtime.alpha :as runtime]
             [skein.api.vocab.alpha :as vocab]
             [skein.api.weaver.alpha :as weaver]
             [skein.api.format.alpha :as fmt]
-            [skein.api.spool.alpha :refer [fail! reject-unknown-keys! attr-key->str attr-get poll-until-deadline!]])
+            [skein.api.spool.alpha :refer [fail! reject-unknown-keys! attr-key->str attr-get poll-until!]])
   (:import [java.time Duration Instant]))
 
 (def default-stale-after-ms
@@ -232,8 +233,9 @@
 (s/def ::phase finish-phases)
 (s/def ::outcome non-blank-string?)
 (s/def ::stale-after-ms pos-int?)
-(s/def ::timeout-secs (s/and integer? (complement neg?)))
-(s/def ::poll-ms (s/and integer? (complement neg?)))
+(s/def ::timeout-secs
+  (s/and integer? (complement neg?) #(<= % (quot Long/MAX_VALUE 1000))))
+(s/def ::poll-ms (s/and integer? pos? #(<= % Long/MAX_VALUE)))
 
 (s/def ::start-attrs
   (s/keys :opt-un [::id ::feature ::owner ::title ::body ::branch ::worktree
@@ -368,7 +370,7 @@
   [opts]
   (let [poll-ms (get opts :poll-ms await-poll-ms)]
     (when-not (s/valid? ::poll-ms poll-ms)
-      (fail! "await-quiet! :poll-ms must be a non-negative integer" {:poll-ms poll-ms}))
+      (fail! "await-quiet! :poll-ms must be a positive integer" {:poll-ms poll-ms}))
     poll-ms))
 
 (defn await-quiet!
@@ -381,18 +383,18 @@
   threshold (checked before waiting further), `:quiet` when the scope has no
   active entries, and `:timeout` when neither happens before the deadline.
   `:entries` is whatever `list` returned for the scope at the decision
-  point. Fails loudly for a malformed opts map, unknown keys, or a negative
-  `:timeout-secs`/`:poll-ms`."
+  point. Fails loudly for a malformed opts map, unknown keys, a negative
+  `:timeout-secs`, or a non-positive `:poll-ms`."
   [runtime opts]
   (when-not (map? opts)
     (fail! "await-quiet! opts must be a map" {:opts opts}))
   (reject-unknown-keys! "await-quiet!" await-quiet-opts-keys opts)
   (let [timeout-secs (timeout-secs-opt opts)
         poll-ms (poll-ms-opt opts)
-        scope (select-keys opts [:feature :branch :worktree :stale-after-ms])
-        deadline (+ (System/currentTimeMillis) (* 1000 timeout-secs))]
-    (poll-until-deadline!
-     {:deadline deadline
+        scope (select-keys opts [:feature :branch :worktree :stale-after-ms])]
+    (poll-until!
+     (runtime/clock runtime)
+     {:timeout-ms (* 1000 (long timeout-secs))
       :poll-ms poll-ms
       :check #(list runtime scope)
       :pred->result (fn [entries]

@@ -49,7 +49,8 @@
   Unresolvable handler symbols and handler exceptions are captured as failed
   fires in scheduler history and never propagate into the event worker, so one
   bad handler cannot kill the dispatch lane."
-  (:require [skein.core.db :as db])
+  (:require [skein.api.clock.alpha :as clock]
+            [skein.core.db :as db])
   (:import [java.time Instant]
            [java.util.concurrent ArrayBlockingQueue Executors ScheduledExecutorService
             ScheduledFuture ThreadFactory TimeUnit]))
@@ -84,7 +85,7 @@
   `skein.core.weaver.runtime/now`: runtime requires this scheduler namespace, so
   a static require back would cycle."
   ^Instant [runtime]
-  ((deref (:clock runtime))))
+  (clock/now (deref (:clock runtime))))
 
 (defn- close-state!
   "Cancel the timer and shut the executor down, joining its thread."

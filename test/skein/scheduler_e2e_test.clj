@@ -43,7 +43,7 @@
 (deftest scheduled-handler-mutates-graph-and-drains-pending
   (wt/with-runtime
     (fn [rt _db-file]
-      (test-alpha/set-clock! rt (constantly (Instant/ofEpochSecond 0)))
+      (test-alpha/set-clock! rt (test-alpha/manual-clock (Instant/ofEpochSecond 0)))
       (scheduler/schedule! rt {:key "seed-strand"
                                :wake-at (Instant/ofEpochSecond 1)
                                :handler `add-strand-handler
@@ -63,7 +63,7 @@
       ;; pending, then stops before the wake is due.
       (let [rt1 (weaver-runtime/start! db-file {:world world :publish? false})]
         (try
-          (test-alpha/set-clock! rt1 (constantly (Instant/ofEpochSecond 0)))
+          (test-alpha/set-clock! rt1 (test-alpha/manual-clock (Instant/ofEpochSecond 0)))
           (scheduler/schedule! rt1 {:key "survivor"
                                     :wake-at (Instant/ofEpochSecond 3600)
                                     :handler `add-strand-handler

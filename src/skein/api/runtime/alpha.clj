@@ -10,11 +10,12 @@
   (`upsert-spool-entry!`, `remove-spool-entry!`), load approved roots
   (`sync!`, `syncs`), make updated code live (`reload!`, `reload-spool!`),
   activate modules (`use!`, `uses`, `use-entry`), and serve runtime-owned
-  state and time to trusted spools (`spool-state`, `now`). Component
+  state and time to trusted spools (`spool-state`, `clock`, `now`). Component
   sub-specs live in `skein.api.runtime.internal.shapes`; every registered
   key stays alpha-qualified."
   (:require [clojure.java.io :as io]
             [clojure.spec.alpha :as s]
+            [skein.api.clock.alpha :as clock-api]
             [skein.api.runtime.internal.shapes :as shapes]
             [skein.api.runtime.internal.spools-edn :as spools-edn]
             [skein.api.spool.alpha :refer [require-valid!]]
@@ -370,6 +371,15 @@
   :ret ::use-result)
 
 ;; --- runtime-owned services for trusted spools ------------------------------
+
+(defn clock
+  "Return `runtime`'s installed `skein.api.clock.alpha/Clock`."
+  [runtime]
+  (weaver-runtime/clock runtime))
+
+(s/fdef clock
+  :args (s/cat :runtime map?)
+  :ret ::clock-api/clock)
 
 (defn now
   "Return the current java.time.Instant from `runtime`'s clock seam.
