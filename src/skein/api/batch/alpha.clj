@@ -112,6 +112,7 @@
 (s/def ::title ::specs/title)
 (s/def ::state ::specs/generic-state)
 (s/def ::attributes ::specs/attributes)
+(s/def :skein.api.batch.result/attributes (s/and map? ::specs/attributes))
 (s/def ::strand-patch
   (s/keys :req-un [::ref] :opt-un [::title ::state ::attributes]))
 (s/def ::strands (s/coll-of ::strand-patch :kind vector?))
@@ -148,7 +149,8 @@
 (s/def ::to_strand_id ::specs/id)
 (s/def ::edge_type ::specs/edge-type)
 (s/def ::edge-row
-  (s/and (s/keys :req-un [::from_strand_id ::to_strand_id ::edge_type ::attributes])
+  (s/and (s/keys :req-un [::from_strand_id ::to_strand_id ::edge_type
+                          :skein.api.batch.result/attributes])
          #(every? #{:from_strand_id :to_strand_id :edge_type :attributes} (keys %))))
 
 ;; One edge transition: the submitted local refs and relation text plus the
@@ -180,7 +182,8 @@
 (s/def :skein.api.batch.row/updated_at ::timestamp)
 (s/def ::strand-row
   (s/and (s/keys :req-un [:skein.api.batch.row/id ::title
-                          :skein.api.batch.row/state ::attributes
+                          :skein.api.batch.row/state
+                          :skein.api.batch.result/attributes
                           :skein.api.batch.row/created_at
                           :skein.api.batch.row/updated_at])
          #(every? #{:id :title :state :attributes :created_at :updated_at}

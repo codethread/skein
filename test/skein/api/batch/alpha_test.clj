@@ -146,6 +146,43 @@
       (is (empty? @captured-contexts)
           "the malformed result never reached the pre-commit hook"))))
 
+(deftest result-rows-require-decoded-attribute-maps-before-hooks-or-events
+  ;; Result images are published to callers, the validation hook, and events.
+  ;; They must therefore carry decoded maps, unlike the nullable input
+  ;; `::batch/attributes` accepted by storage-facing mutation grammar.
+  (t/with-weaver-world [ctx {:storage :sqlite-memory}]
+    (let [rt (:runtime ctx)
+          edge-row {:from_strand_id "strand-x" :to_strand_id "strand-y"
+                    :edge_type "depends-on" :attributes {}}
+          strand-row {:id "strand-x" :title "X" :state "active"
+                      :attributes {} :created_at "t" :updated_at "t"}
+          cases {"edge row with nil attributes"
+                 {:refs {} :created [] :updated [] :burned []
+                  :edges [{:op :upsert :from :a :to :b :type "depends-on"
+                           :before nil :after (assoc edge-row :attributes nil)}]}
+                 "lifecycle row with nil attributes"
+                 {:refs {} :created [(assoc strand-row :attributes nil)]
+                  :updated [] :burned [] :edges []}}]
+      (is (every? #(s/valid? ::batch/edge-row
+                             (assoc edge-row :attributes %))
+                  [{} {:reason "client"}]))
+      (is (every? #(s/valid? ::batch/strand-row
+                             (assoc strand-row :attributes %))
+                  [{} {:owner "client"}]))
+      (hooks/register-hook! rt :capture #{:batch/apply-before-commit}
+                            'skein.api.batch.alpha-test/capture-hook {})
+      (doseq [[label malformed] cases]
+        (let [event-enqueued? (atom false)]
+          (reset! captured-contexts [])
+          (with-redefs [db/apply-batch-in-transaction! (fn [_ _] malformed)
+                        dispatch/enqueue! (fn [& _] (reset! event-enqueued? true))]
+            (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                                  #"Batch result violates its published contract"
+                                  (batch/apply! rt {:strands [{:ref :x :title "X"}]}))
+                label))
+          (is (empty? @captured-contexts) label)
+          (is (false? @event-enqueued?) label))))))
+
 (deftest drifted-result-shapes-never-reach-hook-or-event
   ;; Closed-seam guard matrix: an unexpected top-level result key, an extra key
   ;; on a nested edge row, and malformed lifecycle entries each violate the
