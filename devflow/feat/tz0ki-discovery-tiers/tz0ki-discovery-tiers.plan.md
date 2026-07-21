@@ -353,3 +353,16 @@ Append notes here. Do not rewrite earlier notes.
   each affected producer's tests to the new grammar (agent also gets full pattern adoption per Task 9),
   re-tag, and bump ALL affected coordinates together (generalized Task 11) so spool-suite-gate goes green.
   Tracked as new tasks in the cross-repo phase.
+
+### PLAN-Dtf-001.DN8 Task 8: init election + discovery E2E — 2026-07-21
+
+- Implemented by opus (run xnalg, commit `5b00346`): `.skein/init.clj` elects the batteries reference
+  transform via `register-default-help-transform!` after the batteries `use!`/`install!`
+  (config-election-only, dormant until the next canonical weaver reload — never restarted here). No
+  repo-owned glossary outcomes to register (batteries owns its own). Coordinator-verified: diff correct,
+  smoke/go/quality gates green, clean tree.
+- Exemplary isolation: the worker stood up a fully isolated worktree mill under a private
+  `XDG_STATE_HOME` + disposable `mktemp` workspace, ran an 11/11 discovery E2E (verbatim under transform,
+  raw JSON under `--json`, about/prime bypass), tore it down, and verified the canonical mill (6886) +
+  `.skein` weaver (16099) were untouched — the correct pattern for validating a canonical-config change
+  without restarting the canonical weaver.

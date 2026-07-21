@@ -37,7 +37,7 @@ tasks:
   - id: 8
     description: init.clj transform election + discovery E2E
     task_file: tasks/008-init-election-e2e.md
-    status: in_progress
+    status: complete
     blocked_by: [5, 7]
   - id: 9
     description: agent-harness.spool adoption + producer tests/docs
