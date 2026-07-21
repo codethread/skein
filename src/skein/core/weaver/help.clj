@@ -356,27 +356,54 @@
   [runtime]
   @(:help-transform-slot runtime))
 
+(defrecord VerbatimResult [text])
+
+(defn verbatim-result
+  "Wrap a default help transform's rendered string as a verbatim transport result.
+
+  The transform returns the string the CLI relays VERBATIM — JSON or text, the
+  transform's choice (DELTA-Dtf-002.CC1). Wrapping it lets the socket transport
+  flag the response frame so the thin client prints the string byte-for-byte
+  rather than re-encoding it as a JSON-quoted string (SPEC-002.C4/C36, TEN-006).
+  Untransformed help and the `--json` floor stay the raw canonical envelope map,
+  unwrapped and relayed as ordinary single-result JSON."
+  [text]
+  (->VerbatimResult text))
+
+(defn verbatim-result?
+  "True when `x` is a wrapped verbatim help result (see `verbatim-result`)."
+  [x]
+  (instance? VerbatimResult x))
+
+(defn verbatim-text
+  "The wrapped string of a `verbatim-result` (see `verbatim-result`)."
+  [x]
+  (:text x))
+
 (defn- render-help
   "Render a help `envelope` through the registered default transform, or return
   the raw envelope.
 
   With `json?` true, or with no transform registered, returns the raw canonical
-  envelope (the `--json` floor and the default, DELTA-Dtf-001.CC4). A registered
-  transform receives the full envelope and returns the string the CLI relays
-  (DELTA-Dtf-002.CC1). A throwing transform fails loudly naming its owner
-  (`discovery/help-transform-failed`, TEN-003) — never a silent fallback — while
-  `--json` always bypasses the slot so a broken transform never bricks help."
+  envelope map (the `--json` floor and the default, DELTA-Dtf-001.CC4). A
+  registered transform receives the full envelope and returns the string the CLI
+  relays; that string is wrapped as a `verbatim-result` so the transport relays it
+  byte-faithfully (DELTA-Dtf-002.CC1). A throwing transform fails loudly naming
+  its owner (`discovery/help-transform-failed`, TEN-003) — never a silent fallback
+  — while `--json` always bypasses the slot so a broken transform never bricks
+  help."
   [runtime envelope json?]
   (if json?
     envelope
     (if-let [{:keys [transform owner]} (registered-transform runtime)]
-      (try
-        (transform envelope)
-        (catch Throwable t
-          (throw (ex-info "Default help transform failed"
-                          {:code "discovery/help-transform-failed"
-                           :transform owner}
-                          t))))
+      (verbatim-result
+       (try
+         (transform envelope)
+         (catch Throwable t
+           (throw (ex-info "Default help transform failed"
+                           {:code "discovery/help-transform-failed"
+                            :transform owner}
+                           t)))))
       envelope)))
 
 (def ^:private help-flag-tokens

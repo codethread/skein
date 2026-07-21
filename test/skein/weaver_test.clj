@@ -2483,15 +2483,19 @@
         (is (map? (weaver/op! rt 'help ["described"])))
         (is (= 1 (:schema-version (weaver/op! rt 'help ["described"]))))
         (is (map? (weaver/op! rt 'help []))))
-      (testing "an elected transform renders the full envelope to its string"
+      (testing "an elected transform renders the full envelope to a verbatim result"
         (help-transform/register-default-help-transform!
          rt {:transform (fn [env] (str "RENDERED:" (get-in env [:operation :name])))
              :owner 'my.spool/render})
-        (is (= "RENDERED:described" (weaver/op! rt 'help ["described"])))
+        ;; A transformed help result rides back as a verbatim marker so the
+        ;; transport relays the string byte-for-byte (DELTA-Dtf-002.CC1).
+        (is (weaver-help/verbatim-result? (weaver/op! rt 'help ["described"])))
+        (is (= "RENDERED:described" (weaver-help/verbatim-text (weaver/op! rt 'help ["described"]))))
         (testing "the no-arg catalog is a help invocation and renders too"
-          (is (string? (weaver/op! rt 'help []))))
+          (is (string? (weaver-help/verbatim-text (weaver/op! rt 'help [])))))
         (testing "the trailing --help rewrite is a help invocation and renders"
-          (is (= "RENDERED:described" (weaver/op! rt 'described ["--help"]))))
+          (is (weaver-help/verbatim-result? (weaver/op! rt 'described ["--help"])))
+          (is (= "RENDERED:described" (weaver-help/verbatim-text (weaver/op! rt 'described ["--help"])))))
         (testing "leading --json bypasses the slot back to the raw envelope"
           (is (map? (weaver/op! rt 'help ["--json" "described"])))
           (is (= 1 (:schema-version (weaver/op! rt 'help ["--json" "described"]))))
