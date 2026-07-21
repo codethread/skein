@@ -66,7 +66,7 @@ Render `arg-spec` as JSON-safe help data.
 
   Includes arguments, types, docs, required flags, subcommands, and payload-parse
   declarations for the `help <op>` projection.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/cli/alpha.clj#L125-L137">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/cli/alpha.clj#L138-L150">Source</a></sub></p>
 
 ## <a name="skein.api.cli.alpha/parse">`parse`</a>
 ``` clojure
@@ -85,7 +85,7 @@ Parse `argv` against `arg-spec`, resolving payload references from `payloads`.
   malformed key=value tokens, trailing unconsumed tokens, missing/unknown
   subcommands, dangling or unused payload references, and malformed
   :json/:jsonl payloads.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/cli/alpha.clj#L88-L123">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/cli/alpha.clj#L101-L136">Source</a></sub></p>
 
 ## <a name="skein.api.cli.alpha/reserved-subcommand-names">`reserved-subcommand-names`</a>
 
@@ -114,3 +114,19 @@ Validate any parser arg-spec shape, returning it unchanged on success.
   `:subcommand` result key. Throws structured `ex-info` on malformed specs so
   op registration fails before help or invocation can drift from the contract.
 <p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/cli/alpha.clj#L68-L86">Source</a></sub></p>
+
+## <a name="skein.api.cli.alpha/validate-annotations!">`validate-annotations!`</a>
+``` clojure
+(validate-annotations! op annotations)
+```
+Function.
+
+Structurally validate a standalone annotation sub-map for `op`, returning it.
+
+  The same closed-shape check `validate!` applies to an arg-spec node's
+  `:annotations` (closed `use-when`/`notes`/`failure-modes` keys, each an array of
+  non-blank strings), exposed for the raw-envelope root annotation surface an op
+  declares outside any arg-spec (DELTA-Dtf-002.MI1a). Purely structural: the
+  glossary-ref existence check for `failure-modes` names runs at registration
+  (DELTA-Dtf-003.CC2).
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/cli/alpha.clj#L88-L99">Source</a></sub></p>

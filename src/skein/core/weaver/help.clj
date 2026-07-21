@@ -19,17 +19,26 @@
   the per-case return-shape `explain` (SPEC-003.C60b) — into that schema; nothing
   here re-models or hand-writes usage.
 
-  `source` (op-wide handler pointer, resolved later) is `null` here and filled
-  by a later discovery-tier task; `glossary` is the referenced-term closure of
-  the returned subtree, resolved once against the runtime glossary
+  `source` is the op-wide handler pointer resolved best-effort at projection
+  (DELTA-Dtf-002.CC2): `requiring-resolve` under the runtime spool classloader,
+  then the resolved var's `:file`/`:line` mapped to a readable on-disk path, or
+  `null` in the three best-effort cases. `glossary` is the referenced-term closure
+  of the returned subtree, resolved once against the runtime glossary
   (DELTA-Dtf-002.CC5). The load graph pins its other reaches:
   `skein.core.weaver.access` requires the runtime and socket namespaces back to
   this one, so both the op-registry and glossary-registry reads use the runtime
   map's keys directly, and everything below `access` in the graph can
-  only reach the alpha module dynamically — the two `requiring-resolve` calls
-  here (`register-op!`, `resolve-op`) are call-time reaches into the public
-  surface, the same idiom the socket transport uses for `op!`."
-  (:require [clojure.string :as str]
+  only reach it and the alpha module dynamically — the `requiring-resolve` calls
+  here (`register-op!`, `resolve-op`, the handler pointer, and
+  `access/with-spool-classloader`) are call-time reaches into the public surface,
+  the same idiom the socket transport uses for `op!`.
+
+  Besides the `help` catalog/detail projection, this namespace owns the two
+  builtin arity-1 meta-verbs `about` and `prime` (DELTA-Dtf-002.CC6): each
+  resolves one op and returns its declared `:about`/`:prime` prose beside the same
+  op-wide `source`, failing loudly on missing prose or a verb path."
+  (:require [clojure.java.io :as io]
+            [clojure.string :as str]
             [skein.api.cli.alpha :as cli]
             [skein.api.format.alpha :as format-alpha]
             [skein.api.return-shape.alpha :as return-shape]))
@@ -59,6 +68,58 @@
   [runtime op-name]
   ((requiring-resolve 'skein.api.weaver.alpha/resolve-op)
    runtime (symbol op-name)))
+
+(defn- readable-source-file
+  "Resolve a var's `:file` metadata to a canonical readable on-disk path, or nil.
+
+  An absolute `:file` is checked directly; a classpath-relative `:file` (source
+  loaded off the classpath) is resolved through the thread context classloader's
+  resource lookup — a `file:` URL yields the on-disk path, while a `jar:` or other
+  URL (AOT, packaged code) yields nil. Nil whenever the path is absent, non-string,
+  or does not name a readable regular file (DELTA-Dtf-002.CC2)."
+  [file]
+  (when (string? file)
+    (let [direct (io/file file)
+          on-disk (if (.isAbsolute direct)
+                    direct
+                    (when-let [url (io/resource file)]
+                      (when (= "file" (.getProtocol url))
+                        (io/file (.toURI url)))))]
+      (when (and on-disk (.isFile on-disk) (.canRead on-disk))
+        (.getCanonicalPath on-disk)))))
+
+(defn- source-pointer
+  "Build the `{file, line}` source pointer from a resolved handler var, or nil.
+
+  Nil in the best-effort cases the wire contract allows (DELTA-Dtf-002.CC2): the
+  var carries no `:file`/`:line`, or `:file` does not name a readable on-disk file.
+  Runs outside the resolve guard, so an unexpected failure here is not a resolve
+  failure and propagates loudly (TEN-003)."
+  [var]
+  (let [{:keys [file line]} (meta var)]
+    (when (and (integer? line) (pos? line))
+      (when-let [path (readable-source-file file)]
+        {:file path :line line}))))
+
+(defn- resolve-op-source
+  "Best-effort op-wide handler `source` pointer for `entry`, resolved at
+  projection (DELTA-Dtf-002.CC2).
+
+  Resolves `entry`'s stored handler symbol via `requiring-resolve` under
+  `runtime`'s spool classloader (so a synced-spool handler resolves and its
+  on-disk source is found through the same classloader), then reads the resolved
+  var's `:file`/`:line`. Always returns a value: `nil` in exactly the three
+  best-effort cases — `requiring-resolve` fails (throws or yields nil), the var
+  carries no `:file`/`:line`, or `:file` is not a readable on-disk file — else
+  `{file, line}`. Only the resolve step is guarded; any other failure is unrelated
+  and propagates loudly rather than masquerading as a null source."
+  [runtime entry]
+  ((requiring-resolve 'skein.core.weaver.access/with-spool-classloader)
+   runtime
+   (fn []
+     (when-let [var (try (requiring-resolve (:fn entry))
+                         (catch Exception _ nil))]
+       (source-pointer var)))))
 
 (defn- operation-facts
   "Project the op-wide envelope metadata for one registry entry.
@@ -144,7 +205,10 @@
       (node (:name entry) doc
             {:mode "raw-envelope" :flags [] :positionals []}
             node-returns
-            nil
+            ;; A raw-envelope op has no arg-spec node, so its root annotations
+            ;; come from the op's `:annotations` metadata (MI1a); an arg-spec op
+            ;; sources them from its arg-spec node below.
+            (:annotations entry)
             [])
 
       (:subcommands explained)
@@ -221,14 +285,13 @@
 (defn- envelope
   "Build a canonical detail help envelope carrying `node`.
 
-  `source` (op-wide handler pointer) is `null` here — filled by a later task
-  without reshaping the envelope (DELTA-Dtf-002.CC2). `glossary` is the
-  referenced-term closure of `node` resolved against `runtime`'s glossary
-  (DELTA-Dtf-001.CC1, DELTA-Dtf-002.CC5)."
+  `source` is the op-wide handler pointer resolved best-effort at projection
+  (DELTA-Dtf-002.CC2). `glossary` is the referenced-term closure of `node`
+  resolved against `runtime`'s glossary (DELTA-Dtf-001.CC1, DELTA-Dtf-002.CC5)."
   [runtime entry node]
   {:schema-version schema-version
    :operation (operation-facts entry)
-   :source nil
+   :source (resolve-op-source runtime entry)
    :glossary (node-glossary runtime entry node)
    :node node})
 
@@ -259,17 +322,18 @@
 
   `{operation, source, node}` with the same structure as the detail envelope
   but a summary node (DELTA-Dtf-001.CC3); op-wide facts stay in `operation` and
-  `source`, never merged onto the node."
-  [entry]
+  `source` (resolved best-effort as in the detail envelope, DELTA-Dtf-002.CC2),
+  never merged onto the node."
+  [runtime entry]
   {:operation (operation-facts entry)
-   :source nil
+   :source (resolve-op-source runtime entry)
    :node (summary-node entry)})
 
 (defn- op-catalog
   "Build the versioned no-arg catalog `{schema-version, ops[]}` for `runtime`."
   [runtime]
   {:schema-version schema-version
-   :ops (mapv catalog-entry (registered-op-entries runtime))})
+   :ops (mapv #(catalog-entry runtime %) (registered-op-entries runtime))})
 
 (def ^:private help-flag-tokens
   "The `--help`/`-h` flag forms the weaver rewrites to the `help` op.
@@ -445,18 +509,104 @@
                                        :source :json
                                        :node node-return-shape}}}}})
 
+(defn- meta-verb-result
+  "Project one op's declared `field` prose beside the op-wide `source`.
+
+  The shared body of the arity-1 `about`/`prime` meta-verbs (DELTA-Dtf-002.CC6).
+  A verb path (extra positionals past the op name) fails loudly and redirects to
+  `help` (DELTA-Dtf-003.CC4); missing or blank declared prose fails loudly with
+  the `discovery/unavailable` outcome (DELTA-Dtf-001.CC7, TEN-003), never empty
+  success. Returns `{field prose, source}` — a JSON object, never a bare string,
+  so keys may be added later without a breaking conversion. `source` resolves as
+  in the help envelope (DELTA-Dtf-002.CC2); the prose is never transformed."
+  [ctx field]
+  (let [runtime (:op/runtime ctx)
+        {:keys [op verbs]} (:op/args ctx)]
+    (when (seq verbs)
+      (throw (ex-info (str "`" (name field) "` is op-level and takes no verb. "
+                           "Run `strand help " op " " (str/join " " verbs) "` instead.")
+                      {:code "discovery/help-grammar"
+                       :operation op
+                       :verbs (vec verbs)})))
+    (let [entry (resolve-entry runtime op)
+          prose (get entry field)]
+      (when-not (and (string? prose) (not (str/blank? prose)))
+        (throw (ex-info (str "Operation declares no " (name field) " prose")
+                        {:code "discovery/unavailable"
+                         :operation op
+                         :field field})))
+      {field prose
+       :source (resolve-op-source runtime entry)})))
+
+(defn op-about-handler
+  "Return one op's declared `:about` prose beside its op-wide `source`."
+  [ctx]
+  (meta-verb-result ctx :about))
+
+(defn op-prime-handler
+  "Return one op's declared `:prime` prose beside its op-wide `source`."
+  [ctx]
+  (meta-verb-result ctx :prime))
+
+(defn- meta-verb-arg-spec
+  "Arg-spec for a builtin meta-verb: one required op name and a reserved trailing
+  variadic that captures a verb path so the handler can redirect it (arity-1,
+  DELTA-Dtf-003.CC4)."
+  [op field]
+  {:op op
+   :doc (str "Show one op's declared " field " prose.")
+   :positionals [{:name :op
+                  :type :string
+                  :required? true
+                  :doc (format-alpha/reflow
+                        (str "|Op name whose declared " field " prose to return."))}
+                 {:name :verbs
+                  :type :string
+                  :required? false
+                  :variadic? true
+                  :doc (format-alpha/reflow
+                        (str "|Reserved: " field " is op-level, so a trailing verb
+                             |fails loudly and redirects to `help`."))}]})
+
+(def ^:private about-arg-spec (meta-verb-arg-spec "about" "about"))
+(def ^:private prime-arg-spec (meta-verb-arg-spec "prime" "prime"))
+
+(defn- meta-verb-return-shape
+  "Declared return shape for a meta-verb: `{<field> string, source json}`
+  (DELTA-Dtf-001.CC7). `source` is `:json` so it accepts both `null` and a
+  `{file, line}` map."
+  [field]
+  {:type :map
+   :required {field :string
+              :source :json}})
+
 (defn register-built-in-ops!
   "Install Skein-provided CLI operations into the runtime op registry.
 
-  Resolves `register-op!` at call time: this namespace sits below `access` in
-  the load graph, so a static require of the alpha module would close a cycle —
-  the same constraint that made `skein.core.weaver.runtime` reach the previous
-  alpha registrar dynamically."
+  Registers `help` and its two meta-verb siblings `about`/`prime`
+  (DELTA-Dtf-002.CC6) through the public `register-op!` path, so all three are
+  replaceable, maskable, and cleared/reinstalled by `reload!` like any op.
+  Resolves `register-op!` at call time: this namespace sits below `access` in the
+  load graph, so a static require of the alpha module would close a cycle — the
+  same constraint that made `skein.core.weaver.runtime` reach the previous alpha
+  registrar dynamically."
   [runtime]
-  ((requiring-resolve 'skein.api.weaver.alpha/register-op!)
-   runtime 'help
-   {:doc (:doc help-arg-spec)
-    :hook-class :read
-    :arg-spec help-arg-spec
-    :returns help-return-shape}
-   'skein.core.weaver.help/op-help-handler))
+  (let [register-op! (requiring-resolve 'skein.api.weaver.alpha/register-op!)]
+    (register-op! runtime 'help
+                  {:doc (:doc help-arg-spec)
+                   :hook-class :read
+                   :arg-spec help-arg-spec
+                   :returns help-return-shape}
+                  'skein.core.weaver.help/op-help-handler)
+    (register-op! runtime 'about
+                  {:doc (:doc about-arg-spec)
+                   :hook-class :read
+                   :arg-spec about-arg-spec
+                   :returns (meta-verb-return-shape :about)}
+                  'skein.core.weaver.help/op-about-handler)
+    (register-op! runtime 'prime
+                  {:doc (:doc prime-arg-spec)
+                   :hook-class :read
+                   :arg-spec prime-arg-spec
+                   :returns (meta-verb-return-shape :prime)}
+                  'skein.core.weaver.help/op-prime-handler)))

@@ -43,7 +43,8 @@
 
 (declare apply-edges! reject-unknown-update-keys! supersede-context
          require-archive-result! require-lean-result!
-         validated-op-entry check-op-glossary-refs! operation-label)
+         validated-op-entry validate-op-annotations! check-op-glossary-refs!
+         operation-label)
 
 ;; A runtime is an opaque, non-nil handle; callers select it and pass it first.
 (s/def ::runtime some?)
@@ -609,9 +610,27 @@
       (op-entry/validate-op-doc! (:doc opts)))
     (when (some? (:arg-spec opts))
       (validate-op-arg-spec! op-name (:arg-spec opts)))
+    (when (some? (:annotations opts))
+      (validate-op-annotations! op-name (:annotations opts)))
     (when (contains? opts :returns)
       (validate-op-returns! op-name (:arg-spec opts) stream? (:returns opts)))
     (op-entry/assemble op-name opts fn-sym)))
+
+(defn- validate-op-annotations!
+  "Structurally validate a raw-envelope op's root `:annotations` metadata
+  (DELTA-Dtf-002.MI1a) through the CLI annotation contract, returning it.
+
+  The reach into `skein.api.cli.alpha` happens here for the same reason
+  `validate-op-arg-spec!` does: an internal namespace never requires an alpha one
+  (SPEC-003.C19a). The glossary-ref existence check for its `failure-modes` names
+  runs separately in `check-op-glossary-refs!`."
+  [op-name annotations]
+  (try
+    (cli/validate-annotations! (op-entry/canonical-op-name op-name) annotations)
+    (catch clojure.lang.ExceptionInfo e
+      (throw (ex-info "Operation :annotations metadata is invalid"
+                      (assoc (ex-data e) :operation (op-entry/canonical-op-name op-name))
+                      e)))))
 
 (defn- arg-spec-failure-modes
   "Return every `failure-modes` outcome name referenced across `arg-spec`'s
@@ -622,16 +641,28 @@
           (mapcat (fn [[_ nested]] (get-in nested [:annotations :failure-modes])))
           (:subcommands arg-spec))))
 
+(defn- entry-failure-modes
+  "Return every `failure-modes` outcome name `entry` references.
+
+  Gathers from the arg-spec's annotation sub-maps (Task 2) and, for a
+  raw-envelope op that declares no arg-spec, from the entry's root `:annotations`
+  metadata (MI1a) — the two annotation surfaces are mutually exclusive by
+  construction (`validate-op-metadata!`), so this simply unions them."
+  [entry]
+  (into (vec (get-in entry [:annotations :failure-modes]))
+        (arg-spec-failure-modes (:arg-spec entry))))
+
 (defn- check-op-glossary-refs!
-  "Fail loudly unless every `failure-modes` name in `entry`'s arg-spec references
-  an already-registered glossary outcome.
+  "Fail loudly unless every `failure-modes` name `entry` references — across its
+  arg-spec annotation sub-maps and its raw-envelope root `:annotations` metadata —
+  points at an already-registered glossary outcome.
 
   The unconditional glossary-ref existence check (DELTA-Dtf-003.CC2), run at
   registration because that is where the runtime glossary is in hand. It enforces
   the load-order contract: an op's outcomes must be registered — from the owning
   spool's `install!` or trusted config — before the op that references them."
   [runtime entry]
-  (doseq [outcome-name (arg-spec-failure-modes (:arg-spec entry))]
+  (doseq [outcome-name (entry-failure-modes entry)]
     (when-not (glossary/outcome-registered? runtime outcome-name)
       (throw (ex-info "Operation failure-mode references an unregistered glossary outcome"
                       {:operation (:name entry)

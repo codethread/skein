@@ -18,6 +18,7 @@
             [skein.api.runtime.glossary.alpha :as glossary]
             [skein.api.weaver.alpha :as weaver]
             [skein.core.weaver.config :as weaver-config]
+            [skein.core.weaver.help :as weaver-help]
             [skein.core.weaver.dispatch :as dispatch]
             [skein.core.weaver.metadata :as metadata]
             [skein.core.weaver.runtime :as weaver-runtime]
@@ -754,7 +755,7 @@
         (is (= [:shared] (mapv :key (events/handlers rt))))
         (is (= [] (hooks/hooks rt)))
         ;; built-in ops stay registered, so the world is never left op-less.
-        (is (= ["help"] (mapv :name (weaver/ops rt))))
+        (is (= ["about" "help" "prime"] (mapv :name (weaver/ops rt))))
         ;; dispatch resumes on the failure path too, so init.clj's own enqueued
         ;; event reaches the handler it successfully registered.
         (is (wait-until #(some (fn [event] (= "shared-only" (:event/id event)))
@@ -1681,22 +1682,29 @@
                             (weaver/register-op! rt 'bad 'unqualified))))))
 
 (deftest owner-return-coverage-is-derived-from-registry-provenance
-  (testing "a wholly undeclared production op is reported before leaf coverage"
+  (testing "the built-in read-class ops all declare returns and share provenance"
     (with-runtime
       (fn [rt _]
         (let [{:keys [entries missing required unchecked]}
               (owner-return-coverage rt 'skein.core.weaver.help #{})]
-          (is (= ["help"] (mapv :name entries)))
+          (is (= ["about" "help" "prime"] (mapv :name entries)))
           (is (empty? missing))
-          (is (= #{["help" {}]} required))
+          (is (= #{["about" {}] ["help" {}] ["prime" {}]} required))
           (is (= required unchecked))
           (let [result (weaver/op! rt 'help ["help"])
                 declaration (:returns (weaver/resolve-op rt 'help))]
             (is (= result (return-shape/check! declaration result)))
-            (t/check-op-return! rt 'help result)
-            (is (empty? (:unchecked
-                         (owner-return-coverage rt 'skein.core.weaver.help
-                                                #{["help" {}]})))))))))
+            (t/check-op-return! rt 'help result))
+          ;; check each built-in op's return to clear the coverage set; about/
+          ;; prime need an op that declares the prose they project.
+          (weaver/register-op! rt 'described
+                               {:about "About the described op." :prime "Prime the described op."}
+                               'skein.weaver-test/test-op)
+          (t/check-op-return! rt 'about (weaver/op! rt 'about ["described"]))
+          (t/check-op-return! rt 'prime (weaver/op! rt 'prime ["described"]))
+          (is (empty? (:unchecked
+                       (owner-return-coverage rt 'skein.core.weaver.help
+                                              #{["help" {}] ["about" {}] ["prime" {}]}))))))))
   (testing "required leaves come from declarations and remain unchecked until successful checks"
     (with-runtime
       (fn [rt _]
@@ -1884,7 +1892,46 @@
                               (weaver/register-op! rt 'nope {:deadline-class :soon} 'skein.weaver-test/test-op)))
         (is (thrown-with-msg? clojure.lang.ExceptionInfo
                               #":hook-class must be"
-                              (weaver/register-op! rt 'nope {:hook-class :both} 'skein.weaver-test/test-op)))))))
+                              (weaver/register-op! rt 'nope {:hook-class :both} 'skein.weaver-test/test-op))))
+      (testing ":about/:prime prose is recorded when non-blank"
+        (is (= {:name "described"
+                :fn 'skein.weaver-test/test-op
+                :stream? false
+                :deadline-class :standard
+                :hook-class :mutating
+                :provenance 'skein.weaver-test
+                :about "About the described op."
+                :prime "Prime the described op."}
+               (weaver/register-op! rt 'described
+                                    {:about "About the described op."
+                                     :prime "Prime the described op."}
+                                    'skein.weaver-test/test-op))))
+      (testing ":about/:prime reject blank or non-string prose"
+        (doseq [key [:about :prime]
+                bad ["" "   " 42]]
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                                #"must be a non-blank prose string"
+                                (weaver/register-op! rt 'nope {key bad} 'skein.weaver-test/test-op)))))
+      (testing "raw-envelope root :annotations is recorded for an op with no arg-spec"
+        (is (= {:use-when ["when discovering"] :notes ["a root note"]}
+               (:annotations
+                (weaver/register-op! rt 'root-annotated
+                                     {:annotations {:use-when ["when discovering"]
+                                                    :notes ["a root note"]}}
+                                     'skein.weaver-test/test-op)))))
+      (testing "root :annotations reject an invalid shape"
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                              #":annotations metadata is invalid"
+                              (weaver/register-op! rt 'bad-annotated
+                                                   {:annotations {:bogus ["x"]}}
+                                                   'skein.weaver-test/test-op))))
+      (testing "root :annotations and an arg-spec cannot coexist (single root-annotation source)"
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                              #"only for raw-envelope ops"
+                              (weaver/register-op! rt 'both-annotated
+                                                   {:arg-spec {:op "both-annotated"}
+                                                    :annotations {:use-when ["x"]}}
+                                                   'skein.weaver-test/test-op)))))))
 
 (deftest weaver-op-registration-collision-and-replace
   (with-runtime
@@ -1940,11 +1987,11 @@
 (deftest weaver-op-registry-reload-is-collision-free
   (with-runtime
     (fn [rt _]
-      (is (= ["help"] (mapv :name (weaver/ops rt))))
+      (is (= ["about" "help" "prime"] (mapv :name (weaver/ops rt))))
       ;; reload clears the registry before re-running init, so the built-in
-      ;; help op re-registers without tripping the collision check.
+      ;; help/about/prime ops re-register without tripping the collision check.
       (runtime/reload! rt)
-      (is (= ["help"] (mapv :name (weaver/ops rt)))))))
+      (is (= ["about" "help" "prime"] (mapv :name (weaver/ops rt)))))))
 
 (deftest weaver-op-parser-integration
   (with-runtime
@@ -2147,11 +2194,15 @@
       (testing "no argv returns the versioned catalog of shallow per-op envelopes"
         (let [{:keys [schema-version ops]} (weaver/op! rt 'help [])]
           (is (= 1 schema-version))
-          (is (= ["custom" "help" "raw" "streamed" "subbed"]
+          (is (= ["about" "custom" "help" "prime" "raw" "streamed" "subbed"]
                  (mapv #(get-in % [:operation :name]) ops)))
           ;; Every catalog node is a summary node: op-wide facts stay in
-          ;; :operation and :source, never merged onto the node.
-          (is (every? #(nil? (:source %)) ops))
+          ;; :operation and :source, never merged onto the node. The op-wide
+          ;; source resolves best-effort (a readable handler yields {file, line}).
+          (is (every? #(or (nil? (:source %))
+                           (and (string? (get-in % [:source :file]))
+                                (pos-int? (get-in % [:source :line]))))
+                      ops))
           (is (every? #(nil? (get-in % [:node :returns])) ops))
           (is (every? #(= [] (get-in % [:node :children])) ops))
           (let [help-entry (first (filter #(= "help" (get-in % [:operation :name])) ops))]
@@ -2170,7 +2221,10 @@
         (let [{:keys [schema-version operation source glossary node]}
               (weaver/op! rt 'help ["custom"])]
           (is (= 1 schema-version))
-          (is (nil? source))
+          ;; test-op is a readable on-disk handler, so source resolves to its
+          ;; {file, line}; the exact path is environment-specific.
+          (is (str/ends-with? (:file source) "weaver_test.clj"))
+          (is (pos-int? (:line source)))
           (is (= {} glossary))
           (is (= "custom" (:name operation)))
           (is (false? (:raw-envelope operation)))
@@ -2343,6 +2397,104 @@
           (is (= "discovery/glossary-ref-unresolved" (:code data)))
           (is (= "annotated" (:operation data)))
           (is (some #{"lifecycle/timeout"} (:unresolved-outcomes data))))))))
+
+(deftest weaver-raw-envelope-root-annotations
+  ;; A raw-envelope op declares no arg-spec, so its root annotation surface lives
+  ;; in the op's `:annotations` metadata (MI1a). It carries the same closed shape
+  ;; and glossary-ref discipline an arg-spec node's annotations do (Task 2).
+  (with-runtime
+    (fn [rt _]
+      (testing "a root failure-mode ref to an unregistered outcome fails loudly at registration"
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                              #"unregistered glossary outcome"
+                              (weaver/register-op! rt 'unresolved-root
+                                                   {:annotations {:failure-modes ["discovery/unavailable"]}}
+                                                   'skein.weaver-test/test-op))))
+      (register-fixture-outcomes! rt ["discovery/unavailable"])
+      (weaver/register-op! rt 'rooted
+                           {:doc "Rooted raw op"
+                            :annotations {:use-when ["when rooted"]
+                                          :notes ["a root note"]
+                                          :failure-modes ["discovery/unavailable"]}}
+                           'skein.weaver-test/test-op)
+      (testing "root :annotations fold onto the raw-envelope help root node and close the glossary"
+        (let [{:keys [glossary node]} (weaver/op! rt 'help ["rooted"])]
+          (is (= "raw-envelope" (get-in node [:invocation :mode])))
+          (is (= ["when rooted"] (:use-when node)))
+          (is (= ["a root note"] (:notes node)))
+          (is (= ["discovery/unavailable"] (:failure-modes node)))
+          (is (= {"discovery/unavailable" "discovery/unavailable definition"} glossary))
+          (t/check-op-return! rt 'help (weaver/op! rt 'help ["rooted"])))))))
+
+(deftest weaver-about-prime-meta-verbs
+  (with-runtime
+    (fn [rt _]
+      (weaver/register-op! rt 'described
+                           {:about "About the described op."
+                            :prime "Prime the described op."}
+                           'skein.weaver-test/test-op)
+      (weaver/register-op! rt 'bare-op 'skein.weaver-test/test-op)
+      (testing "about/prime return declared prose beside the op-wide source"
+        (let [about (weaver/op! rt 'about ["described"])
+              prime (weaver/op! rt 'prime ["described"])]
+          (is (= "About the described op." (:about about)))
+          (is (= "Prime the described op." (:prime prime)))
+          ;; test-op is a readable on-disk handler, so source resolves to {file, line}.
+          (is (str/ends-with? (get-in about [:source :file]) "weaver_test.clj"))
+          (is (pos-int? (get-in about [:source :line])))
+          (t/check-op-return! rt 'about about)
+          (t/check-op-return! rt 'prime prime)))
+      (testing "missing declared prose fails loudly (discovery/unavailable), never empty success"
+        (doseq [verb ['about 'prime]]
+          (let [e (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                                        #"declares no"
+                                        (weaver/op! rt verb ["bare-op"])))]
+            (is (= "discovery/unavailable" (:code (ex-data e))))
+            (is (= "bare-op" (:operation (ex-data e)))))))
+      (testing "a trailing verb path fails loudly and redirects to help (arity-1)"
+        (doseq [verb ['about 'prime]]
+          (let [e (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                                        #"strand help described sub"
+                                        (weaver/op! rt verb ["described" "sub"])))]
+            (is (= "discovery/help-grammar" (:code (ex-data e))))
+            (is (= "described" (:operation (ex-data e))))
+            (is (= ["sub"] (:verbs (ex-data e))))))))))
+
+(deftest weaver-op-source-pointer-resolution
+  ;; The op-wide `source` resolves best-effort at projection: `requiring-resolve`
+  ;; under the spool classloader, then the var's :file/:line mapped to a readable
+  ;; on-disk path. It is always present, `null` in exactly three cases, and never
+  ;; swallows an unrelated projection failure (DELTA-Dtf-002.CC2).
+  (with-runtime
+    (fn [rt _]
+      (testing "a readable on-disk handler resolves to its {file, line}"
+        (weaver/register-op! rt 'on-disk 'skein.weaver-test/test-op)
+        (let [source (:source (weaver/op! rt 'help ["on-disk"]))]
+          (is (str/ends-with? (:file source) "weaver_test.clj"))
+          (is (pos-int? (:line source)))))
+      (testing "null when requiring-resolve fails"
+        (weaver/register-op! rt 'unresolvable 'skein.does-not-exist.ns/nope)
+        (is (nil? (:source (weaver/op! rt 'help ["unresolvable"])))))
+      (testing "null when the resolved var carries no :file/:line"
+        (intern 'skein.weaver-test 'no-meta-handler (fn [_] {}))
+        (alter-meta! (resolve 'skein.weaver-test/no-meta-handler) dissoc :file :line)
+        (weaver/register-op! rt 'no-meta 'skein.weaver-test/no-meta-handler)
+        (is (nil? (:source (weaver/op! rt 'help ["no-meta"])))))
+      (testing "null when :file does not name a readable on-disk file"
+        (intern 'skein.weaver-test 'bogus-file-handler (fn [_] {}))
+        (alter-meta! (resolve 'skein.weaver-test/bogus-file-handler)
+                     assoc :file "/no/such/path/nope.clj" :line 5)
+        (weaver/register-op! rt 'bogus-file 'skein.weaver-test/bogus-file-handler)
+        (is (nil? (:source (weaver/op! rt 'help ["bogus-file"])))))
+      (testing "an unrelated projection failure is not swallowed as a null source"
+        (weaver/register-op! rt 'resolvable 'skein.weaver-test/test-op)
+        (with-redefs [weaver-help/source-pointer
+                      (fn [_] (throw (ex-info "boom in source projection"
+                                              {:code "test/unrelated"})))]
+          (let [e (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                                        #"boom in source projection"
+                                        (weaver/op! rt 'help ["resolvable"])))]
+            (is (= "test/unrelated" (:code (ex-data e))))))))))
 
 (deftest weaver-pattern-registry-and-weave
   (with-runtime
