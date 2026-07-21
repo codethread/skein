@@ -769,6 +769,18 @@
                  from to type]))
     row))
 
+(defn- remove-batch-edge!
+  "Delete the exact (from-id, to-id, type) edge and return its pre-delete row.
+
+  Fails loudly when a clean post-lock lookup finds no matching row — a wrong
+  direction or wrong relation type included — so a stale remover rereads instead
+  of silently succeeding (TEN-003). The submitted refs and resolved durable ids
+  are distinct values in the absence ex-data."
+  [tx {:keys [from to type from-id to-id]}]
+  (or (delete-edge! tx from-id to-id type)
+      (throw (ex-info "Batch edge remove found no matching edge"
+                      {:from from :to to :from-id from-id :to-id to-id :type type}))))
+
 (defn- set-strand-state-internal! [ds strand-id state]
   (require-updated-strand
    strand-id
@@ -1116,6 +1128,7 @@
 (def ^:private batch-mutation-top-level-keys #{:refs :strands :edges :burn})
 (def ^:private batch-mutation-strand-keys #{:ref :title :state :attributes})
 (def ^:private batch-mutation-edge-keys #{:op :from :to :type :attributes})
+(def ^:private batch-mutation-edge-remove-keys #{:op :from :to :type})
 
 (defn- require-batch-ref! [ref context]
   (when-not (and (keyword? ref)
@@ -1190,8 +1203,9 @@
     (doseq [[idx edge] (map-indexed vector edges)]
       (when-not (map? edge)
         (throw (ex-info "Batch edge entry must be a map" {:index idx :edge edge})))
-      (require-no-unknown-keys! edge batch-mutation-edge-keys :batch-edge)
-      (when-not (= :upsert (:op edge))
+      (case (:op edge)
+        :upsert (require-no-unknown-keys! edge batch-mutation-edge-keys :batch-edge)
+        :remove (require-no-unknown-keys! edge batch-mutation-edge-remove-keys :batch-edge)
         (throw (ex-info "Unsupported batch edge operation" {:index idx :op (:op edge)})))
       (doseq [k [:from :to]]
         (when-not (contains? edge k)
@@ -1200,7 +1214,8 @@
       (when-not (s/valid? ::specs/edge-type (:type edge))
         (throw (ex-info "Batch edge :type must be a valid relation name"
                         {:index idx :edge edge})))
-      (require-json-object-encodable! (:attributes edge) :edge))
+      (when (= :upsert (:op edge))
+        (require-json-object-encodable! (:attributes edge) :edge)))
     {:refs refs :strands strands :edges edges :burn burn}))
 
 (defn ^:no-doc apply-batch-in-transaction!
@@ -1221,12 +1236,15 @@
           (throw (ex-info "Batch burn refs must name existing bound refs" {:ref ref}))))
       (when-let [ref (first (filter strand-refs burn-refs))]
         (throw (ex-info "Batch ref cannot be both mutated and burned" {:ref ref})))
-      (doseq [{:keys [from to]} edges]
+      (doseq [{:keys [op from to]} edges]
         (doseq [ref [from to]]
           (when-not (contains? known-refs ref)
             (throw (ex-info "Batch edge references unknown ref" {:ref ref})))
           (when (contains? burn-refs ref)
-            (throw (ex-info "Batch edge cannot reference a burned ref" {:ref ref})))))
+            (throw (ex-info "Batch edge cannot reference a burned ref" {:ref ref})))
+          (when (and (= :remove op) (not (contains? bound-refs ref)))
+            (throw (ex-info "Batch edge remove endpoints must be top-level pre-bound refs"
+                            {:ref ref :op op})))))
       (let [{final-refs :refs created-rows :rows}
             (reduce (fn [acc strand]
                       (if (contains? refs (:ref strand))
@@ -1247,15 +1265,27 @@
                          vec)
             edge-outcomes (mapv (fn [edge]
                                   (let [from-id (get final-refs (:from edge))
-                                        to-id (get final-refs (:to edge))]
-                                    {:op :upsert
-                                     :from (:from edge)
-                                     :to (:to edge)
-                                     :type (:type edge)
-                                     :edge (add-edge! tx {:from from-id
-                                                          :to to-id
-                                                          :type (:type edge)
-                                                          :attributes (:attributes edge)})}))
+                                        to-id (get final-refs (:to edge))
+                                        type (:type edge)
+                                        transition {:op (:op edge)
+                                                    :from (:from edge)
+                                                    :to (:to edge)
+                                                    :type type}]
+                                    (case (:op edge)
+                                      ;; Load the real pre-image before writing so a
+                                      ;; replacement upsert reports its actual :before.
+                                      :upsert (let [before (edge-row tx from-id to-id type)
+                                                    after (add-edge! tx {:from from-id
+                                                                         :to to-id
+                                                                         :type type
+                                                                         :attributes (:attributes edge)})]
+                                                (assoc transition :before before :after after))
+                                      :remove (let [before (remove-batch-edge! tx {:from (:from edge)
+                                                                                   :to (:to edge)
+                                                                                   :type type
+                                                                                   :from-id from-id
+                                                                                   :to-id to-id})]
+                                                (assoc transition :before before :after nil)))))
                                 edges)
             burn-ids (mapv final-refs burn)
             burned-rows (strands-by-ids tx burn-ids)]
@@ -1266,11 +1296,12 @@
          :burned (mapv (fn [ref id row] {:ref ref :id id :before row}) burn burn-ids burned-rows)
          :edges edge-outcomes}))))
 
-(defn apply-batch!
+(defn ^:no-doc apply-batch!
   "Apply a mixed batch mutation transaction.
 
-  Payload refs bind existing and newly-created strands, edges are upserted, and burns
-  delete strands after mutation validation succeeds."
+  Payload refs bind existing and newly-created strands, edges run ordered
+  `:upsert`/`:remove` operations, and burns delete strands after validation
+  succeeds."
   [ds payload]
   (jdbc/with-transaction [tx ds]
     (apply-batch-in-transaction! tx payload)))

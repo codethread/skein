@@ -6,7 +6,8 @@
   describe, and the properties assert the db honours the same contract the spec
   declares (attribute JSON is a round-trip fixed point; batch spec-validity is
   exactly db-acceptance for structurally coherent batches)."
-  (:require [clojure.spec.alpha :as s]
+  (:require [clojure.set :as set]
+            [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [clojure.test :refer [use-fixtures]]
             [clojure.test.check.clojure-test :refer [defspec]]
@@ -125,3 +126,65 @@
                                         false
                                         (throw e))))]
                   (= spec-valid? db-accepts?))))
+
+;; --- exact remove acceptance (PROP-Xer-001) ------------------------------
+;; The create-path property above never emits a `:remove` — that op lives on
+;; apply-batch!. This focused property proves the settled remove contract at the
+;; db boundary: every present exact edge is removable, a valid remove batch is
+;; accepted, and the committed graph is exactly the prestate minus the removed
+;; rows (PROP-Xer-001.PO1, PO2, PO6).
+
+(def ^:private remove-relation-gen
+  ;; Edges only ever run from a lower to a higher index below, so even the
+  ;; declared-acyclic relations here stay a DAG; `serves` is excluded so its
+  ;; single-target rule never rejects a generated fan-out.
+  (gen/elements ["depends-on" "parent-of" "supersedes" "annotates" "relates-to"]))
+
+(def ^:private remove-batch-gen
+  ;; A strand count, a unique set of acyclic-safe edges over those strands, and
+  ;; a submitted-order subset to remove. from < to keeps every relation-local
+  ;; graph acyclic; the set dedupes (from, to, type) identity.
+  (gen/let [n (gen/choose 2 5)
+            edges (gen/set
+                   (gen/let [i (gen/choose 0 (- n 2))
+                             k (gen/choose 1 1000)
+                             type remove-relation-gen]
+                     [i (+ i (mod (dec k) (- (dec n) i)) 1) type])
+                   {:max-elements 6})
+            mask (gen/vector gen/boolean 6)]
+    (let [edge-vec (vec edges)]
+      {:n n
+       :edges edge-vec
+       :remove (mapv first (filter second (map vector edge-vec mask)))})))
+
+(defn- edge-triples
+  "Return the (from-id, to-id, type) triples among ids present in id-set."
+  [ds id-set]
+  (->> (db/execute! ds ["SELECT from_strand_id, to_strand_id, edge_type FROM strand_edges"])
+       (keep (fn [{:keys [from_strand_id to_strand_id edge_type]}]
+               (when (and (id-set from_strand_id) (id-set to_strand_id))
+                 [from_strand_id to_strand_id edge_type])))
+       set))
+
+(defspec valid-remove-batches-are-accepted-and-monotone 40
+  (prop/for-all [{:keys [n edges remove]} remove-batch-gen]
+                (let [ids (mapv #(:id (db/add-strand! *ds* {:title (str "s" %)})) (range n))
+                      ref-of #(keyword (str "s" %))
+                      id-of (fn [idx] (nth ids idx))
+                      id-set (set ids)]
+                  (doseq [[i j type] edges]
+                    (db/add-edge! *ds* {:from (id-of i) :to (id-of j) :type type :attributes {}}))
+                  (let [prestate (edge-triples *ds* id-set)
+                        removed-triples (set (map (fn [[i j type]] [(id-of i) (id-of j) type]) remove))
+                        result (db/apply-batch!
+                                *ds*
+                                {:refs (into {} (map (fn [idx] [(ref-of idx) (id-of idx)]) (range n)))
+                                 :edges (mapv (fn [[i j type]]
+                                                {:op :remove :from (ref-of i) :to (ref-of j) :type type})
+                                              remove)})
+                        transitions (:edges result)]
+                    (and (= (count remove) (count transitions))
+                         (every? #(nil? (:after %)) transitions)
+                         (every? #(= #{:op :from :to :type :before :after} (set (keys %))) transitions)
+                         (= (set/difference prestate removed-triples)
+                            (edge-triples *ds* id-set)))))))
