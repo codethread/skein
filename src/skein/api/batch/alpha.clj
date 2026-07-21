@@ -8,14 +8,17 @@
   `skein.core.db`; the shared lifecycle and dispatch plumbing in
   `skein.core.weaver.*`."
   (:require [clojure.spec.alpha :as s]
+            [clojure.string :as str]
             [next.jdbc :as jdbc]
             [skein.core.db :as db]
+            [skein.core.specs :as specs]
             [skein.core.weaver.access :as access]
             [skein.core.weaver.dispatch :as dispatch]
             [skein.core.weaver.lifecycle :as lifecycle])
   (:import [java.util UUID]))
 
-(declare normalize-strand-attributes batch-apply-context
+(declare require-normalized-payload! require-batch-result!
+         normalize-strand-attributes batch-apply-context
          enqueue-batch-applied! enqueue-strand-fanout! strand-patch-for-ref)
 
 (defn apply!
@@ -55,16 +58,28 @@
   Normalizes strand attributes through the `:attributes/normalize` transform
   hooks, persists the batch atomically, runs the `:batch/apply-before-commit`
   validation gate inside the transaction, then enqueues the batch event
-  followed by the per-strand created/updated/burned fanout."
+  followed by the per-strand created/updated/burned fanout.
+
+  The published shapes are the `::normalized-payload` grammar (whose `::edge-op`
+  is the closed `::upsert-edge`/`::remove-edge` alternative) and the `::result`
+  contract (whose `:edges` are `::edge-transition`s over `::edge-row`s).
+  `skein.core.db/normalize-batch-payload!` stays the grammar authority for
+  malformed public input, rejecting it with detailed errors; apply! then
+  consults `::normalized-payload` on that authority's output, and `::result` on
+  the transactional engine's output before the pre-commit hook, events, and
+  return. Those two seam checks only catch impossible drift and never weaken the
+  authority's rejections."
   ([runtime payload]
    (apply! runtime payload (lifecycle/request-context :apply-batch)))
   ([runtime payload req-ctx]
    (let [submitted-payload payload
-         normalized-payload (normalize-strand-attributes
-                             runtime req-ctx (db/normalize-batch-payload! payload))
+         normalized-payload (require-normalized-payload!
+                             (normalize-strand-attributes
+                              runtime req-ctx (db/normalize-batch-payload! payload)))
          result (jdbc/with-transaction [tx (access/ds runtime)]
-                  (let [result (access/normalize
-                                (db/apply-batch-in-transaction! tx normalized-payload))]
+                  (let [result (require-batch-result!
+                                (access/normalize
+                                 (db/apply-batch-in-transaction! tx normalized-payload)))]
                     (lifecycle/run-validation-hooks!
                      runtime
                      :batch/apply-before-commit
@@ -75,13 +90,119 @@
      (enqueue-strand-fanout! runtime batch-id normalized-payload result)
      result)))
 
+;; --- seam specs --------------------------------------------------------------
+
 ;; A runtime is an opaque, non-nil handle; callers select it and pass it first.
 (s/def ::runtime some?)
+
+;; Batch refs are unqualified non-blank keywords; `:refs` binds each to a
+;; durable strand id string.
+(s/def ::batch-ref (s/and simple-keyword? #(not (str/blank? (name %)))))
+(s/def ::refs (s/map-of ::batch-ref ::specs/id))
+
+;; Strand patch keyed by its local `:ref` (grammar authority owns closedness);
+;; a create carries a non-blank `:title`, and `:state`/`:attributes` are
+;; optional post-normalization.
+(s/def ::ref ::batch-ref)
+(s/def ::title ::specs/title)
+(s/def ::state ::specs/generic-state)
+(s/def ::attributes ::specs/attributes)
+(s/def ::strand-patch
+  (s/keys :req-un [::ref] :opt-un [::title ::state ::attributes]))
+(s/def ::strands (s/coll-of ::strand-patch :kind vector?))
+
+;; The two closed edge ops. `:upsert` allows an optional `:attributes`;
+;; `:remove` forbids it and carries exactly `:op`/`:from`/`:to`/`:type`.
+(s/def ::op #{:upsert :remove})
+(s/def ::from ::batch-ref)
+(s/def ::to ::batch-ref)
+(s/def ::type ::specs/edge-type)
+(s/def ::upsert-edge
+  (s/and (s/keys :req-un [::op ::from ::to ::type] :opt-un [::attributes])
+         #(= :upsert (:op %))
+         #(every? #{:op :from :to :type :attributes} (keys %))))
+(s/def ::remove-edge
+  (s/and (s/keys :req-un [::op ::from ::to ::type])
+         #(= :remove (:op %))
+         #(every? #{:op :from :to :type} (keys %))))
+(s/def ::edge-op (s/or :upsert ::upsert-edge :remove ::remove-edge))
+(s/def :skein.api.batch.payload/edges (s/coll-of ::edge-op :kind vector?))
+
+(s/def ::burn (s/coll-of ::batch-ref :kind vector?))
+
+;; The normalized payload: every section present, defaulted by the grammar
+;; authority. apply! consults this on that authority's output.
+(s/def ::normalized-payload
+  (s/keys :req-un [::refs ::strands :skein.api.batch.payload/edges ::burn]))
+
+;; A normalized edge row carries durable endpoint ids, the relation text, and a
+;; decoded-map `:attributes` — never storage JSON.
+(s/def ::from_strand_id ::specs/id)
+(s/def ::to_strand_id ::specs/id)
+(s/def ::edge_type ::specs/edge-type)
+(s/def ::edge-row
+  (s/keys :req-un [::from_strand_id ::to_strand_id ::edge_type ::attributes]))
+
+;; One edge transition: the submitted local refs and relation text plus the
+;; pre-/post-images. An upsert always writes an `:after`; a remove clears
+;; `:after` and reports the removed row in `:before`.
+(s/def :skein.api.batch.edge/before (s/nilable ::edge-row))
+(s/def :skein.api.batch.edge/after (s/nilable ::edge-row))
+(s/def ::edge-transition
+  (s/and (s/keys :req-un [::op ::from ::to ::type
+                          :skein.api.batch.edge/before
+                          :skein.api.batch.edge/after])
+         #(every? #{:op :from :to :type :before :after} (keys %))
+         #(case (:op %)
+            :upsert (some? (:after %))
+            :remove (and (some? (:before %)) (nil? (:after %))))))
+(s/def :skein.api.batch.result/edges
+  (s/coll-of ::edge-transition :kind vector?))
+
+;; The public result: resolved refs, per-lifecycle strand rows, and the ordered
+;; edge transitions shared by the result, the pre-commit hook, and the event.
+(s/def ::created (s/coll-of map? :kind vector?))
+(s/def ::updated (s/coll-of map? :kind vector?))
+(s/def ::burned (s/coll-of map? :kind vector?))
+(s/def ::result
+  (s/keys :req-un [::refs ::created ::updated ::burned
+                   :skein.api.batch.result/edges]))
 
 (s/fdef apply!
   :args (s/or :default (s/cat :runtime ::runtime :payload map?)
               :with-ctx (s/cat :runtime ::runtime :payload map? :req-ctx map?))
-  :ret map?)
+  :ret ::result)
+
+;; --- seam validation ---------------------------------------------------------
+
+(defn- require-normalized-payload!
+  "Return `payload` when it conforms to `::normalized-payload`.
+
+  `skein.core.db/normalize-batch-payload!` is the grammar authority that has
+  already rejected malformed public input with detailed errors; this guard only
+  catches impossible drift between that authority's output and the published
+  shape, and throws structured ex-info naming the spec and value."
+  [payload]
+  (when-not (s/valid? ::normalized-payload payload)
+    (throw (ex-info "Normalized batch payload violates its published contract"
+                    {:spec ::normalized-payload
+                     :value payload
+                     :explain (s/explain-str ::normalized-payload payload)})))
+  payload)
+
+(defn- require-batch-result!
+  "Return `result` when it conforms to `::result`.
+
+  Guards the pre-commit hook, event fanout, and return value against impossible
+  drift in the transactional engine's output; a violation throws structured
+  ex-info naming the spec and value before any hook runs or event is enqueued."
+  [result]
+  (when-not (s/valid? ::result result)
+    (throw (ex-info "Batch result violates its published contract"
+                    {:spec ::result
+                     :value result
+                     :explain (s/explain-str ::result result)})))
+  result)
 
 ;; --- attribute normalization -------------------------------------------------
 

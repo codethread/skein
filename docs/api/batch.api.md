@@ -59,4 +59,14 @@ Apply one transactional batch graph mutation payload to `runtime`.
   hooks, persists the batch atomically, runs the `:batch/apply-before-commit`
   validation gate inside the transaction, then enqueues the batch event
   followed by the per-strand created/updated/burned fanout.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/batch/alpha.clj#L21-L76">Source</a></sub></p>
+
+  The published shapes are the `::normalized-payload` grammar (whose `::edge-op`
+  is the closed `::upsert-edge`/`::remove-edge` alternative) and the `::result`
+  contract (whose `:edges` are `::edge-transition`s over `::edge-row`s).
+  `skein.core.db/normalize-batch-payload!` stays the grammar authority for
+  malformed public input, rejecting it with detailed errors; apply! then
+  consults `::normalized-payload` on that authority's output, and `::result` on
+  the transactional engine's output before the pre-commit hook, events, and
+  return. Those two seam checks only catch impossible drift and never weaken the
+  authority's rejections.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/batch/alpha.clj#L24-L91">Source</a></sub></p>

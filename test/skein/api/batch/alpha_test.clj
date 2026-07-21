@@ -5,9 +5,11 @@
   atomic rejection — lives in `skein.weaver-test`; this namespace pins the
   explicit caller-supplied request-context arity and the payload grammar's
   loud rejection at the public surface."
-  (:require [clojure.test :refer [deftest is use-fixtures]]
+  (:require [clojure.spec.alpha :as s]
+            [clojure.test :refer [deftest is use-fixtures]]
             [skein.api.batch.alpha :as batch]
             [skein.api.hooks.alpha :as hooks]
+            [skein.core.db :as db]
             [skein.test.alpha :as t]))
 
 ;; Namespace-level on purpose: hooks are registered by symbol and resolved to
@@ -74,3 +76,41 @@
                             #"endpoint is required"
                             (batch/apply! rt {:refs refs
                                               :edges [{:op :remove :to :b :type "depends-on"}]}))))))
+
+(deftest apply-remove-result-conforms-to-the-published-result-spec
+  ;; The consulted `::batch/result` contract accepts a real removal: the remove
+  ;; transition reports the removed row in `:before`, clears `:after`, and the
+  ;; whole result conforms, so the seam guard cannot reject valid output.
+  (t/with-weaver-world [ctx {:storage :sqlite-memory}]
+    (let [rt (:runtime ctx)
+          seeded (batch/apply! rt {:strands [{:ref :a :title "A"} {:ref :b :title "B"}]
+                                   :edges [{:op :upsert :from :a :to :b :type "depends-on"}]})
+          result (batch/apply! rt {:refs (select-keys (:refs seeded) [:a :b])
+                                   :edges [{:op :remove :from :a :to :b :type "depends-on"}]})
+          transition (first (:edges result))]
+      (is (s/valid? ::batch/result result)
+          (s/explain-str ::batch/result result))
+      (is (= :remove (:op transition)))
+      (is (nil? (:after transition)))
+      (is (s/valid? ::batch/edge-row (:before transition))
+          (s/explain-str ::batch/edge-row (:before transition))))))
+
+(deftest invalid-normalized-result-never-reaches-hook-or-event
+  ;; Seam guard: a transactional result that violates `::batch/result` is
+  ;; rejected before the pre-commit hook runs, so a drifted engine cannot leak a
+  ;; malformed batch into the validation gate or the event stream. The stubbed
+  ;; result's remove transition clears `:before`, which the transition spec
+  ;; forbids.
+  (t/with-weaver-world [ctx {:storage :sqlite-memory}]
+    (let [rt (:runtime ctx)
+          malformed {:refs {} :created [] :updated [] :burned []
+                     :edges [{:op :remove :from :a :to :b :type "depends-on"
+                              :before nil :after nil}]}]
+      (hooks/register-hook! rt :capture #{:batch/apply-before-commit}
+                            'skein.api.batch.alpha-test/capture-hook {})
+      (with-redefs [db/apply-batch-in-transaction! (fn [_ _] malformed)]
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                              #"Batch result violates its published contract"
+                              (batch/apply! rt {:strands [{:ref :x :title "X"}]}))))
+      (is (empty? @captured-contexts)
+          "the malformed result never reached the pre-commit hook"))))
