@@ -127,6 +127,96 @@
                :params (s/nilable map?))
   :ret (s/coll-of ::specs/id))
 
+;; --- query composition + param validation -----------------------------------
+;;
+;; Blessed helpers a spool uses to build `--query` support without reaching
+;; into the unpromised `skein.core.query` tier: overlay an extra where-clause
+;; onto a resolved definition, coerce and validate CLI string params against
+;; the declared set, and read a definition's parameter references and canonical
+;; name. `skein.core.query` stays the grammar authority — core absorbs the
+;; burden so this alpha module owns the promise.
+
+;; CLI/JSON callers supply params string-keyed; declared names are keywords.
+(s/def ::string-params (s/nilable (s/map-of string? any?)))
+
+(defn conjoin-where
+  "Return a query definition that conjoins `extra-where` onto `query-def`.
+
+  Resolves `query-def` to its where-expression — validating `params` against
+  any declared `:params` — and returns the canonical
+  `[:and <where> <extra-where>]` shape a caller then lists or readies with the
+  same `params`. A nil `extra-where` returns `query-def` unchanged so callers
+  thread an optional overlay (a state filter, say) without a surrounding
+  conditional. `skein.core.query` owns the where grammar and resolves
+  `[:param name]` references at compile time, not here."
+  ([query-def extra-where] (conjoin-where query-def extra-where nil))
+  ([query-def extra-where params]
+   (if (nil? extra-where)
+     query-def
+     [:and (query/query-expr query-def params) extra-where])))
+
+(s/fdef conjoin-where
+  :args (s/or :bare (s/cat :query-def ::query-def :extra-where (s/nilable ::where))
+              :with-params (s/cat :query-def ::query-def
+                                  :extra-where (s/nilable ::where)
+                                  :params (s/nilable map?)))
+  :ret ::query-def)
+
+(defn coerce-declared-params
+  "Coerce string-keyed CLI `params` to a definition's declared keyword names.
+
+  Restricts `params` to `query-def`'s declared `:params`, returning a map keyed
+  by the declared keywords for the names actually supplied. Unknown param names
+  fail loudly with the offending names and the full declared set in ex-data,
+  mirroring the socket read path's contract (batteries hand-rolled this against
+  the JSON dispatch) so a spool's `--query` support rejects exactly the params
+  the built-in path does. A definition with no declared `:params` accepts an
+  empty map and rejects every name."
+  [query-def params]
+  (let [declared (vec (:params query-def))
+        declared-names (set (map name declared))]
+    (when-let [unknown (seq (remove declared-names (keys params)))]
+      (throw (ex-info "Unknown query parameters"
+                      {:params (vec unknown) :declared declared})))
+    (into {} (keep (fn [declared-kw]
+                     (when-let [entry (find params (name declared-kw))]
+                       [declared-kw (val entry)]))
+                   declared))))
+
+(s/fdef coerce-declared-params
+  :args (s/cat :query-def ::query-def :params ::string-params)
+  :ret (s/map-of keyword? any?))
+
+(defn referenced-params
+  "Return ordered distinct `[:param name]` keyword references in `query-def`.
+
+  Reads the definition's where-expression — a map's `:where` or a bare vector —
+  and reports each referenced parameter name in first-seen order without
+  compiling SQL. This is the composable read a spool uses to describe a query's
+  runtime params; `query-explain` is the by-name descriptive projection that
+  carries this same list beside the definition's declared `:params`."
+  [query-def]
+  (query/referenced-params (where-clause query-def)))
+
+(s/fdef referenced-params
+  :args (s/cat :query-def ::query-def)
+  :ret ::referenced-params)
+
+(defn lookup-name
+  "Return the canonical registry lookup key for a query name from CLI input.
+
+  Trims a string name and drops a leading `:`, and canonicalizes a simple
+  symbol or keyword; namespaced, blank, or non-name inputs fail loudly. This is
+  the blessed coercion for a raw `--query` argument. `resolve-query` accepts the
+  same raw forms directly, so a caller that only needs the definition skips this
+  and looks up the name in one step."
+  [query-name]
+  (query/query-lookup-name query-name))
+
+(s/fdef lookup-name
+  :args (s/cat :query-name ::query-lookup)
+  :ret string?)
+
 ;; --- strand hydration -------------------------------------------------------
 
 (defn strands-by-ids
