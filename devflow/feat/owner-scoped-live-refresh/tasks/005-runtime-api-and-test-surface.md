@@ -11,15 +11,15 @@ Add the target `skein.api.runtime.alpha` story for `module!`, `refresh!`, `statu
 ## TASK-Olr-005.P2 Must implement exactly
 
 - **TASK-Olr-005.MI1:** Define public functions and specs exactly as `DELTA-OlrRepl-001`; keep explicit runtime first and public-first story shape within the API form limits.
-- **TASK-Olr-005.MI2:** `module!` stages under startup collection and otherwise updates/refreshes one desired module. It does not offer targeted module deletion.
-- **TASK-Olr-005.MI3:** `refresh!` exposes full and `{:only non-empty-keys}` arities; `status` is offline/read-only; `reload-code!` is code-only and reports ledger/residual outcomes without contribution/resource work.
+- **TASK-Olr-005.MI2:** `module!` stages under startup collection and otherwise updates/refreshes one desired module. It does not offer targeted module deletion. `:contribute` is optional: a module without one contributes the declaration data collected from authoring forms in its source (DELTA-OlrRepl-001.CC3).
+- **TASK-Olr-005.MI3:** `refresh!` exposes full and `{:only non-empty-keys}` arities and skips publication/resource work for content-identical staged contributions (DELTA-OlrDrt-001.D4); `plan` is its effect-free dry-run counterpart (DELTA-OlrRepl-001.CC14); `status` is offline/read-only; `reload-code!` is code-only and reports ledger/residual outcomes without contribution/resource work.
 - **TASK-Olr-005.MI4:** Preserve approval editor, release-marker, spool-state, and clock APIs. Mark the old lifecycle vars as temporary branch scaffolding in code comments only; do not generate target docs that present both paths as permanent.
 - **TASK-Olr-005.MI5:** Extend `skein.test.alpha/with-weaver-world` fixtures to author module declarations and inspect refresh/status without touching canonical worlds.
 - **TASK-Olr-005.MI6:** Add API shape/spec tests and generated-doc source mapping for the new public vars.
 
 ## TASK-Olr-005.P3 Done when
 
-- **TASK-Olr-005.DW1:** Alpha API tests cover every arity, exact result/spec shape, malformed declarations/options, offline status, and code-only reload.
+- **TASK-Olr-005.DW1:** Alpha API tests cover every arity, exact result/spec shape, malformed declarations/options, offline status, `plan` dry-run intentions, a default-collector module, unchanged-module skipping, and code-only reload.
 - **TASK-Olr-005.DW2:** A minimal disposable workspace starts and refreshes one module using only the new surface.
 - **TASK-Olr-005.DW3:** `quality.api-form`, focused runtime/API/test-helper suites, format, lint, reflection, and a local API-doc generation pass are green.
 

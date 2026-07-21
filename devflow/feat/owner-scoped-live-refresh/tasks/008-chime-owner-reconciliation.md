@@ -15,6 +15,7 @@ Give `skein.spools.chime` complete-owner rule replacement with its existing base
 - **TASK-Olr-008.MI3:** Owner omission removes rules and their owner-specific seen-notification entries. Override removal restores the displaced rule with a correct baseline rather than generating historical notifications.
 - **TASK-Olr-008.MI4:** Keep notifier binding, failure history, scanned batch memory, event handler, hook, and other live state in versioned spool-state; rule partition publication cannot replace those identities.
 - **TASK-Olr-008.MI5:** Convert `.skein/attention.clj` to one owner contribution with no top-level `forget-rules!` and preserve every current rule and parked-run detector behavior.
+- **TASK-Olr-008.MI6:** Replace the unbounded module-level `logged-ts-parse-failures` atom in `.skein/attention.clj` with bounded runtime-owned state, honoring the no-module-atoms boundary.
 
 ## TASK-Olr-008.P3 Done when
 

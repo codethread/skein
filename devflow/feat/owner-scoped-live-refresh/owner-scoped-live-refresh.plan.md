@@ -33,7 +33,7 @@ Deliver the owner-scoped live refresh contracts in [PROP-Olr-001](./proposal.md)
 | PLAN-Olr-001.AA2 | `skein.api.runtime.alpha` | New `module!`, `refresh!`, `status`, and `reload-code!` story; removal of sync/use/reload peer lifecycle and separate introspection |
 | PLAN-Olr-001.AA3 | `skein.api.weaver/graph/patterns/events/hooks.alpha` | Explicit owner semantics for direct mutation; effective registry reads over owner partitions |
 | PLAN-Olr-001.AA4 | `skein.test.alpha` | Disposable-world fixtures and assertions for module graphs, targeted refresh, dispatch snapshots, residuals, and hard conflicts |
-| PLAN-Olr-001.AA5 | `spools/workflow` and shell executor, `spools/roster`, `spools/text-search`, `spools/chime`, `spools/cron`, batteries | Owner-complete domain declaration APIs, binding semantics, resource reconcile behavior, status projections, updated install/activation contracts |
+| PLAN-Olr-001.AA5 | `spools/workflow` and shell executor, `spools/roster`, `spools/text-search`, `spools/chime`, `spools/cron`, `spools/guild`, core vocab, batteries | Owner-complete domain declaration kinds, binding semantics, resource reconcile behavior, status projections, updated install/activation contracts |
 | PLAN-Olr-001.AA6 | `.skein` workspace config and macros | Stable module declarations, contribution functions, removal of remember/forget/install shadow registries, harness/reviewer/workflow/rule ownership |
 | PLAN-Olr-001.AA7 | Go bootstrap, smoke, config tests | Fresh-world module declaration template and end-to-end startup/refresh coverage |
 | PLAN-Olr-001.AA8 | `agent-harness.spool` v7 family | Agent-run harness/alias/backend owner partitions, delegation rosters, bench definitions, preserved in-flight/resource state, v8 exception release |
@@ -116,3 +116,15 @@ No open question blocks task generation.
 
 - Opus run `gkt3x` required per-family binding units, declarative/resource separation, stable module-key ownership, load-time namespace attribution, preservation of a code-only seam, async snapshot/defer semantics, and an honest one-time generation migration.
 - terra-med run `0r7fv` corrected peer markers to v7/v4/v2, added durable scheduler-wake policy, separated workflow constructor symbols from executor function values, narrowed the forget-* claim, and expanded the affected root inventory.
+
+### PLAN-Olr-001.DN2 Pre-queue amendment round: 2026-07-21
+
+User-approved amendments folded before checkpoint `nnv6c` release, derived from a session audit (complete live-state inventory of the running weaver), and a blind falsification probe (oracle run `hhqgk`, kanban task `np7h2`, note `7d4gu`) that re-derived the design from TENETS/PHILOSOPHY alone:
+
+- **Open kinds, one publication path** (DELTA-OlrDrt-001.D5): the contribution map is open over kinds registered via `skein.api.registry.alpha`; the kernel publishes core and domain partitions uniformly; reconcile is resources/effects only. Tasks 6–15 no longer hand-roll publication discipline.
+- **Fixed layer precedence** replaces per-entry displaced-owner authorization (CC3); module keys redeclared in `init.local.clj` shadow `init.clj` loudly.
+- **Probe adoptions**: registry-only routing stated as the central retraction invariant (CC18); fire-time ledger check parks orphan-handler wakes (CC11); `plan` dry-run op (DELTA-OlrRepl-001.CC14); zero-ceremony default collector for modules of authoring forms (CC3).
+- **Module-grain decision recorded** (DELTA-OlrDrt-001.D4): module keys retained, content-difference skipping makes full refresh cheap.
+- **Dispositions**: guild op declarations and core vocab become registered kinds (Task 6); batteries `::read-limit`/`::git-client` spool-state slots gain versions (Task 6); `.skein/attention.clj` unbounded module-level atom replaced (Task 8).
+- **Cutover hardening**: Task 21 gains an old-durable-data rehearsal leg — the new generation is started over a snapshot copy of the canonical SQLite, and rollback is rehearsed against the touched copy, before Task 23 ever meets the real database.
+- **Accepted knowingly**: Tasks 12 and 16 remain heavy slices; expect mid-task handoffs rather than restructuring.

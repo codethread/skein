@@ -15,6 +15,8 @@ Convert the simpler first-party registration publishers to module contribution/r
 - **TASK-Olr-006.MI3:** Text-search contributes its complete search op with explicit owner and retains its documented unsafe core-DB dependency unchanged.
 - **TASK-Olr-006.MI4:** Replace install-only tests with contribution publication, owner deletion, refresh replacement, collision, and status-provenance tests. Keep temporary install adapters only if required before Task 16.
 - **TASK-Olr-006.MI5:** Update spool docstrings and generated API source definitions, but leave cross-repo/human workflow docs to Task 17.
+- **TASK-Olr-006.MI6:** Convert `spools/guild` op/deprecation declarations to a registered kind under its stable owner, and contribute core vocab declarations through the `:vocab` kind (DELTA-OlrDrt-001.CC4).
+- **TASK-Olr-006.MI7:** Version the batteries `::read-limit` and `::git-client` spool-state slots so the version-mismatch machinery manages them; no unversioned spool-state slot remains in the converted spools.
 
 ## TASK-Olr-006.P3 Done when
 

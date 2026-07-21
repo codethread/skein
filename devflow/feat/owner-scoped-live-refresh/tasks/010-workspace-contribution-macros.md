@@ -10,7 +10,7 @@ Rewrite `.skein/spools/macros` so `defop`, `defquery`, `defpattern`/`defp`, and 
 
 ## TASK-Olr-010.P2 Must implement exactly
 
-- **TASK-Olr-010.MI1:** Preserve concise real Var/function definitions, docstrings, specs, arg specs, return declarations, and conventions metadata while collecting declaration data for the module contribution.
+- **TASK-Olr-010.MI1:** Preserve concise real Var/function definitions, docstrings, specs, arg specs, return declarations, and conventions metadata while collecting declaration data for the module contribution. The collector is the zero-ceremony default: a module source containing only authoring forms is a complete contribution with no explicit `:contribute` function (DELTA-OlrRepl-001.CC3).
 - **TASK-Olr-010.MI2:** Delete `remember-*`, `forget-*`, and `install-*` atoms/functions and every top-level forget call. No replacement module-level mutable registry is allowed.
 - **TASK-Olr-010.MI3:** Convert `.skein/config.clj`, `.skein/analytics.clj`, and macros demo to contribution entry points under their stable init module keys. Coordinate attention rule conversion with Task 8.
 - **TASK-Olr-010.MI4:** Ensure deleting/renaming one macro declaration is represented by omission from the next complete contribution for both file-backed and namespace-backed modules.

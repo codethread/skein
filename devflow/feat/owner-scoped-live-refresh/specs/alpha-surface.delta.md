@@ -19,7 +19,7 @@ This feature deliberately rewrites the pre-v1 runtime loading contract in place 
 - **DELTA-OlrAlpha-001.CC5:** Each peer release runs its previous-marker compatibility alarm and records the expected failures caused by the authorized lifecycle break. The release note names the old and new marker, affected roots and public names, sole known consumer, Skein pin update, and absence of a migration shim. Unrelated old-contract failures remain blockers.
 - **DELTA-OlrAlpha-001.CC6:** The workspace updates each peer tag and peeled SHA together only after the new Skein checkout and all peer roots pass their owner suites in disposable worlds. Existing consumers that do not update their immutable pins are unchanged.
 - **DELTA-OlrAlpha-001.CC7:** This exception is feature-scoped and does not repeal the general vN accretion and compatibility-alarm discipline for later peer releases. A future break requires another explicit root-spec decision.
-- **DELTA-OlrAlpha-001.CC8:** `skein.api.registry.alpha` joins the blessed API tier as the shared owner-partition primitive for first-party and external spool domains. Its contract is DELTA-OlrRepl-001.CC13; the core owner-registry implementation remains internal.
+- **DELTA-OlrAlpha-001.CC8:** `skein.api.registry.alpha` joins the blessed API tier as the shared kind-declaration and owner-partition primitive for first-party and external spool domains. Declared kinds are published uniformly by the refresh kernel per DELTA-OlrRepl-001.CC5/CC13; the core owner-registry implementation remains internal. (Amended 2026-07-21 with the open-kind contract, DELTA-OlrDrt-001.D5.)
 
 ## DELTA-OlrAlpha-001.P3 Design decisions
 
