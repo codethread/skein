@@ -2311,6 +2311,39 @@
           (doseq [argv [["annotated"] ["annotated" "go"] ["annotated" "stop"]]]
             (t/check-op-return! rt 'help (weaver/op! rt 'help argv))))))))
 
+(deftest weaver-op-help-glossary-ref-unresolved-fails-loud
+  ;; register-op!'s glossary-ref check validates refs only at registration; the
+  ;; op-registry and glossary-registry are separate cells a runtime reload clears
+  ;; independently, so a ref can be absent at projection time. Dropping it from the
+  ;; closure would be a silent TEN-003 violation — the projection must fail loudly.
+  (with-runtime
+    (fn [rt _]
+      (register-fixture-outcomes! rt ["discovery/unavailable"
+                                      "lifecycle/timeout"
+                                      "lifecycle/abort"])
+      (weaver/register-op! rt 'annotated
+                           {:doc "Annotated op"
+                            :arg-spec {:op "annotated"
+                                       :doc "Root doc"
+                                       :annotations {:failure-modes ["discovery/unavailable"]}
+                                       :subcommands
+                                       {"go" {:doc "Go"
+                                              :annotations
+                                              {:failure-modes ["lifecycle/timeout"
+                                                               "lifecycle/abort"]}}}}}
+                           'skein.weaver-test/context-echo-op)
+      ;; simulate a reload clearing the glossary registry out from under the still
+      ;; registered op: an outcome the op references is now absent at projection.
+      (swap! (:glossary-registry rt) dissoc "lifecycle/timeout")
+      (testing "an unresolved referenced outcome fails loudly, not a silent partial closure"
+        (let [e (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                                      #"unresolved"
+                                      (weaver/op! rt 'help ["annotated" "go"])))
+              data (ex-data e)]
+          (is (= "discovery/glossary-ref-unresolved" (:code data)))
+          (is (= "annotated" (:operation data)))
+          (is (some #{"lifecycle/timeout"} (:unresolved-outcomes data))))))))
+
 (deftest weaver-pattern-registry-and-weave
   (with-runtime
     (fn [rt _]

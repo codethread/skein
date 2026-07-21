@@ -197,17 +197,26 @@
 
   Returns `{name → definition}` for every outcome name referenced anywhere under
   `node`, resolved once (DELTA-Dtf-002.CC5). Slicing narrows the closure because
-  `node` is the returned subtree. Names are guaranteed registered by the
-  `register-op!` glossary-ref check (DELTA-Dtf-002.CC7); the registry read uses
-  the runtime map's `:glossary-registry` key directly, since the blessed accessor
-  sits above this namespace in the load graph."
-  [runtime node]
-  (let [registry @(:glossary-registry runtime)]
+  `node` is the returned subtree. `register-op!`'s glossary-ref check
+  (DELTA-Dtf-002.CC7) validates refs at registration only; the op-registry and
+  glossary-registry are separate cells a runtime reload clears independently, so a
+  referenced name can be absent at projection time. An unresolved name FAILS LOUDLY
+  (`discovery/glossary-ref-unresolved`, TEN-003) rather than dropping from the
+  closure. The registry read uses the runtime map's `:glossary-registry` key
+  directly, since the blessed accessor sits above this namespace in the load graph."
+  [runtime entry node]
+  (let [registry @(:glossary-registry runtime)
+        names (referenced-outcomes node)
+        unresolved (into [] (comp (remove #(contains? registry %)) (distinct)) names)]
+    (when (seq unresolved)
+      (throw (ex-info "Help glossary reference unresolved at projection"
+                      {:code "discovery/glossary-ref-unresolved"
+                       :operation (:name entry)
+                       :node (:name node)
+                       :unresolved-outcomes unresolved})))
     (into {}
-          (keep (fn [name]
-                  (when-let [outcome (get registry name)]
-                    [name (:definition outcome)])))
-          (referenced-outcomes node))))
+          (map (fn [name] [name (:definition (get registry name))]))
+          names)))
 
 (defn- envelope
   "Build a canonical detail help envelope carrying `node`.
@@ -220,7 +229,7 @@
   {:schema-version schema-version
    :operation (operation-facts entry)
    :source nil
-   :glossary (node-glossary runtime node)
+   :glossary (node-glossary runtime entry node)
    :node node})
 
 (defn- op-envelope
