@@ -50,7 +50,7 @@ These record the settled contract from `PROP-Xer-001`, the decision note (`xh4nd
 ### DELTA-Xer-001.D1 Exact identity, strict fail-loud on absence
 
 - **Decision:** `:remove` names identity `(from, to, type)` alone and deletes only that row. A clean post-lock lookup that finds no matching row — wrong direction and wrong relation type included — fails with `ex-data` exactly `{:from submitted-from :to submitted-to :from-id resolved-from-id :to-id resolved-to-id :type submitted-type}` and rolls the whole batch back.
-- **Rationale:** `TEN-003` (fail loudly): a stale remover that finds the edge already gone must reread and reconcile, not silently succeed. Edge attributes are not read, so removal is never a compare-and-set.
+- **Rationale:** `TEN-003` (fail loudly): a stale remover that finds the edge already gone must reread and reconcile, not silently succeed. Edge attributes are neither identity, selector, nor a compare-and-set precondition, and `:remove` does not submit them.
 - **Rejected:** An ignore-missing/idempotent flag; attribute-matched or compare-and-set removal. Privileged idempotent cutover migrations keep their own lower-level path, out of this contract.
 
 ### DELTA-Xer-001.D2 Top-level pre-bound refs only

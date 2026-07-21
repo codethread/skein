@@ -45,7 +45,7 @@ Its keys are `:op`, `:from`, `:to`, and `:type`, with `:op` equal to `:remove`.
 
 Validation is op-specific. A remove entry must be a non-nil map with exactly `:op`, `:from`, `:to`, and `:type`; it rejects a missing required key, `:attributes`, and every unknown key (`require-no-unknown-keys!`, already applied at `db.clj:1193`). Both endpoints must be refs from the top-level pre-bound `:refs` map. A remove rejects a newly created ref even when an earlier upsert created the edge; upserts retain their existing ability to use newly created refs. Neither endpoint may be burned in the same payload (the burned-ref check at `db.clj:1224-1229` already covers every edge op).
 
-Identity is `(from, to, type)` alone. Edge attributes are neither a selector nor a compare-and-set precondition — `:remove` names no attributes and removal never reads them.
+Identity is `(from, to, type)` alone. Edge attributes are neither identity, selector, nor a compare-and-set precondition. `:remove` does not submit attributes.
 
 These are valid batch payload fragments. The first removes an existing edge; the second replaces an edge in submitted order:
 
