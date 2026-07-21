@@ -366,3 +366,24 @@ Append notes here. Do not rewrite earlier notes.
   raw JSON under `--json`, about/prime bypass), tore it down, and verified the canonical mill (6886) +
   `.skein` weaver (16099) were untouched — the correct pattern for validating a canonical-config change
   without restarting the canonical weaver.
+
+### PLAN-Dtf-001.DN9 Tasks 9 + 13: cross-repo producer adoption — 2026-07-21
+
+- **agent-harness.spool** branch `tz0ki-discovery-tiers` (commits fdd950a bench-fix, 5447b8f delegation
+  adoption, ae06ca6 docs+engine, 894a5d0 annotation-hygiene): full `agent`/`delegation` adoption —
+  whole-tree structured `about` eliminated; op-level `:about`/`:prime` prose; per-verb `:annotations` on
+  16 subcommands; 21 `delegation/*` glossary outcomes registered in install! before ops; bench alias test
+  fixed; reap flake confirmed pre-existing/unrelated (5/5 clean isolated); v7→v8 compat noted in README;
+  engine preamble pointer `agent about`→`about agent` fixed. Validated 211 tests 0-fail against the
+  FEATURE worktree (opus ran zp3sp; terra-med review q5bxe PASS after the hygiene trim). NOT tagged/pushed.
+- **kanban.spool** branch `tz0ki-discovery-tiers` (commit e4bb7b6): retired-alias test updated to the new
+  grammar; verb surface read from the new envelope `[:node :children]`. 73 tests 0-fail against the FEATURE
+  worktree (opus csmtm, `clojure -Spath` confirmed). NOT tagged/pushed.
+- **devflow.spool**: NO change (flat ops, passes — recon bh2ez).
+- CROSS-REPO VALIDATION HAZARD (both runs hit + solved): `:local/root` canonicalizes symlinks, so a naive
+  `../skein-src` symlink resolves core `io.skein/skein` src to the MAIN checkout while extra-paths resolve
+  to the feature. Fix used by both: sibling temp root with `skein-src`→feature-worktree symlink and the
+  spool as a real dir of per-entry symlinks, verified via `clojure -Spath`. Record this recipe for future
+  cross-repo spool validation against an unmerged skein branch.
+- REMAINING: full flocked skein-src suite (queue-acceptance) → HITL spool releases (agent v8, kanban v5)
+  → coordinate bump (Task 11) → spool-suite-gate green → spec promotion (Task 12) → PR.
