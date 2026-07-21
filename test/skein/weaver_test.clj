@@ -1199,7 +1199,8 @@
                                                 :attributes {:since "new"}}
                                                {:op :upsert :from :dep :to :old-target :type "depends-on"
                                                 :attributes {:reason "updated"}}]})
-              batch-event (first (filter #(= :batch/applied (:event/type %)) (wait-for-events 1)))
+              batch-event (do (t/await-quiescent! rt)
+                              (first (filter #(= :batch/applied (:event/type %)) @delivered-events)))
               context (last @hook-contexts)
               expected [{:op :remove :from :run :to :old-target :type "serves"
                          :before {:from_strand_id (:id run) :to_strand_id (:id old-target)
@@ -1214,7 +1215,6 @@
                                   :edge_type "depends-on" :attributes {:reason "existing"}}
                          :after {:from_strand_id (:id dep) :to_strand_id (:id old-target)
                                  :edge_type "depends-on" :attributes {:reason "updated"}}}]]
-          (t/await-quiescent! rt)
           (is (= [:batch/applied] (mapv :event/type @delivered-events))
               "an edge-only batch emits only the batch event")
           (is (= expected (:edges result)))
