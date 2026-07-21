@@ -102,6 +102,12 @@
                                 (catch Throwable _ nil))
                               ;; :fn stays un-destructured: a local named `fn` would
                               ;; shadow the fn macro in the handler thunks below.
+                              ;; One deref of the immutable effective projection is
+                              ;; the whole dispatch's handler snapshot: every handler
+                              ;; for this event comes from one owner set, and a
+                              ;; concurrent replacement is seen only by a later event
+                              ;; (DELTA-OlrDrt-001.CC9). Each handler runs its captured
+                              ;; :fn-value, not a re-resolved symbol (CC10).
                               (doseq [{:keys [key types fn-value] :as handler} (vals @(:handler-registry event-system))
                                       :when (contains? types (:event/type event))]
                                 (try

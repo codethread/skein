@@ -21,6 +21,10 @@
    :event/source :skein.api.weaver.alpha})
 
 (defn- hooks-for-type [runtime hook-type]
+  ;; `sort-by` eagerly realizes one deref of the immutable effective projection,
+  ;; so the whole gate runs against one hook snapshot: a hook that mutates the
+  ;; registry mid-fold cannot change the set this invocation already began with,
+  ;; and its replacement is seen only by a later invocation (DELTA-OlrDrt-001.CC9).
   (filter #(contains? (:types %) hook-type)
           (sort-by (juxt :order (comp pr-str :key)) (vals @(access/hook-registry runtime)))))
 

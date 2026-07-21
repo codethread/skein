@@ -101,6 +101,33 @@
   [store]
   (owner-registry/snapshot (:kernel store)))
 
+(defn- explain-entry
+  "Split one entry-key's ordered contenders (low-to-high) into its effective
+  winner and the lower partitions it shadows, mapping `value-fn` over every
+  contender's stored value so a caller can strip function objects before the
+  diagnostic leaves the registry."
+  [contenders value-fn]
+  (let [sanitized (mapv #(update % :value value-fn) contenders)]
+    {:effective (some #(when (:effective? %) %) sanitized)
+     :shadowed (filterv (complement :effective?) sanitized)
+     :contenders sanitized}))
+
+(defn explain
+  "Return owner/provenance diagnostics for the store's kind as plain data.
+
+  Maps each effective entry key to `{:effective <winning contender> :shadowed
+  [<lower contenders>] :contenders [<all, low-to-high>]}`. Each contender names
+  its `:owner`, `:layer`, `:value`, and `:override?`/`:effective?` flags, so a
+  caller sees which owner supplies each entry and which lower-layer partitions
+  it shadows. `value-fn` (default `identity`) is applied to every contender's
+  stored value; a kind whose entries hold function objects passes a sanitizer
+  that strips them, so neither a resolved function value nor an internal
+  registry handle leaks into the diagnostic (DELTA-OlrDrt-001.CC9)."
+  ([store] (explain store identity))
+  ([store value-fn]
+   (update-vals (get-in (snapshot store) [:provenance (:kind store)] {})
+                #(explain-entry % value-fn))))
+
 (defn- refresh! [{:keys [kind kernel effective]}]
   (reset! effective (owner-registry/effective-values (owner-registry/snapshot kernel) kind))
   effective)

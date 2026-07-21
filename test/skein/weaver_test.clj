@@ -18,6 +18,7 @@
             [skein.api.weaver.alpha :as weaver]
             [skein.core.weaver.config :as weaver-config]
             [skein.core.weaver.dispatch :as dispatch]
+            [skein.core.weaver.lifecycle :as lifecycle]
             [skein.core.weaver.metadata :as metadata]
             [skein.core.weaver.runtime :as weaver-runtime]
             [skein.core.db :as db]
@@ -300,6 +301,55 @@
 
 (def pattern-call-count (atom 0))
 
+;; --- dispatch-snapshot fixtures (TASK-Olr-025) ------------------------------
+;;
+;; Handlers, hooks, and ops that mutate their own registry while a dispatch is
+;; in flight, plus flip-flop ops for a concurrent torn-read stress. Handlers and
+;; hooks reach the runtime through `current/runtime`, bound for the duration of
+;; each dispatch; ops receive it as `:op/runtime`.
+
+(def snapshot-event-runs (atom []))
+
+(defn snapshot-event-mutator
+  "First handler for the snapshot event: remove the victim mid-dispatch."
+  [_event]
+  (events/unregister-handler! (current/runtime) :zzz-event-victim)
+  (swap! snapshot-event-runs conj :mutator))
+
+(defn snapshot-event-victim
+  "Second handler: records that it still ran despite the mid-dispatch removal."
+  [_event]
+  (swap! snapshot-event-runs conj :victim))
+
+(def snapshot-hook-runs (atom []))
+
+(defn snapshot-hook-mutator
+  "First validation hook for the snapshot type: remove the victim mid-fold."
+  [ctx]
+  (hooks/unregister-hook! (current/runtime) :zzz-hook-victim)
+  (swap! snapshot-hook-runs conj :mutator)
+  ctx)
+
+(defn snapshot-hook-victim
+  "Second validation hook: records that it still ran despite the mid-fold removal."
+  [ctx]
+  (swap! snapshot-hook-runs conj :victim)
+  ctx)
+
+(defn snapshot-probe-op-v2
+  "Replacement op handler installed by v1 during its own invocation."
+  [_ctx]
+  {:version :v2})
+
+(defn snapshot-probe-op-v1
+  "Op handler that replaces itself mid-invocation, then answers as v1."
+  [{:op/keys [runtime]}]
+  (weaver/replace-op! runtime 'snapshot-probe 'skein.weaver-test/snapshot-probe-op-v2)
+  {:version :v1})
+
+(defn torn-read-op-a [_ctx] {:v :a})
+(defn torn-read-op-b [_ctx] {:v :b})
+
 (use-fixtures :each
   (fn [f]
     (reset! delivered-events [])
@@ -311,6 +361,8 @@
     (reset! pattern-call-count 0)
     (reset! stream-gate (promise))
     (reset! op-side-effects [])
+    (reset! snapshot-event-runs [])
+    (reset! snapshot-hook-runs [])
     (f)))
 
 (defn test-pattern [{:keys [input]}]
@@ -2777,3 +2829,122 @@
       (finally
         (weaver-runtime/stop! rt)
         (db-test/delete-sqlite-family! db-file)))))
+
+;; --- dispatch snapshots and owner introspection (TASK-Olr-025) --------------
+
+(deftest event-dispatch-snapshots-the-handler-set-for-one-owner-set
+  ;; DELTA-OlrDrt-001.CC9/D2 + TASK-Olr-025.DW1: an in-flight event dispatch runs
+  ;; against the handler set it began with. The mutator sorts before the victim,
+  ;; so it removes the victim before the victim's turn; the victim must still run
+  ;; because the set was snapshotted at dispatch start (no mixed owner set), and
+  ;; only the next event observes the replacement.
+  (with-runtime
+    (fn [rt _db-file]
+      (events/register-handler! rt :aaa-event-mutator #{:snap/event}
+                                'skein.weaver-test/snapshot-event-mutator {})
+      (events/register-handler! rt :zzz-event-victim #{:snap/event}
+                                'skein.weaver-test/snapshot-event-victim {})
+      (dispatch/enqueue! rt (test-event :snap/event "snap-1"))
+      (t/await-quiescent! rt)
+      (is (= [:mutator :victim] @snapshot-event-runs)
+          "the victim still runs in the dispatch that removed it")
+      (reset! snapshot-event-runs [])
+      (dispatch/enqueue! rt (test-event :snap/event "snap-2"))
+      (t/await-quiescent! rt)
+      (is (= [:mutator] @snapshot-event-runs)
+          "the next event sees the replacement handler set")
+      (is (= [] (events/recent-failures rt))
+          "removing a handler mid-dispatch surfaces no spurious failure"))))
+
+(deftest event-owner-replacement-preserves-recent-failure-history
+  ;; TASK-Olr-025.MI2: registering another handler (an owner replacement) never
+  ;; clears queued events or recent failure history.
+  (with-runtime
+    (fn [rt _db-file]
+      (events/register-handler! rt :faily #{:snap/fail}
+                                'skein.weaver-test/failing-event {})
+      (dispatch/enqueue! rt (test-event :snap/fail "fail-1"))
+      (t/await-quiescent! rt)
+      (is (= 1 (count (events/recent-failures rt))))
+      (events/register-handler! rt :other #{:snap/other}
+                                'skein.weaver-test/capture-event {})
+      (is (= 1 (count (events/recent-failures rt)))
+          "an unrelated owner replacement leaves the failure log intact"))))
+
+(deftest lifecycle-hook-invocation-reads-one-snapshot
+  ;; DELTA-OlrDrt-001.CC9/CC10 + TASK-Olr-025.DW1: a validation-hook fold runs
+  ;; against the hook set it began with, even when a hook removes another
+  ;; mid-fold; the next invocation observes the replacement.
+  (with-runtime
+    (fn [rt _db-file]
+      (hooks/register-hook! rt :aaa-hook-mutator #{:snap/hook}
+                            'skein.weaver-test/snapshot-hook-mutator {:order 0})
+      (hooks/register-hook! rt :zzz-hook-victim #{:snap/hook}
+                            'skein.weaver-test/snapshot-hook-victim {:order 1})
+      (lifecycle/run-validation-hooks! rt :snap/hook {:probe true})
+      (is (= [:mutator :victim] @snapshot-hook-runs)
+          "the victim still runs in the fold that removed it")
+      (reset! snapshot-hook-runs [])
+      (lifecycle/run-validation-hooks! rt :snap/hook {:probe true})
+      (is (= [:mutator] @snapshot-hook-runs)
+          "the next invocation sees the replacement hook set"))))
+
+(deftest op-invocation-resolves-one-effective-snapshot
+  ;; DELTA-OlrDrt-001.CC10 + TASK-Olr-025.MI1: an op resolves once at invocation.
+  ;; The handler replaces itself mid-call, yet the in-flight call answers with the
+  ;; entry it resolved; only the next invocation observes the replacement.
+  (with-runtime
+    (fn [rt _db-file]
+      (weaver/register-op! rt 'snapshot-probe 'skein.weaver-test/snapshot-probe-op-v1)
+      (is (= {:version :v1} (weaver/op! rt 'snapshot-probe []))
+          "the call answers with the entry it resolved at invocation start")
+      (is (= {:version :v2} (weaver/op! rt 'snapshot-probe []))
+          "the next invocation resolves the replacement"))))
+
+(deftest concurrent-op-invocation-never-observes-a-torn-registry
+  ;; TASK-Olr-025.DW1: while one owner flips an op between two entries, concurrent
+  ;; invocations only ever observe old-or-new, never a torn read.
+  (with-runtime
+    (fn [rt _db-file]
+      (weaver/register-op! rt 'torn-probe 'skein.weaver-test/torn-read-op-a)
+      (let [running? (atom true)
+            flipper (future
+                      (loop [sym 'skein.weaver-test/torn-read-op-b]
+                        (when @running?
+                          (weaver/replace-op! rt 'torn-probe sym)
+                          (recur (if (= sym 'skein.weaver-test/torn-read-op-a)
+                                   'skein.weaver-test/torn-read-op-b
+                                   'skein.weaver-test/torn-read-op-a)))))
+            readers (mapv (fn [_]
+                            (future
+                              (set (for [_ (range 400)]
+                                     (:v (weaver/op! rt 'torn-probe []))))))
+                          (range 4))
+            observed (reduce into #{} (map deref readers))]
+        (reset! running? false)
+        @flipper
+        (is (empty? (disj observed :a :b))
+            "every concurrent invocation observed one of the two whole entries")))))
+
+(deftest op-provenance-reports-effective-owner-and-strips-nothing-sensitive
+  ;; TASK-Olr-025.MI3: op introspection reports effective owner/provenance as
+  ;; data. Built-in ops win under the system owner; a workspace op under the
+  ;; direct owner. Op entries hold the handler symbol, never a function value.
+  (with-runtime
+    (fn [rt _db-file]
+      (weaver/register-op! rt 'prov-probe 'skein.weaver-test/test-op)
+      (let [provenance (weaver/op-provenance rt)
+            help-eff (get-in provenance ["help" :effective])
+            probe-eff (get-in provenance ["prov-probe" :effective])]
+        (is (= :skein.owner/system (:owner help-eff))
+            "the built-in help op is attributed to the system owner")
+        (is (= :defaults (:layer help-eff)))
+        (is (= :skein.owner/repl (:owner probe-eff))
+            "a workspace op registration is attributed to the direct/REPL owner")
+        (is (= :direct (:layer probe-eff)))
+        (is (= 'skein.weaver-test/test-op (get-in probe-eff [:value :fn]))
+            "the op entry carries the handler symbol as data")
+        (is (not-any? (fn [[_ {:keys [contenders]}]]
+                        (some #(fn? (:value %)) contenders))
+                      provenance)
+            "no contender value is a bare function object")))))

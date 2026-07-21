@@ -66,6 +66,17 @@
   (mapv #(dissoc % :fn-value)
         (sort-by (comp pr-str :key) (vals @(handler-registry runtime)))))
 
+(defn handler-provenance
+  "Return owner/provenance diagnostics for `runtime`'s event handler registry.
+
+  Maps each handler key to `{:effective :shadowed :contenders}` (see
+  `skein.core.weaver.core-registry/explain`); each contender names its `:owner`,
+  `:layer`, and `:override?`/`:effective?` flags, and its `:value` handler entry
+  has the resolved `:fn-value` stripped, so no function value or internal handle
+  leaves the registry (SPEC-004.C66, DELTA-OlrDrt-001.CC9)."
+  [runtime]
+  (core-registry/explain (access/handler-store runtime) #(dissoc % :fn-value)))
+
 (defn recent-failures
   "Return `runtime`'s recent asynchronous handler failures, oldest first.
 
@@ -122,6 +133,10 @@
 (s/fdef handlers
   :args (s/cat :runtime ::runtime)
   :ret (s/coll-of ::handler-entry :kind vector?))
+
+(s/fdef handler-provenance
+  :args (s/cat :runtime ::runtime)
+  :ret map?)
 
 (s/fdef recent-failures
   :args (s/cat :runtime ::runtime)

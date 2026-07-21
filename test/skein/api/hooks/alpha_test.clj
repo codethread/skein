@@ -56,6 +56,25 @@
                             (hooks/register-hook! rt :k #{:payload/received} hook-sym
                                                   {:order :high}))))))
 
+(deftest hook-provenance-reports-owners-and-shadowing-without-fn-values
+  (t/with-weaver-world [ctx {:storage :sqlite-memory}]
+    (let [rt (:runtime ctx)
+          store (access/hook-store rt)
+          entry (fn [tag] {:key :h :types #{:payload/received} :fn hook-sym
+                           :fn-value capture-hook :order 0 :metadata {:tag tag}})]
+      (cr/replace-owner! store :base
+                         {:layer :spools :entries {:h (entry :low)} :overrides #{}})
+      (cr/replace-owner! store :top
+                         {:layer :workspace :entries {:h (entry :high)} :overrides #{:h}})
+      (let [{:keys [effective shadowed contenders]} (get (hooks/hook-provenance rt) :h)]
+        (is (= :top (:owner effective)))
+        (is (= [:base] (mapv :owner shadowed))
+            "the shadowed lower-layer owner is reported as data")
+        (is (not-any? #(contains? (:value %) :fn-value) contenders)
+            "no contender leaks the resolved function value")
+        (is (= hook-sym (get-in effective [:value :fn]))
+            "the hook symbol stays as data")))))
+
 (deftest hook-registry-is-owner-partition-backed
   (t/with-weaver-world [ctx {:storage :sqlite-memory}]
     (let [rt (:runtime ctx)

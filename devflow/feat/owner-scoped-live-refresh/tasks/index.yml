@@ -122,7 +122,7 @@ tasks:
   - id: 25
     description: Add dispatch snapshots and owner introspection
     task_file: tasks/025-core-dispatch-snapshots.md
-    status: pending
+    status: complete
     blocked_by: [2]
   - id: 26
     description: Rewrite human docs and regenerate APIs

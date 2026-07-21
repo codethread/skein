@@ -52,6 +52,17 @@
   (mapv #(dissoc % :fn-value)
         (sort-by (juxt :order (comp pr-str :key)) (vals @(access/hook-registry runtime)))))
 
+(defn hook-provenance
+  "Return owner/provenance diagnostics for `runtime`'s lifecycle hook registry.
+
+  Maps each hook key to `{:effective :shadowed :contenders}` (see
+  `skein.core.weaver.core-registry/explain`); each contender names its `:owner`,
+  `:layer`, and `:override?`/`:effective?` flags, and its `:value` hook entry has
+  the resolved `:fn-value` stripped, so no function value or internal handle
+  leaves the registry (DELTA-OlrDrt-001.CC9)."
+  [runtime]
+  (core-registry/explain (access/hook-store runtime) #(dissoc % :fn-value)))
+
 ;; --- validating and resolving registration input ----------------------
 
 (defn- validate-hook-key! [key]

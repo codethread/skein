@@ -434,17 +434,40 @@
   :ret (s/coll-of map? :kind vector?))
 
 (defn resolve-op
-  "Return the registered CLI operation entry for `op-name`, or fail loudly."
+  "Return the registered CLI operation entry for `op-name`, or fail loudly.
+
+  Reads one effective op snapshot for the invocation already beginning, so a
+  concurrent registry replacement takes effect only for a later resolve — the
+  in-flight lookup and its not-found diagnostic share one immutable view
+  (DELTA-OlrDrt-001.CC9/CC10, op symbols resolve at invocation)."
   [runtime op-name]
-  (let [canonical-name (op-entry/canonical-op-name op-name)]
-    (or (get @(op-registry runtime) canonical-name)
+  (let [canonical-name (op-entry/canonical-op-name op-name)
+        registered @(op-registry runtime)]
+    (or (get registered canonical-name)
         (throw (ex-info "Operation not found"
                         {:operation op-name
                          :canonical-operation canonical-name
-                         :available (sort (keys @(op-registry runtime)))})))))
+                         :available (sort (keys registered))})))))
 
 (s/fdef resolve-op
   :args (s/cat :runtime ::runtime :op-name any?)
+  :ret map?)
+
+(defn op-provenance
+  "Return owner/provenance diagnostics for `runtime`'s CLI op registry as data.
+
+  Maps each registered op name to `{:effective <winning contender> :shadowed
+  [<lower contenders>] :contenders [<all, low-to-high>]}`; each contender names
+  its `:owner`, `:layer`, `:value` (the op entry), and `:override?`/`:effective?`
+  flags, so a caller sees which owner supplies each op — a built-in under the
+  system owner, a workspace op under the direct owner — and which lower-layer
+  entries an override shadows. Op entries carry the handler symbol as data, not a
+  resolved function value (DELTA-OlrDrt-001.CC9)."
+  [runtime]
+  (core-registry/explain (op-store runtime)))
+
+(s/fdef op-provenance
+  :args (s/cat :runtime ::runtime)
   :ret map?)
 
 (defn op!

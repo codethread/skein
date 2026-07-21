@@ -92,6 +92,44 @@
                                 (cr/put-entry! store :sys (value kind :high))))
           (is (= {:sys (value kind :low)} (effective store))))))))
 
+(deftest explain-reports-effective-owner-provenance-and-shadowing
+  (doseq [kind kinds]
+    (testing kind
+      (let [store (cr/backed-registry kind)]
+        (testing "an unpopulated kind explains as an empty map"
+          (is (= {} (cr/explain store))))
+        (cr/replace-owner! store :base
+                           {:layer :spools :entries {:k (value kind :low)} :overrides #{}})
+        (cr/replace-owner! store :top
+                           {:layer :workspace :entries {:k (value kind :high)} :overrides #{:k}})
+        (let [{:keys [effective shadowed contenders]} (get (cr/explain store) :k)]
+          (testing "the winning contender names the overriding owner and layer"
+            (is (= {:owner :top :layer :workspace :value (value kind :high)
+                    :override? true :effective? true}
+                   effective)))
+          (testing "the shadowed lower-layer owner remains visible as data"
+            (is (= [{:owner :base :layer :spools :value (value kind :low)
+                     :override? false :effective? false}]
+                   shadowed)))
+          (testing "contenders are ordered low-to-high"
+            (is (= [:base :top] (mapv :owner contenders)))))))))
+
+(deftest explain-applies-the-value-sanitizer-to-every-contender
+  ;; The hooks/events introspection reads pass a sanitizer that strips the
+  ;; resolved :fn-value from each contender's stored entry (SPEC-004.C66).
+  (let [store (cr/backed-registry :hooks)
+        entry (fn [tag] {:key :h :types #{:x} :fn 'ns/f :fn-value (fn [_] tag)
+                         :order 0 :metadata {:tag tag}})]
+    (cr/replace-owner! store :base
+                       {:layer :spools :entries {:h (entry :low)} :overrides #{}})
+    (cr/replace-owner! store :top
+                       {:layer :workspace :entries {:h (entry :high)} :overrides #{:h}})
+    (let [{:keys [contenders]} (get (cr/explain store #(dissoc % :fn-value)) :h)]
+      (is (not-any? #(contains? (:value %) :fn-value) contenders)
+          "no contender leaks a resolved function value")
+      (is (every? #(= 'ns/f (get-in % [:value :fn])) contenders)
+          "the handler symbol stays as data"))))
+
 (deftest reset-store-clears-every-owner-partition
   (let [store (cr/backed-registry :ops)]
     (cr/replace-owner! store :owner-a
