@@ -21,8 +21,9 @@
             [skein.api.current.alpha :as current]
             [skein.api.format.alpha :as fmt]
             [skein.api.graph.alpha :as graph]
+            [skein.api.runtime.alpha :as runtime]
             [skein.api.spool.alpha :refer [fail! require-valid! attr-key->str
-                                           poll-until-deadline!]]
+                                           poll-until!]]
             [skein.api.vocab.alpha :as vocab]
             [skein.api.weaver.alpha :as weaver]
             [skein.spools.workflow.internal.compile :as cmp]
@@ -523,9 +524,9 @@
   executor-owned gate whose stall predicate reports detail, or timed out.
 
   opts: `:timeout-secs` (default 1800) and `:poll-ms` (default 250, matching
-  the agent-run await surface). Fails loudly for a non-negative-integer
-  violation on either, agreeing with `skein.spools.roster/await-quiet!`'s
-  `:timeout-ms`/`:poll-ms` validation.
+  the agent-run await surface). `:timeout-secs` must be a non-negative integer;
+  `:poll-ms` must be a positive integer, matching
+  `skein.spools.roster/await-quiet!`.
 
   The three-arg `(runtime run-id opts)` arity threads the target runtime
   explicitly, agreeing with `skein.spools.roster/await-quiet!`; the shorter
@@ -538,8 +539,9 @@
   ([runtime run-id opts]
    (let [timeout-secs (timeout-secs-opt opts)
          poll-ms (poll-ms-opt opts)]
-     (poll-until-deadline!
-      {:deadline (+ (System/currentTimeMillis) (* 1000 (long timeout-secs)))
+     (poll-until!
+      (runtime/clock runtime)
+      {:timeout-ms (* 1000 (long timeout-secs))
        :poll-ms poll-ms
        :check #(attention runtime run-id)
        :pred->result (fn [state] (when (not= :waiting (:reason state)) state))
@@ -721,8 +723,9 @@
 ;; keyword naming a resolved param, or a fn of the resolved params map.
 (s/def ::each #(or (sequential? %) (keyword? %) (fn? %)))
 (s/def ::depends-on (s/coll-of ::id-ref :kind vector?))
-(s/def ::timeout-secs (s/and integer? (complement neg?)))
-(s/def ::poll-ms (s/and integer? (complement neg?)))
+(s/def ::timeout-secs
+  (s/and integer? (complement neg?) #(<= % (quot Long/MAX_VALUE 1000))))
+(s/def ::poll-ms (s/and integer? pos? #(<= % Long/MAX_VALUE)))
 (s/def ::self-waiter #{:self})
 (s/def ::external-waiter #(and (or (keyword? %) (symbol? %) (non-blank-string? %))
                                (not= :self %)))
@@ -1057,4 +1060,4 @@
 (defn- poll-ms-opt
   [opts]
   (require-valid! ::poll-ms (get opts :poll-ms 250)
-                  "await! :poll-ms must be a non-negative integer"))
+                  "await! :poll-ms must be a positive integer"))

@@ -12,6 +12,7 @@
   wall waits
   (`PLAN-cron-on-scheduler-001.V3`). Cron registers no pump of its own."
   (:require [clojure.test :refer [deftest is testing]]
+            [skein.api.runtime.alpha :as runtime]
             [skein.api.scheduler.alpha :as scheduler]
             [skein.spools.cron :as cron]
             [skein.spools.test-support :as test-support]
@@ -24,11 +25,18 @@
 (defn fire-other [_runtime] :other)
 (defn fire-throw [_runtime] (throw (ex-info "boom" {:why :test})))
 
+(def ^:private blocking-started (atom (promise)))
+(def ^:private blocking-release (atom (promise)))
+
+(defn blocking-run [_runtime]
+  (deliver @blocking-started true)
+  @@blocking-release)
+
 (defn- with-cron [f]
   (test-support/with-runtime
     {:prefix "skein-cron"}
     (fn [rt _config-dir]
-      (test-alpha/set-clock! rt (constantly (Instant/ofEpochSecond 0)))
+      (test-alpha/set-clock! rt (test-alpha/manual-clock (Instant/ofEpochSecond 0)))
       (cron/install!)
       (f rt))))
 
@@ -74,7 +82,7 @@
                           :interval-ms 1000
                           :handler 'skein.cron-test/fire-ok})
       (let [first-wake-at (:wake_at (cron-wake rt "cron/steady"))]
-        (test-alpha/set-clock! rt (constantly (Instant/ofEpochMilli 10000)))
+        (test-alpha/set-clock! rt (test-alpha/manual-clock (Instant/ofEpochMilli 10000)))
         (cron/register! rt {:id :steady
                             :interval-ms 1000
                             :jitter-ms 0
@@ -87,14 +95,14 @@
                             :handler 'skein.cron-test/fire-ok})
         (is (= 12000 (:wake_at (cron-wake rt "cron/steady")))
             "changed interval resets wake-at from now")
-        (test-alpha/set-clock! rt (constantly (Instant/ofEpochMilli 30000)))
+        (test-alpha/set-clock! rt (test-alpha/manual-clock (Instant/ofEpochMilli 30000)))
         (cron/register! rt {:id :steady
                             :interval-ms 2000
                             :jitter-ms 10
                             :handler 'skein.cron-test/fire-ok})
         (is (<= 31990 (:wake_at (cron-wake rt "cron/steady")) 32010)
             "changed jitter replaces the pending wake from now")
-        (test-alpha/set-clock! rt (constantly (Instant/ofEpochMilli 40000)))
+        (test-alpha/set-clock! rt (test-alpha/manual-clock (Instant/ofEpochMilli 40000)))
         (cron/register! rt {:id :steady
                             :interval-ms 2000
                             :jitter-ms 0
@@ -154,6 +162,27 @@
         (is (some? wake) "cadence continues past a run failure")
         (is (= 3000 (:wake_at wake)) "next wake-at is the fire instant + interval"))
       (cron/unregister! rt :boom))))
+
+(deftest await-quiescent-uses-the-runtime-clock
+  (with-cron
+    (fn [rt]
+      (reset! blocking-started (promise))
+      (reset! blocking-release (promise))
+      (cron/register! rt {:id :blocked
+                          :interval-ms 1000
+                          :jitter-ms 0
+                          :handler 'skein.cron-test/blocking-run})
+      (test-alpha/advance! rt (Duration/ofSeconds 2))
+      (test-alpha/await-quiescent! rt)
+      (is (deref @blocking-started (test-support/await-budget-ms) false)
+          "the cron job is in flight before the await starts")
+      (let [timeout (is (thrown? clojure.lang.ExceptionInfo
+                                 (cron/await-quiescent! rt {:timeout-ms 5})))]
+        (is (= {:timeout-ms 5 :in-flight 1} (ex-data timeout)))
+        (is (= (Instant/ofEpochMilli 2005) (runtime/now rt))
+            "awaiting advanced the manual runtime clock instead of wall sleeping"))
+      (deliver @blocking-release :released)
+      (cron/await-quiescent! rt))))
 
 (deftest jitter-offset-stays-in-bounds
   (let [rng (Random. 42)

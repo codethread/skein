@@ -390,6 +390,7 @@
   (with-runtime
     (fn [rt _]
       (let [entry (roster/start! rt {:feature "roster-spool" :owner "agent-a"})
+            _ (t/set-clock! rt (t/manual-clock Instant/EPOCH))
             result (roster/await-quiet! rt {:feature "roster-spool" :timeout-secs 1})]
         (is (= :timeout (:reason result)))
         (is (= [(:id entry)] (map (comp :id :strand) (:entries result))))))))
@@ -404,8 +405,10 @@
       (doseq [bad [-1 1.5 "1000"]]
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #":timeout-secs must be a non-negative integer"
                               (roster/await-quiet! rt {:timeout-secs bad})))
-        (is (thrown-with-msg? clojure.lang.ExceptionInfo #":poll-ms must be a non-negative integer"
-                              (roster/await-quiet! rt {:poll-ms bad})))))))
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #":poll-ms must be a positive integer"
+                              (roster/await-quiet! rt {:poll-ms bad}))))
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #":poll-ms must be a positive integer"
+                            (roster/await-quiet! rt {:poll-ms 0}))))))
 
 (deftest roster-await-quiet-op-round-trips-through-the-cli
   (with-runtime

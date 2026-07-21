@@ -1,0 +1,16 @@
+tasks:
+  - id: 1
+    description: Add the Clock runtime and manual test seam
+    task_file: tasks/001-add-clock-runtime-and-manual-test-seam.md
+    status: completed
+    blocked_by: []
+  - id: 2
+    description: Replace polling and migrate shipped callers
+    task_file: tasks/002-replace-polling-and-migrate-callers.md
+    status: completed
+    blocked_by: [1]
+  - id: 3
+    description: Promote contracts and run queue acceptance
+    task_file: tasks/003-promote-contracts-and-run-queue-acceptance.md
+    status: completed
+    blocked_by: [2]

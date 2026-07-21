@@ -38,7 +38,7 @@ Active-work registry: `roster/*` attribute vocabulary plus explicit-runtime
 Function.
 
 Return the roster convention and installed helper surface.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/roster/src/skein/spools/roster.clj#L567-L609">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/roster/src/skein/spools/roster.clj#L569-L611">Source</a></sub></p>
 
 ## <a name="skein.spools.roster/await-quiet!">`await-quiet!`</a>
 ``` clojure
@@ -55,9 +55,9 @@ Block until the selected scope has no active non-stale entries.
   threshold (checked before waiting further), `:quiet` when the scope has no
   active entries, and `:timeout` when neither happens before the deadline.
   `:entries` is whatever `list` returned for the scope at the decision
-  point. Fails loudly for a malformed opts map, unknown keys, or a negative
-  `:timeout-secs`/`:poll-ms`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/roster/src/skein/spools/roster.clj#L374-L402">Source</a></sub></p>
+  point. Fails loudly for a malformed opts map, unknown keys, a negative
+  `:timeout-secs`, or a non-positive `:poll-ms`.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/roster/src/skein/spools/roster.clj#L376-L404">Source</a></sub></p>
 
 ## <a name="skein.spools.roster/default-stale-after-ms">`default-stale-after-ms`</a>
 
@@ -65,7 +65,7 @@ Block until the selected scope has no active non-stale entries.
 
 
 Default staleness threshold for `list`/`await-quiet!`: fifteen minutes.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/roster/src/skein/spools/roster.clj#L38-L40">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/roster/src/skein/spools/roster.clj#L39-L41">Source</a></sub></p>
 
 ## <a name="skein.spools.roster/default-timeout-secs">`default-timeout-secs`</a>
 
@@ -74,7 +74,7 @@ Default staleness threshold for `list`/`await-quiet!`: fifteen minutes.
 
 Default `await-quiet!` `:timeout-secs`: thirty minutes, matching
   `workflow/await!`'s long-poll default.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/roster/src/skein/spools/roster.clj#L348-L351">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/roster/src/skein/spools/roster.clj#L350-L353">Source</a></sub></p>
 
 ## <a name="skein.spools.roster/finish!">`finish!`</a>
 ``` clojure
@@ -91,7 +91,7 @@ Close an active roster entry with a final `roster/phase`.
   auto-heartbeat cannot roll the final phase back (SPEC-RosterSpool-001.C4).
   Fails loudly for a missing, closed, or non-roster entry id, an unrecognized
   phase, or malformed opts.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/roster/src/skein/spools/roster.clj#L248-L272">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/roster/src/skein/spools/roster.clj#L250-L274">Source</a></sub></p>
 
 ## <a name="skein.spools.roster/handle-mutation-event!">`handle-mutation-event!`</a>
 ``` clojure
@@ -107,7 +107,7 @@ Roster's async graph-integration handler (explicit-runtime core).
   graph-tracked workflow/devflow flows stay fresh without an explicit
   `heartbeat!`. Roster's own bookkeeping writes are ignored to avoid feedback
   loops. Exceptions are left to surface on the weaver event-failure surface.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/roster/src/skein/spools/roster.clj#L524-L542">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/roster/src/skein/spools/roster.clj#L526-L544">Source</a></sub></p>
 
 ## <a name="skein.spools.roster/heartbeat!">`heartbeat!`</a>
 ``` clojure
@@ -125,7 +125,7 @@ Update `roster/heartbeat-at` on an active roster entry.
   on the already-closed entry — it can never resurrect `roster/phase` to
   "active" (SPEC-RosterSpool-001.C4). Fails loudly for non-map opts or
   unknown opt keys.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/roster/src/skein/spools/roster.clj#L182-L200">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/roster/src/skein/spools/roster.clj#L183-L201">Source</a></sub></p>
 
 ## <a name="skein.spools.roster/install!">`install!`</a>
 ``` clojure
@@ -134,7 +134,7 @@ Update `roster/heartbeat-at` on an active roster entry.
 Function.
 
 Install the roster op and named query into the active weaver.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/roster/src/skein/spools/roster.clj#L795-L814">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/roster/src/skein/spools/roster.clj#L797-L816">Source</a></sub></p>
 
 ## <a name="skein.spools.roster/list">`list`</a>
 ``` clojure
@@ -148,7 +148,7 @@ Return active roster entries, optionally scoped by `:feature`, `:owner`,
   Each row is `{:strand <normalized strand> :stale? bool :age-ms long}`,
   derived against `opts`'s `:stale-after-ms` (default fifteen minutes; must
   be a positive integer when supplied). Sorted by strand id.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/roster/src/skein/spools/roster.clj#L324-L342">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/roster/src/skein/spools/roster.clj#L326-L344">Source</a></sub></p>
 
 ## <a name="skein.spools.roster/on-event">`on-event`</a>
 ``` clojure
@@ -159,7 +159,7 @@ Function.
 Registered event-handler entry point: dispatches to
   `handle-mutation-event!` under the runtime the event worker bound for this
   delivery.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/roster/src/skein/spools/roster.clj#L544-L549">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/roster/src/skein/spools/roster.clj#L546-L551">Source</a></sub></p>
 
 ## <a name="skein.spools.roster/prime">`prime`</a>
 ``` clojure
@@ -172,7 +172,7 @@ Return the full agent-priming payload for using the roster.
   A superset of `about` — it reuses the same attribute/api/command surface and
   adds the working discipline an agent needs before starting, heartbeating, or
   finishing roster entries.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/roster/src/skein/spools/roster.clj#L611-L654">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/roster/src/skein/spools/roster.clj#L613-L656">Source</a></sub></p>
 
 ## <a name="skein.spools.roster/roster-op">`roster-op`</a>
 ``` clojure
@@ -181,7 +181,7 @@ Return the full agent-priming payload for using the roster.
 Function.
 
 Dispatch parsed `strand roster ...` subcommands.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/roster/src/skein/spools/roster.clj#L707-L717">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/roster/src/skein/spools/roster.clj#L709-L719">Source</a></sub></p>
 
 ## <a name="skein.spools.roster/start!">`start!`</a>
 ``` clojure
@@ -200,7 +200,7 @@ Create or restamp one roster entry.
   `:body`, `:branch`, `:worktree`, `:engine`, `:run-id`, and `:now` (an
   `Instant` override for deterministic callers/tests). Fails loudly for
   malformed attrs or a missing `:id` strand.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/roster/src/skein/spools/roster.clj#L112-L156">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/roster/src/skein/spools/roster.clj#L113-L157">Source</a></sub></p>
 
 ## <a name="skein.spools.roster/watch!">`watch!`</a>
 ``` clojure
@@ -210,4 +210,4 @@ Function.
 
 Register roster's async workflow/devflow graph-integration handler on
   strand add/update events.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/roster/src/skein/spools/roster.clj#L554-L561">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/roster/src/skein/spools/roster.clj#L556-L563">Source</a></sub></p>

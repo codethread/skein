@@ -121,6 +121,10 @@ A duplicate delivery follows the same path. It replaces the next pending
 body again. This is expected under the at-least-once contract; write handlers so
 the second run is harmless.
 
+## Awaiting offloaded jobs
+
+`cron/await-quiescent!` waits for cron's offloaded jobs after the event lane has settled. Its timeout and five-millisecond polling interval use the runtime Clock. A manual clock therefore advances the await without a wall-clock sleep, and a timeout is deterministic in tests.
+
 ## Inspecting and removing
 
 ```clojure

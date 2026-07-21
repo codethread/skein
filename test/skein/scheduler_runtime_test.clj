@@ -9,6 +9,7 @@
   real weaver runtime and its shared event worker."
   (:require [clojure.java.io :as io]
             [clojure.test :refer [deftest is testing]]
+            [skein.api.clock.alpha :as clock]
             [skein.api.runtime.alpha :as runtime]
             [skein.core.db :as db]
             [skein.core.db-test :as db-test]
@@ -52,7 +53,7 @@
   [ds queue-capacity]
   {:datasource ds
    :spool-state (atom {})
-   :clock (atom (fn [] (Instant/now)))
+   :clock (atom (clock/system-clock))
    :clock-pumps (atom {})
    :event-system {:queue (ArrayBlockingQueue. (int queue-capacity))}})
 
@@ -62,7 +63,7 @@
   [ds queue-capacity clock-seconds f]
   (let [rt (fake-runtime ds queue-capacity)
         st (scheduler/state rt)]
-    (test-alpha/set-clock! rt (constantly (instant clock-seconds)))
+    (test-alpha/set-clock! rt (test-alpha/manual-clock (instant clock-seconds)))
     (try
       (f rt st)
       (finally
@@ -169,7 +170,7 @@
             ;; by run-fire-skips-cancelled-and-rescheduled-wakes). Now deliver gen B.
             (.poll queue)
             (swap! (:in-flight st) disj "resched")
-            (test-alpha/set-clock! rt (constantly (instant 200)))
+            (test-alpha/set-clock! rt (test-alpha/manual-clock (instant 200)))
             (let [result (scheduler/dispatch-due! rt)]
               (is (= 1 (:dispatched result)))
               (is (= 1 (:scheduler/attempt (.poll queue)))
@@ -325,7 +326,7 @@
   (wt/with-runtime
     (fn [rt _db-file]
       (reset! fire-count 0)
-      (test-alpha/set-clock! rt (constantly (instant 0)))
+      (test-alpha/set-clock! rt (test-alpha/manual-clock (instant 0)))
       (db/schedule-wake! (:datasource rt)
                          {:key "soon" :wake-at (instant 1)
                           :handler 'skein.scheduler-runtime-test/counting-handler})

@@ -289,13 +289,12 @@ Require it from spool code when you need fail-loud validation, attribute-key nor
   keyword-keyed on the native path or string-keyed after a JSON round trip. It
   tests presence with `contains?`, so explicit falsey values are preserved, and
   it fails loudly if the selected value is a lean-read omission descriptor.
-- `(poll-until-deadline! {:keys [deadline poll-ms check pred->result on-timeout]})`
-  calls the zero-arg `check`, passes each value to `pred->result`, and returns
-  the first non-nil result. If the epoch-millis `deadline` has passed, it calls
-  `on-timeout` with the last checked value and returns that. `deadline` and
-  `poll-ms` are required; the helper does not invent timeout or cadence defaults.
-  It validates all five entries before polling, so bad inputs fail at the seam
-  instead of surfacing later as a bare null or sleep error.
+- `(poll-until! clock {:keys [timeout-ms poll-ms check pred->result on-timeout]})`
+  checks immediately and returns the first non-nil value from `pred->result`.
+  At or after the relative timeout it calls `on-timeout` with the last checked
+  value. Otherwise it sleeps on the supplied Clock for the positive `poll-ms`
+  cadence. Pass `(runtime/clock runtime)` from the spool's explicit-runtime
+  boundary; tests can install a manual Clock and avoid wall-time waits.
 
 ### `skein.api.format.alpha`
 

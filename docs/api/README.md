@@ -15,6 +15,7 @@ Two conventions hold across the tier:
 | --- | --- |
 | [`current`](./current.api.md) | You are at a trusted in-process entry point and need to capture the active runtime (or probe for one without fabricating it). |
 | [`runtime`](./runtime.api.md) | Loader/config workflows: `sync!` approved spool roots, `use!` a module, `reload!` startup config, read `spool-state`, read the runtime clock. |
+| [`clock`](./clock.api.md) | Code needs one capability for current time and sleeping, including deterministic polling with a manual test Clock. |
 
 ### Strand data
 
@@ -48,7 +49,7 @@ Two conventions hold across the tier:
 | [`vocab`](./vocab.api.md) | Declaring the attribute namespaces and edge types your module owns, so the graph's vocabulary stays discoverable data. |
 | [`relations`](./relations.api.md) | Looking up the shipped relation catalog — advisory data, not a storage allowlist. |
 | [`format`](./format.api.md) | Authoring long prose as `|`-margin blocks (`fill`, `reflow`) instead of unreadable string literals. |
-| [`spool`](./spool.api.md) | Writing a spool and needing the shared authoring helpers: `fail!`, `reject-unknown-keys!`, `require-valid!`, attribute key/get coercion, and deadline polling. |
+| [`spool`](./spool.api.md) | Writing a spool and needing the shared authoring helpers: `fail!`, `reject-unknown-keys!`, `require-valid!`, attribute key/get coercion, and Clock-based polling. |
 
 ### Talking to other weavers
 

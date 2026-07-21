@@ -8,7 +8,9 @@
             [skein.api.vocab.alpha :as vocab]
             [skein.spools.test-support :refer [with-runtime]]
             [skein.spools.workflow :as workflow]
-            [skein.repl :as repl]))
+            [skein.repl :as repl]
+            [skein.test.alpha :as test-alpha])
+  (:import [java.time Instant]))
 
 (deftest workflow-install-declares-workflow-attr-namespace
   (with-runtime
@@ -1460,20 +1462,22 @@
 
 (deftest await-stays-silent-on-a-healthy-executor-owned-gate-then-reports-stalled
   (with-runtime
-    (fn [_rt _]
+    (fn [rt _]
       (let [definition (workflow/workflow "Await executor gate"
                                           (workflow/gate :delegate "Delegate" :await-test-executor))]
         (workflow/start! "await-executor-gate" definition {})
+        (test-alpha/set-clock! rt (test-alpha/manual-clock Instant/EPOCH))
         (let [gate-id (:id (first (workflow/ready "await-executor-gate")))]
           (is (= :await-test-executor
                  (workflow/register-executor! :await-test-executor (constantly nil))))
           ;; a healthy executor-owned gate stays silent: the run just times out
-          (is (= :timeout (:reason (workflow/await! "await-executor-gate" {:timeout-secs 1}))))
+          (is (= :timeout (:reason (workflow/await! rt "await-executor-gate"
+                                                    {:timeout-secs 1}))))
           (workflow/register-executor! :await-test-executor
                                        (fn [step]
                                          (when (= gate-id (:id step))
                                            {:why "test"})))
-          (let [result (workflow/await! "await-executor-gate" {:timeout-secs 1})]
+          (let [result (workflow/await! rt "await-executor-gate" {:timeout-secs 1})]
             (is (= :stalled (:reason result)))
             (is (= {:why "test"} (get-in result [:detail :stall])))))))))
 
@@ -1497,8 +1501,10 @@
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #":timeout-secs must be a non-negative integer"
                                 (workflow/await! rt "await-malformed-opts" {:timeout-secs bad}))))
         (testing (str "poll-ms " (pr-str bad))
-          (is (thrown-with-msg? clojure.lang.ExceptionInfo #":poll-ms must be a non-negative integer"
-                                (workflow/await! rt "await-malformed-opts" {:poll-ms bad}))))))))
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #":poll-ms must be a positive integer"
+                                (workflow/await! rt "await-malformed-opts" {:poll-ms bad})))))
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #":poll-ms must be a positive integer"
+                            (workflow/await! rt "await-malformed-opts" {:poll-ms 0}))))))
 
 (deftest register-executor-rejects-invalid-waiters
   (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Executor waiter must be.*other than :self"
