@@ -44,13 +44,18 @@ tasks:
     task_file: tasks/009-agent-spool-adoption.md
     status: pending
     blocked_by: [8]
+  - id: 13
+    description: kanban.spool retired-alias grammar fix
+    task_file: tasks/013-kanban-spool-grammar-fix.md
+    status: pending
+    blocked_by: [8]
   - id: 10
-    description: "[HITL] Reviewed release/tag v8 of agent spool"
+    description: "[HITL] Reviewed release/tag of agent (v8) + kanban (v5) spools"
     task_file: tasks/010-agent-spool-release.md
     status: blocked
-    blocked_by: [9]
+    blocked_by: [9, 13]
   - id: 11
-    description: Coordinate bump + spool-suite-gate + agent discovery E2E
+    description: Coordinate bump (agent + kanban) + spool-suite-gate + agent E2E
     task_file: tasks/011-coordinate-bump-and-gate.md
     status: pending
     blocked_by: [10]

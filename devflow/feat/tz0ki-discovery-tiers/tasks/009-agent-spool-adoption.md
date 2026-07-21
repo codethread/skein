@@ -24,6 +24,15 @@ tag/release here (Task 10).
   README / discovery docs. Classify the v7→v8 compatibility break per PLAN-Dtf-001.CM3 (record the
   published-name behavior change and the new Skein API dependency floor); note any producer
   compatibility check/alarm that must be updated before a tag.
+- **TASK-Dtf-009.MI4 (grammar-compat fix — from recon `bh2ez`):** The `bench` op's test in this repo
+  (`test/ct/spools/bench_test.clj` `bench-op-declares-subcommands-and-routes-loudly`, ~:750/:752) asserts
+  the retired `strand bench help` sole-token alias; update it to expect the loud `discovery/help-grammar`
+  redirect (or use `strand help bench`), same as the kanban fix (Task 13). This is grammar-compat, not
+  full bench adoption. Also NOTE (do NOT fix as part of this feature): recon found an **unrelated,
+  pre-existing** flaky liveness failure `reap-manual-leaves-the-session-to-the-human`
+  (`test/ct/spools/agent_run_test.clj:595`, a `process-alive?` timing flake) — confirm it is unrelated to
+  the grammar change and flaky (re-run), and report it; do not let it block, but do not paper over a real
+  regression either. `devflow.spool` needs NO change (flat ops, passes — recon `bh2ez`).
 
 ## TASK-Dtf-009.P3 Done when
 
