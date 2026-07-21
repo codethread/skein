@@ -79,6 +79,16 @@ arg-spec/return-shape projection and per-node annotation authoring land in DELTA
   **not shipped**. `--json` is **leading-only** within the help surface; other flags on the help
   surface are invalid (`strand help ... --foo` fails).
 
+- **DELTA-Dtf-001.CC4a (verbatim relay of transform output):** A registered default help transform's
+  output is relayed **verbatim** (bytes as-is — text stays text, never JSON-re-quoted), per
+  DELTA-Dtf-002.CC1. The weaver's single-result success frame carries an optional `verbatim` boolean —
+  present/`true` only for a transform-rendered `help` result — and the `strand` client honors it by
+  writing the raw string bytes (single trailing newline if absent), instead of the default byte-faithful
+  JSON single-result relay (SPEC-002.C4/C36). It is a backward-compatible frame extension alongside the
+  stream `header`/`done` framing: absent (the default) means the ordinary JSON relay. With no transform,
+  or under `--json`, the result is the raw canonical envelope map relayed as JSON as today; `about`/
+  `prime` (JSON objects) are never verbatim. No other op's relay changes.
+
 - **DELTA-Dtf-001.CC5 (`--help` must trail, post-op):** After an op name, `--help`/`-h` is sugar the
   weaver rewrites to the `help` op, valid **only** as the final token with no other flags; any other
   shape (`strand agent --foo --help`, a non-final `--help`, attached payloads) is a concise redirect

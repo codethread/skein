@@ -321,3 +321,15 @@ Append notes here. Do not rewrite earlier notes.
   no swallowing). New blessed `skein.api.cli/validate-annotations!`.
 - LESSON: infra failures are resumable — check the worktree, then `agent retry` (session-resume)
   preserves partial work and context rather than restarting.
+
+### PLAN-Dtf-001.DN6 Task 6: default-transform slot + render — 2026-07-21
+
+- Implemented by opus (run 9w739, commit `09f4cd2`): net-new reload-cleared at-most-one slot
+  `skein.api.runtime.help-transform.alpha` + runtime cell + help-render integration (full-envelope input,
+  loud `discovery/help-transform-failed` on throw, `--json` always bypasses).
+- terra-med review (qxd2e) found the transform's TEXT output was JSON-re-encoded by the Go client (not
+  verbatim, contra DELTA-Dtf-002.CC1). Fixed by opus (run b01mn, commit `80b07fa`): a `VerbatimResult`
+  marker → socket `"verbatim": true` single-result frame → client `relayVerbatim`, scoped to transformed
+  help only; end-to-end smoke test with a real transform fixture. Gates green.
+- DURABLE CONTRACT surfaced: the optional `verbatim` success-frame boolean — folded into
+  DELTA-Dtf-001.CC4a (backward-compatible frame extension; promote to SPEC-002 at Task 12).
