@@ -15,6 +15,7 @@
             [skein.api.patterns.alpha :as patterns]
             [skein.api.return-shape.alpha :as return-shape]
             [skein.api.runtime.alpha :as runtime]
+            [skein.api.runtime.glossary.alpha :as glossary]
             [skein.api.weaver.alpha :as weaver]
             [skein.core.weaver.config :as weaver-config]
             [skein.core.weaver.dispatch :as dispatch]
@@ -2240,6 +2241,75 @@
                                       #"Operation not found"
                                       (weaver/op! rt 'help ["nope"])))]
           (is (some #{"help"} (:available (ex-data e)))))))))
+
+(defn- register-fixture-outcomes!
+  "Register the synthetic glossary outcomes the closure fixture references, in
+  load order before the op that carries them."
+  [rt names]
+  (doseq [name names]
+    (glossary/register-glossary-outcome!
+     rt {:name name :definition (str name " definition") :owner 'skein.weaver-test/fixture})))
+
+(deftest weaver-op-help-glossary-closure
+  ;; Task 4 authors real annotation values; here a synthetic op declares
+  ;; failure-modes referencing registered outcomes so the envelope-closure
+  ;; mechanism (DELTA-Dtf-002.CC5) is exercised independently.
+  (with-runtime
+    (fn [rt _]
+      (register-fixture-outcomes! rt ["discovery/unavailable"
+                                      "lifecycle/timeout"
+                                      "lifecycle/abort"])
+      (weaver/register-op! rt 'annotated
+                           {:doc "Annotated op"
+                            :arg-spec {:op "annotated"
+                                       :doc "Root doc"
+                                       :annotations {:use-when ["when rooted"]
+                                                     :notes ["a root note"]
+                                                     :failure-modes ["discovery/unavailable"]}
+                                       :subcommands
+                                       {"go" {:doc "Go"
+                                              :annotations
+                                              {:failure-modes ["lifecycle/timeout"
+                                                               "lifecycle/abort"]}}
+                                        "stop" {:doc "Stop"}}}}
+                           'skein.weaver-test/context-echo-op)
+      (let [defn-of #(str % " definition")]
+        (testing "full-tree glossary is the closure of every referenced outcome, resolved once"
+          (let [{:keys [glossary node]} (weaver/op! rt 'help ["annotated"])]
+            (is (= {"discovery/unavailable" (defn-of "discovery/unavailable")
+                    "lifecycle/timeout" (defn-of "lifecycle/timeout")
+                    "lifecycle/abort" (defn-of "lifecycle/abort")}
+                   glossary))
+            (testing "authored use-when/notes wire through onto the node"
+              (is (= ["when rooted"] (:use-when node)))
+              (is (= ["a root note"] (:notes node))))
+            (testing "nodes carry outcome names only; definitions never inline"
+              (is (= ["discovery/unavailable"] (:failure-modes node)))
+              (let [go (first (filter #(= "go" (:name %)) (:children node)))]
+                (is (= ["lifecycle/timeout" "lifecycle/abort"] (:failure-modes go)))
+                (is (every? string? (:failure-modes go)))
+                (is (not (contains? go :definition)))
+                (is (not (contains? go :glossary)))))))
+        (testing "slicing narrows the closure to the returned subtree"
+          (let [go (weaver/op! rt 'help ["annotated" "go"])]
+            (is (= {"lifecycle/timeout" (defn-of "lifecycle/timeout")
+                    "lifecycle/abort" (defn-of "lifecycle/abort")}
+                   (:glossary go))
+                "the go subtree references neither the root's nor the stop verb's outcomes"))
+          (let [stop (weaver/op! rt 'help ["annotated" "stop"])]
+            (is (= {} (:glossary stop))
+                "a verb with no failure-modes yields an empty closure")))
+        (testing "the trailing --help rewrite resolves the same closure through the runtime"
+          (is (= (weaver/op! rt 'help ["annotated"])
+                 (weaver/op! rt 'annotated ["--help"])))
+          (is (= (weaver/op! rt 'help ["annotated" "go"])
+                 (weaver/op! rt 'annotated ["go" "--help"]))))
+        (testing "the no-arg catalog carries no glossary closure on its entries"
+          (let [{:keys [ops]} (weaver/op! rt 'help [])]
+            (is (every? #(not (contains? % :glossary)) ops))))
+        (testing "every closure projection satisfies the declared return shape"
+          (doseq [argv [["annotated"] ["annotated" "go"] ["annotated" "stop"]]]
+            (t/check-op-return! rt 'help (weaver/op! rt 'help argv))))))))
 
 (deftest weaver-pattern-registry-and-weave
   (with-runtime

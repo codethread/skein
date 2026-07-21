@@ -19,12 +19,13 @@
   the per-case return-shape `explain` (SPEC-003.C60b) — into that schema; nothing
   here re-models or hand-writes usage.
 
-  `source` (op-wide handler pointer, resolved later) is `null` here and
-  `glossary` (referenced-term closure) is empty here; both are filled by later
-  discovery-tier tasks without reshaping the envelope. The load graph pins its
-  other reaches: `skein.core.weaver.access` requires the runtime and socket
-  namespaces back to this one, so the registry read uses the runtime map's
-  `:op-registry` key directly, and everything below `access` in the graph can
+  `source` (op-wide handler pointer, resolved later) is `null` here and filled
+  by a later discovery-tier task; `glossary` is the referenced-term closure of
+  the returned subtree, resolved once against the runtime glossary
+  (DELTA-Dtf-002.CC5). The load graph pins its other reaches:
+  `skein.core.weaver.access` requires the runtime and socket namespaces back to
+  this one, so both the op-registry and glossary-registry reads use the runtime
+  map's keys directly, and everything below `access` in the graph can
   only reach the alpha module dynamically — the two `requiring-resolve` calls
   here (`register-op!`, `resolve-op`) are call-time reaches into the public
   surface, the same idiom the socket transport uses for `op!`."
@@ -78,16 +79,19 @@
 
   Every key is always present with the defined empty/null semantics
   (DELTA-Dtf-001.CC2), so one recursive renderer needs no per-level branches.
-  Authored annotations (`use-when`/`notes`/`failure-modes`) are empty here; a
-  later task fills them from each arg-spec node's annotation sub-map."
-  [name doc invocation returns children]
+  Authored annotations are read from `annotations`, the arg-spec node's
+  `{:use-when :notes :failure-modes}` sub-map (nil for a node with none, e.g. a
+  raw-envelope or catalog summary node); `failure-modes` carries outcome-name
+  references only, and the envelope resolves their definitions once
+  (DELTA-Dtf-002.CC5)."
+  [name doc invocation returns annotations children]
   {:name name
    :doc (or doc "")
    :invocation invocation
    :returns returns
-   :use-when []
-   :notes []
-   :failure-modes []
+   :use-when (vec (:use-when annotations))
+   :notes (vec (:notes annotations))
+   :failure-modes (vec (:failure-modes annotations))
    :children children})
 
 (defn- routed-return-explain
@@ -102,11 +106,15 @@
       (return-shape/explain return-case))))
 
 (defn- child-node
-  "Project one declared subcommand into a child node of the same fractal shape."
-  [returns {:keys [name doc flags positionals]}]
+  "Project one declared subcommand into a child node of the same fractal shape.
+
+  `annotations` is the subcommand's own arg-spec `:annotations` sub-map (nil when
+  it declares none)."
+  [returns annotations {:keys [name doc flags positionals]}]
   (node name doc
         {:mode "declared" :flags flags :positionals positionals}
         (routed-return-explain returns name)
+        annotations
         []))
 
 (defn- node-doc
@@ -136,13 +144,18 @@
       (node (:name entry) doc
             {:mode "raw-envelope" :flags [] :positionals []}
             node-returns
+            nil
             [])
 
       (:subcommands explained)
       (node (:name entry) doc
             {:mode "declared" :flags [] :positionals []}
             nil
-            (mapv #(child-node returns %) (:subcommands explained)))
+            (:annotations arg-spec)
+            (mapv #(child-node returns
+                               (get-in arg-spec [:subcommands (:name %) :annotations])
+                               %)
+                  (:subcommands explained)))
 
       :else
       (node (:name entry) doc
@@ -150,6 +163,7 @@
              :flags (:flags explained)
              :positionals (:positionals explained)}
             node-returns
+            (:annotations arg-spec)
             []))))
 
 (defn- summary-node
@@ -163,33 +177,65 @@
           {:mode (if (:arg-spec entry) "declared" "raw-envelope")
            :flags [] :positionals []}
           nil
+          nil
           [])))
+
+(defn- referenced-outcomes
+  "Every glossary outcome name `node` or any descendant references, in
+  first-seen order.
+
+  Walks the fractal `children` recursively, collecting each node's
+  `failure-modes` name refs (DELTA-Dtf-001.CC2) — the referenced-term set the
+  envelope glossary closes over."
+  [node]
+  (into (vec (:failure-modes node))
+        (mapcat referenced-outcomes)
+        (:children node)))
+
+(defn- node-glossary
+  "Resolve the referenced-term closure of `node` against `runtime`'s glossary.
+
+  Returns `{name → definition}` for every outcome name referenced anywhere under
+  `node`, resolved once (DELTA-Dtf-002.CC5). Slicing narrows the closure because
+  `node` is the returned subtree. Names are guaranteed registered by the
+  `register-op!` glossary-ref check (DELTA-Dtf-002.CC7); the registry read uses
+  the runtime map's `:glossary-registry` key directly, since the blessed accessor
+  sits above this namespace in the load graph."
+  [runtime node]
+  (let [registry @(:glossary-registry runtime)]
+    (into {}
+          (keep (fn [name]
+                  (when-let [outcome (get registry name)]
+                    [name (:definition outcome)])))
+          (referenced-outcomes node))))
 
 (defn- envelope
   "Build a canonical detail help envelope carrying `node`.
 
-  `source` (op-wide handler pointer) is `null` here and `glossary`
-  (referenced-term closure) is empty here; both are filled by later tasks without
-  reshaping the envelope (DELTA-Dtf-001.CC1)."
-  [entry node]
+  `source` (op-wide handler pointer) is `null` here — filled by a later task
+  without reshaping the envelope (DELTA-Dtf-002.CC2). `glossary` is the
+  referenced-term closure of `node` resolved against `runtime`'s glossary
+  (DELTA-Dtf-001.CC1, DELTA-Dtf-002.CC5)."
+  [runtime entry node]
   {:schema-version schema-version
    :operation (operation-facts entry)
    :source nil
-   :glossary {}
+   :glossary (node-glossary runtime node)
    :node node})
 
 (defn- op-envelope
   "Build the canonical detail help envelope for one op registry entry."
-  [entry]
-  (envelope entry (op-node entry)))
+  [runtime entry]
+  (envelope runtime entry (op-node entry)))
 
 (defn- verb-envelope
   "Build the detail envelope sliced to one subcommand verb's node.
 
-  Op-wide facts (`operation`, `source`, `glossary`) are unchanged; only `node`
-  narrows to the named verb's child node, which is the same fractal shape
-  (DELTA-Dtf-001.CC2). An unknown verb fails loudly with the available verbs."
-  [entry verb]
+  Op-wide facts (`operation`, `source`) are unchanged; `node` narrows to the
+  named verb's child node — the same fractal shape (DELTA-Dtf-001.CC2) — and
+  `glossary` narrows with it to that subtree's referenced outcomes. An unknown
+  verb fails loudly with the available verbs."
+  [runtime entry verb]
   (let [root (op-node entry)
         child (some #(when (= verb (:name %)) %) (:children root))]
     (when-not child
@@ -197,7 +243,7 @@
                       {:operation (:name entry)
                        :verb verb
                        :available-verbs (mapv :name (:children root))})))
-    (envelope entry child)))
+    (envelope runtime entry child)))
 
 (defn- catalog-entry
   "Project one op registry entry into a shallow catalog envelope entry.
@@ -274,8 +320,9 @@
   Supersedes SPEC-004.C63e's subcommand-only sole-token alias. `help`/`-h`/
   `--help` remain reserved subcommand names (`help-flag-tokens` derives from
   `skein.api.cli.alpha/reserved-subcommand-names`), so the rewrite shadows
-  nothing."
-  [entry argv envelope]
+  nothing. `runtime` is passed so the rewritten projection resolves the envelope
+  glossary closure exactly as the `help` op does (DELTA-Dtf-002.CC5)."
+  [runtime entry argv envelope]
   (let [argv (vec argv)
         payloads (or (:payloads envelope) {})
         trailing-flag? (and (seq argv) (contains? help-flag-tokens (peek argv)))
@@ -287,8 +334,8 @@
       clean-trailing?
       (let [verbs (pop argv)]
         (cond
-          (empty? verbs) (op-envelope entry)
-          (= 1 (count verbs)) (verb-envelope entry (first verbs))
+          (empty? verbs) (op-envelope runtime entry)
+          (= 1 (count verbs)) (verb-envelope runtime entry (first verbs))
           :else (help-grammar-redirect! entry "`--help` takes at most one verb.")))
 
       (and (contains? retired-sugar-tokens head)
@@ -316,8 +363,8 @@
   (let [runtime (:op/runtime ctx)
         {:keys [op verb]} (:op/args ctx)]
     (cond
-      (and op verb) (verb-envelope (resolve-entry runtime op) verb)
-      op (op-envelope (resolve-entry runtime op))
+      (and op verb) (verb-envelope runtime (resolve-entry runtime op) verb)
+      op (op-envelope runtime (resolve-entry runtime op))
       :else (op-catalog runtime))))
 
 (def ^:private help-arg-spec

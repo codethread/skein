@@ -482,7 +482,7 @@
   ([runtime op-name argv envelope]
    (let [{fn-sym :fn name :name arg-spec :arg-spec :as entry} (resolve-op runtime op-name)
          argv (vec argv)]
-     (if-let [alias (help/help-alias-result entry argv envelope)]
+     (if-let [alias (help/help-alias-result runtime entry argv envelope)]
        alias
        (let [payloads (or (:payloads envelope) {})
              ctx (cond-> {:op/name name

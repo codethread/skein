@@ -284,7 +284,7 @@
             ;; The `--help` rewrite is a read-class projection consulted before
             ;; hook gating; a retired-sugar or malformed shape redirects loudly
             ;; here (DELTA-Dtf-002.CC3) rather than reaching the handler.
-            alias (try {:result (help/help-alias-result entry (get args "argv") envelope)}
+            alias (try {:result (help/help-alias-result runtime entry (get args "argv") envelope)}
                        (catch Exception e {:error (error-frame request-id e)}))]
         (cond
           (:error alias) (write-frame! (:error alias))
