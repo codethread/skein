@@ -16,32 +16,25 @@
        " AND " predicate
        ")"))
 
-(defn attr-semi-join-sql [predicate]
-  (str "t.id IN (SELECT a.strand_id FROM attributes AS a"
-       " WHERE a.archived = 0"
-       " AND a.key = ?"
-       " AND " predicate
-       ")"))
-
 (deftest attr-keys-compile-to-row-backed-exists-predicates
   (testing "single predicate forms bind value path and top-level key"
     (doseq [[expr sql params]
-            [[[:= [:attr :owner] "agent"] (attr-semi-join-sql "json_extract(a.value, ?) = ?") ["owner" "$" "agent"]]
+            [[[:= [:attr :owner] "agent"] (attr-exists-sql "json_extract(a.value, ?) = ?") ["owner" "$" "agent"]]
              [[:!= [:attr :owner] "agent"] (attr-exists-sql "json_extract(a.value, ?) <> ?") ["owner" "$" "agent"]]
-             [[:< [:attr :rank] 3] (attr-semi-join-sql "json_extract(a.value, ?) < ?") ["rank" "$" 3]]
-             [[:<= [:attr :rank] 3] (attr-semi-join-sql "json_extract(a.value, ?) <= ?") ["rank" "$" 3]]
+             [[:< [:attr :rank] 3] (attr-exists-sql "json_extract(a.value, ?) < ?") ["rank" "$" 3]]
+             [[:<= [:attr :rank] 3] (attr-exists-sql "json_extract(a.value, ?) <= ?") ["rank" "$" 3]]
              [[:> [:attr :rank] 3] (attr-exists-sql "json_extract(a.value, ?) > ?") ["rank" "$" 3]]
              [[:>= [:attr :rank] 3] (attr-exists-sql "json_extract(a.value, ?) >= ?") ["rank" "$" 3]]
-             [[:in [:attr :owner] ["agent" "human"]] (attr-semi-join-sql "json_extract(a.value, ?) IN (?, ?)") ["owner" "$" "agent" "human"]]
+             [[:in [:attr :owner] ["agent" "human"]] (attr-exists-sql "json_extract(a.value, ?) IN (?, ?)") ["owner" "$" "agent" "human"]]
              [[:exists [:attr :owner]] (attr-exists-sql "json_extract(a.value, ?) IS NOT NULL") ["owner" "$"]]
              [[:missing [:attr :owner]] (str "NOT " (attr-exists-sql "json_extract(a.value, ?) IS NOT NULL")) ["owner" "$"]]]]
       (is (= {:sql sql :params params} (compiled expr)) (pr-str expr))))
   (testing "nested attributes use the remaining JSON path inside the stored value"
-    (is (= {:sql (attr-semi-join-sql "json_extract(a.value, ?) = ?")
+    (is (= {:sql (attr-exists-sql "json_extract(a.value, ?) = ?")
             :params ["owner" "$.\"name\"" "agent"]}
            (compiled [:= [:attr :owner :name] "agent"]))))
   (testing "logical composition preserves row-backed self-join predicates"
-    (is (= {:sql (str "(" (attr-semi-join-sql "json_extract(a.value, ?) = ?")
+    (is (= {:sql (str "(" (attr-exists-sql "json_extract(a.value, ?) = ?")
                       " AND (NOT "
                       (attr-exists-sql "json_extract(a.value, ?) IS NOT NULL")
                       "))")
@@ -73,6 +66,51 @@
 
 (defn- query-titles [ds expr]
   (set (map :title (db/query-strands ds expr))))
+
+(deftest composed-negation-preserves-attr-null-semantics
+  (db-test/with-db
+    (fn [ds]
+      (let [a-matching-b-absent
+            (:id (db/add-strand! ds {:title "a matching, b absent"
+                                     :attributes {:a 1}}))
+            a-nonmatching-b-absent
+            (:id (db/add-strand! ds {:title "a nonmatching, b absent"
+                                     :attributes {:a 0}}))
+            both-matching
+            (:id (db/add-strand! ds {:title "both matching"
+                                     :attributes {:a 1 :b 2}}))
+            both-nonmatching
+            (:id (db/add-strand! ds {:title "both nonmatching"
+                                     :attributes {:a 0 :b 3}}))
+            b-present-nonmatching
+            (:id (db/add-strand! ds {:title "b present nonmatching"
+                                     :attributes {:a 1 :b 3}}))
+            b-archived
+            (:id (db/add-strand! ds {:title "b archived"
+                                     :attributes {:a 1 :b 3}}))
+            ids [a-matching-b-absent
+                 a-nonmatching-b-absent
+                 both-matching
+                 both-nonmatching
+                 b-present-nonmatching
+                 b-archived]
+            attr-and [:and [:= [:attr :a] 1] [:= [:attr :b] 2]]
+            attr-or [:or [:= [:attr :a] 1] [:= [:attr :b] 2]]]
+        (db/archive-attributes! ds b-archived [:b])
+
+        (testing ":not over :and excludes missing and archived-only keys"
+          (is (= #{"a nonmatching, b absent"
+                   "both nonmatching"
+                   "b present nonmatching"}
+                 (query-titles ds [:and [:in :id ids] [:not attr-and]]))))
+
+        (testing ":not over :or requires every negated attribute leaf to be present"
+          (is (= #{"both nonmatching"}
+                 (query-titles ds [:and [:in :id ids] [:not attr-or]]))))
+
+        (testing "nested :not cancels compositionally"
+          (is (= #{"both matching"}
+                 (query-titles ds [:and [:in :id ids] [:not [:not attr-and]]]))))))))
 
 (deftest negated-attr-predicates-require-present-hot-keys
   (db-test/with-db
