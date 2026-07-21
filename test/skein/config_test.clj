@@ -148,6 +148,24 @@
   ["feature-active" "feature-work" "feature-owner-work" "feature-run"
    "workflow-runs" "devflow-runs" "work"])
 
+(defn- portable-source
+  "Rewrite an op-help envelope's absolute `:source` file to a repo-relative path.
+
+  The runtime resolves each op's source to an absolute on-disk path — the most
+  useful form for the live API — so freezing it verbatim would bind the surface
+  baseline to one checkout. Strip the checkout-root prefix here so the frozen
+  surface reads e.g. `.skein/config.clj` and stays portable across CI and other
+  worktrees; `:line` is kept as-is."
+  [detail]
+  (let [root (str (System/getProperty "user.dir") "/")]
+    (cond-> detail
+      (get-in detail [:source :file])
+      (update-in [:source :file]
+                 (fn [file]
+                   (if (str/starts-with? file root)
+                     (subs file (count root))
+                     file))))))
+
 (defn- capture-config-surface
   "Load the config module at config-path into an isolated runtime and return its
   registered config-owned surface as plain, EDN-round-trippable data.
@@ -172,7 +190,7 @@
           (fn []
             (load-file config-path)
             ((requiring-resolve 'config/install!))
-            {:op-help (into {} (map (fn [op] [op (op! "help" [op])])) config-op-names)
+            {:op-help (into {} (map (fn [op] [op (portable-source (op! "help" [op]))])) config-op-names)
              :queries (into {} (map (fn [q] [q (get (graph/queries rt) q)])) named-query-names)}))
         (finally
           (weaver-runtime/stop! rt)
@@ -229,7 +247,7 @@
                        {:namespace "ct.spools.kanban"
                         :doc "spools/kanban.md"
                         :purpose "User-facing kanban board: feature/epic cards with refinement/pending/claimed/in_review lanes."}]
-              :ops [{:name "kanban" :help "strand help kanban" :manual "strand kanban about"}
+              :ops [{:name "kanban" :help "strand help kanban" :manual "strand about kanban"}
                     {:name "kanban-export" :help "strand help kanban-export"}
                     {:name "kanban-tree" :help "strand help kanban-tree"
                      :purpose "Epic -> feature -> task kanban hierarchy with derived task status, in one projection for renderers."}
@@ -246,7 +264,7 @@
                     {:name "workflow-runs" :help "strand help workflow-runs"}
                     {:name "feature-costs" :help "strand help feature-costs"
                      :purpose "Agent-run cost/usage rollup beneath a work root, as pure data. Registered by .skein/analytics.clj."}
-                    {:name "agent" :help "strand help agent" :manual "strand agent about"}
+                    {:name "agent" :help "strand help agent" :manual "strand about agent"}
                     {:name "flow" :help "strand help flow"
                      :purpose (format-alpha/reflow
                                "|Generic driver for any registered workflow: start by name, then
@@ -261,7 +279,7 @@
                                 |sol-med) optional. Registered by .skein/workflows.clj.")}
                     {:name "flow-await" :help "strand help flow-await"}
                     {:name "hitl" :help "strand help hitl" :purpose "Interactive user+agent session with a self-terminating tracking strand."}
-                    {:name "land" :help "strand help land" :manual "strand land about"
+                    {:name "land" :help "strand help land" :manual "strand about land"
                      :purpose (format-alpha/reflow
                                "|Coordinator-only landing workflow: push+draft-PR, green CI, roster
                                 |sign-off, then a mechanical GitHub squash-merge under the merge lock

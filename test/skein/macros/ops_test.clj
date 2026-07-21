@@ -33,7 +33,7 @@
    :returns {:type :map
              :required {:operation :string
                         :x :string}}
-   :convention {:manual "strand test-alpha about"}}
+   :convention {:manual "strand about test-alpha"}}
   [ctx]
   {:operation "test-alpha" :x (:x (:op/args ctx))})
 
@@ -56,7 +56,7 @@
     (is (fn? test-alpha-op))
     (is (= {:operation "test-alpha" :x "v"} (test-alpha-op {:op/args {:x "v"}}))))
   (testing "remembered conventions carry the derived {:name :help} plus authored fields, in author order"
-    (is (= [{:name "test-alpha" :help "strand help test-alpha" :manual "strand test-alpha about"}
+    (is (= [{:name "test-alpha" :help "strand help test-alpha" :manual "strand about test-alpha"}
             {:name "test-beta" :help "strand help test-beta"}]
            (#'ops/remembered-ops this-ns)))))
 

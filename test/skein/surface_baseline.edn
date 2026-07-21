@@ -8,7 +8,7 @@
     :deadline-class "standard",
     :hook-class "mutating",
     :raw-envelope false},
-   :source nil,
+   :source {:file ".skein/config.clj", :line 427},
    :glossary {},
    :node
    {:name "devflow-advance",
@@ -50,7 +50,7 @@
     :deadline-class "standard",
     :hook-class "mutating",
     :raw-envelope false},
-   :source nil,
+   :source {:file ".skein/config.clj", :line 499},
    :glossary {},
    :node
    {:name "workflow-runs",
@@ -83,7 +83,7 @@
     :deadline-class "standard",
     :hook-class "mutating",
     :raw-envelope false},
-   :source nil,
+   :source {:file ".skein/config.clj", :line 469},
    :glossary {},
    :node
    {:name "devflow-squash-run",
@@ -117,7 +117,7 @@
     :deadline-class "standard",
     :hook-class "mutating",
     :raw-envelope false},
-   :source nil,
+   :source {:file ".skein/config.clj", :line 484},
    :glossary {},
    :node
    {:name "devflow-status",
@@ -152,7 +152,7 @@
     :deadline-class "standard",
     :hook-class "mutating",
     :raw-envelope false},
-   :source nil,
+   :source {:file ".skein/config.clj", :line 443},
    :glossary {},
    :node
    {:name "devflow-describe",
@@ -185,7 +185,7 @@
     :deadline-class "standard",
     :hook-class "mutating",
     :raw-envelope false},
-   :source nil,
+   :source {:file ".skein/config.clj", :line 358},
    :glossary {},
    :node
    {:name "devflow-complete",
@@ -226,7 +226,7 @@
     :deadline-class "standard",
     :hook-class "mutating",
     :raw-envelope false},
-   :source nil,
+   :source {:file ".skein/config.clj", :line 329},
    :glossary {},
    :node
    {:name "devflow-choose",
@@ -274,7 +274,7 @@
     :deadline-class "standard",
     :hook-class "mutating",
     :raw-envelope false},
-   :source nil,
+   :source {:file ".skein/config.clj", :line 299},
    :glossary {},
    :node
    {:name "devflow-ready",
@@ -308,7 +308,7 @@
     :deadline-class "unbounded",
     :hook-class "mutating",
     :raw-envelope false},
-   :source nil,
+   :source {:file ".skein/config.clj", :line 580},
    :glossary {},
    :node
    {:name "flow-await",
@@ -345,7 +345,7 @@
     :deadline-class "standard",
     :hook-class "mutating",
     :raw-envelope false},
-   :source nil,
+   :source {:file ".skein/config.clj", :line 630},
    :glossary {},
    :node
    {:name "hitl",
@@ -417,7 +417,7 @@
     :deadline-class "standard",
     :hook-class "mutating",
     :raw-envelope false},
-   :source nil,
+   :source {:file ".skein/config.clj", :line 278},
    :glossary {},
    :node
    {:name "devflow-start",
@@ -458,7 +458,7 @@
     :deadline-class "standard",
     :hook-class "mutating",
     :raw-envelope false},
-   :source nil,
+   :source {:file ".skein/config.clj", :line 513},
    :glossary {},
    :node
    {:name "devflow-conventions",
@@ -482,7 +482,7 @@
     :deadline-class "standard",
     :hook-class "mutating",
     :raw-envelope false},
-   :source nil,
+   :source {:file ".skein/config.clj", :line 458},
    :glossary {},
    :node
    {:name "devflow-run-history",
@@ -516,7 +516,7 @@
     :deadline-class "standard",
     :hook-class "mutating",
     :raw-envelope false},
-   :source nil,
+   :source {:file ".skein/config.clj", :line 310},
    :glossary {},
    :node
    {:name "devflow-choices",
