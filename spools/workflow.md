@@ -209,7 +209,7 @@ start! ──▶ ready / ready-step ──▶ complete! / choose! ──▶ (rep
 (workflow/await! runtime "feat-x" {:timeout-secs 1800}) ; explicit runtime
 ```
 
-The three-arg `(runtime run-id opts)` arity threads the target runtime explicitly, agreeing with `roster/await-quiet!`; the shorter arities resolve the ambient `current/runtime` as the ergonomic default.
+The three-arg `(runtime run-id opts)` arity threads the target runtime explicitly; the shorter arities resolve the ambient `current/runtime` as the ergonomic default.
 
 It returns `{:reason :done|:checkpoint|:step|:gate|:stalled|:timeout :ready [...] :done boolean :detail ...}`. `opts` takes non-negative `:timeout-secs` (default 1800) and positive `:poll-ms` (default 250, matching the agent-run await surface) — there is no predicate to name, because `await!` resolves attention purely from the ready frontier and the executor registry. The wait uses the supplied runtime's Clock, so a manual Clock makes timeout tests deterministic. Malformed values fail at the caller boundary:
 

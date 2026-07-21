@@ -64,14 +64,12 @@ Block until workflow run-id is done, at a checkpoint, at a ready `:self`
 
   opts: `:timeout-secs` (default 1800) and `:poll-ms` (default 250, matching
   the agent-run await surface). `:timeout-secs` must be a non-negative integer;
-  `:poll-ms` must be a positive integer, matching
-  `skein.spools.roster/await-quiet!`.
+  `:poll-ms` must be a positive integer.
 
   The three-arg `(runtime run-id opts)` arity threads the target runtime
-  explicitly, agreeing with `skein.spools.roster/await-quiet!`; the shorter
-  arities resolve `current/runtime` as the ergonomic default for trusted
-  in-process callers.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/workflow.clj#L521-L548">Source</a></sub></p>
+  explicitly; the shorter arities resolve `current/runtime` as the ergonomic
+  default for trusted in-process callers.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/workflow.clj#L521-L546">Source</a></sub></p>
 
 ## <a name="skein.spools.workflow/bond!">`bond!`</a>
 ``` clojure
@@ -287,7 +285,7 @@ Return true when run-id has no active workflow root, or its active root's
 Function.
 
 Return the current registry map of gate waiter name (keyword) -> stall predicate.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/workflow.clj#L619-L623">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/workflow.clj#L617-L621">Source</a></sub></p>
 
 ## <a name="skein.spools.workflow/explain">`explain`</a>
 ``` clojure
@@ -333,7 +331,7 @@ Return installation metadata for this alpha workflow spool.
   Also seeds the `workflow/*` attribute namespace into the runtime vocabulary
   registry, owned by this spool's use-key, so the workflow attributes `compile`
   and the step/gate/checkpoint builders write are discoverable data.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/workflow.clj#L636-L692">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/workflow.clj#L634-L690">Source</a></sub></p>
 
 ## <a name="skein.spools.workflow/molecule-id">`molecule-id`</a>
 ``` clojure
@@ -427,7 +425,7 @@ Register a stall predicate for gate waiter `waiter` (a keyword/symbol/string
   attention is needed. Registration is runtime-owned, weaver-lifetime spool state
   that survives `reload!`, mirroring `register-workflow!`. Returns the registered
   waiter as a keyword.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/workflow.clj#L601-L617">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/workflow.clj#L599-L615">Source</a></sub></p>
 
 ## <a name="skein.spools.workflow/register-workflow!">`register-workflow!`</a>
 ``` clojure
@@ -443,7 +441,7 @@ Register a workflow constructor under a stable keyword `name`.
   reload and after restart. A duplicate `name` replaces the prior entry, so
   reloading a workflow re-points existing in-flight runs' named `:next` routes at
   the new constructor. Returns `name`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/workflow.clj#L583-L599">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/workflow.clj#L581-L597">Source</a></sub></p>
 
 ## <a name="skein.spools.workflow/run-history">`run-history`</a>
 ``` clojure
@@ -487,7 +485,7 @@ Squash a finished run's molecules into one closed digest strand and return it.
   `workflow/run-id`, `workflow/squashed-count`, and a compact JSON-safe
   `workflow/summary` of the history (molecule titles + checkpoint outcomes).
   opts may override the digest `:title` and merge extra `:attributes`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/workflow.clj#L550-L581">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/workflow.clj#L548-L579">Source</a></sub></p>
 
 ## <a name="skein.spools.workflow/start!">`start!`</a>
 ``` clojure
@@ -567,7 +565,7 @@ Function.
 
 Return the constructor symbol registered under keyword `name`, failing loudly
   (TEN-003) when `name` is not registered.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/workflow.clj#L625-L629">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/workflow.clj#L623-L627">Source</a></sub></p>
 
 ## <a name="skein.spools.workflow/workflows">`workflows`</a>
 ``` clojure
@@ -576,4 +574,4 @@ Return the constructor symbol registered under keyword `name`, failing loudly
 Function.
 
 Return the current registry map of workflow name (keyword) -> constructor symbol.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/workflow.clj#L631-L634">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/workflow.clj#L629-L632">Source</a></sub></p>

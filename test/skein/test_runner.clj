@@ -30,7 +30,7 @@
    ;; drives its own unpublished runtime per test — no JVM-global state.
    'skein.api.events.alpha-test
    'skein.alpha-test 'skein.core.client-test 'skein.spools.workflow-test
-   'skein.spools.batteries-test 'skein.roster-test 'skein.api.spool-test 'skein.config-ops-test
+   'skein.spools.batteries-test 'skein.api.spool-test 'skein.config-ops-test
    'skein.macros.queries-test 'skein.macros.ops-test 'skein.macros.rules-test 'skein.macros.patterns-test
    ;; large-attr load harness structural smoke: boots its own :publish? false
    ;; world and hand-SQL fixtures in temp dirs — no JVM-global or shared state.

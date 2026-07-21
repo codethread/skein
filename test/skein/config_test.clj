@@ -1110,13 +1110,6 @@
             #(is (thrown-with-msg? clojure.lang.ExceptionInfo #"projection must match"
                                    (project "malformed-step")))))))))
 
-(defn- assert-roster-spool-consent-edge
-  "Assert repo startup guards the activated roster spool with its coordinate."
-  [rt]
-  (let [uses (runtime/uses rt)]
-    (is (= ['skein.spools/roster] (get-in uses [:skein/spools-roster :opts :spools]))
-        ":skein/spools-roster must opt into skein.spools/roster")))
-
 (deftest repo-local-startup-and-reload-preserve-registrations
   (with-startup-config-runtime
     (fn [rt]
@@ -1124,13 +1117,11 @@
       (assert-treadle-installed-after-config rt)
       (assert-workflow-spool-consent-edges rt)
       (assert-kanban-tracker-installed rt)
-      (assert-roster-spool-consent-edge rt)
       (op! "devflow-start" ["startup-feature" "already-in-worktree-ok"])
       (is (= :loaded (:status (runtime/reload! rt))))
       (assert-config-registrations rt)
       (assert-workflow-spool-consent-edges rt)
       (assert-kanban-tracker-installed rt)
-      (assert-roster-spool-consent-edge rt)
       ;; runtime registries reload; the strand graph and run state persist
       (let [status (op! "devflow-status" ["startup-feature"])]
         (is (false? (:done status)))

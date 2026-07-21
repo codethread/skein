@@ -305,7 +305,7 @@ Think man page, machine-readable, distinct from the arg-spec facts `help` alread
 declares no `:about` prose returns a loud `discovery/unavailable` rather than empty success; purely
 structural ops (batteries `add`/`list`/...) need none, since their arg-spec already says everything.
 Some spool ops instead declare their own `about` subcommand, and for those the resolving form is
-`strand <op> about`: `strand kanban about`, `strand roster about`, `strand land about`, `strand spool
+`strand <op> about`: `strand kanban about`, `strand land about`, `strand spool
 about`.
 
 **`prime` is run-first context priming for agents.** A `prime` command prints the working discipline
@@ -316,7 +316,7 @@ renders the topic file the manifest at `docs/prime/index.json` names, so an alre
 prints current orientation text from a newer checkout. Op-level primes are spool-authored prose
 projected through the builtin `prime` meta-verb (`strand prime agent`), so they can never drift from
 the installed surface; spool ops that declare their own `prime` subcommand answer `strand <op> prime`,
-such as `strand kanban prime` and `strand roster prime`. Repo-world `mill init` seeds a marker-guarded
+such as `strand kanban prime`. Repo-world `mill init` seeds a marker-guarded
 section into `AGENTS.md`/`CLAUDE.md` pointing fresh agents at the prime commands (see "Agent guidance
 files").
 

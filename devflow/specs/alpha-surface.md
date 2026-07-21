@@ -1,6 +1,6 @@
 # Alpha Surface
 
-**Document ID:** `SPEC-005` **Status:** Implemented **Last Updated:** 2026-07-20 **Related:** [Strand Model](./strand-model.md), [CLI Surface](./cli.md), [REPL API](./repl-api.md), [Weaver Runtime](./daemon-runtime.md), [Spools index](../../spools/README.md), [Writing shared spools](../../docs/spools/writing-shared-spools.md)
+**Document ID:** `SPEC-005` **Status:** Implemented **Last Updated:** 2026-07-21 **Related:** [Strand Model](./strand-model.md), [CLI Surface](./cli.md), [REPL API](./repl-api.md), [Weaver Runtime](./daemon-runtime.md), [Spools index](../../spools/README.md), [Writing shared spools](../../docs/spools/writing-shared-spools.md)
 
 ## SPEC-005.P1 Purpose
 
@@ -11,7 +11,7 @@ This spec draws the line around what Skein ships as "alpha": which surface is in
 - **SPEC-005.C1:** The four root specs are the behavior contracts for shipped engine surface: strand model and storage semantics (SPEC-001), the public `strand`/`mill` CLI (SPEC-002), the trusted Clojure/REPL surface (SPEC-003), and the weaver runtime, transports, and registries (SPEC-004).
 - **SPEC-005.C2:** The blessed spool-facing API is every `skein.api.*.alpha` namespace — currently `batch`, `cli`, `clock`, `current`, `events`, `format`, `graph`, `hooks`, `notes`, `patterns`, `peers`, `relations`, `return-shape`, `runtime`, `scheduler`, `spool`, `vocab`, `weaver` — plus `skein.test.alpha`, `skein.userland.alpha`, and the human-facing `skein.repl` helpers. Each is specified in SPEC-003/SPEC-004 (relations in SPEC-001.P5, notes in SPEC-001, vocab in SPEC-001) and follows accretion-based compatibility within its subnamespace. `skein.api.return-shape.alpha` exposes the in-contract `validate!`, `explain`, and `check!` functions; `skein.test.alpha/check-op-return!` accretes within the already-listed author-side test tier.
 - **SPEC-005.C3:** The reference spools shipped in the Skein tree — `executors/shell`, `guild`,
-  `roster`, `text-search`, and `workflow` — are in-contract through their spool docs at
+  `text-search` and `workflow` — are in-contract through their spool docs at
   [`spools/*.md`](../../spools/README.md) (the shell executor's contract doc nests one level deeper,
   at `spools/executors/shell.md`), loaded **opt-in**: an approved `spools.edn` coordinate, synced by
   `runtime/sync!`, and activated by a `:spools`-guarded `runtime/use!`. `batteries` is the single

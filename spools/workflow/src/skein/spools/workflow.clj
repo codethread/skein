@@ -525,13 +525,11 @@
 
   opts: `:timeout-secs` (default 1800) and `:poll-ms` (default 250, matching
   the agent-run await surface). `:timeout-secs` must be a non-negative integer;
-  `:poll-ms` must be a positive integer, matching
-  `skein.spools.roster/await-quiet!`.
+  `:poll-ms` must be a positive integer.
 
   The three-arg `(runtime run-id opts)` arity threads the target runtime
-  explicitly, agreeing with `skein.spools.roster/await-quiet!`; the shorter
-  arities resolve `current/runtime` as the ergonomic default for trusted
-  in-process callers."
+  explicitly; the shorter arities resolve `current/runtime` as the ergonomic
+  default for trusted in-process callers."
   ([run-id]
    (await! run-id {}))
   ([run-id opts]
