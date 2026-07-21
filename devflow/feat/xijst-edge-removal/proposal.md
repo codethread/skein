@@ -55,14 +55,14 @@ These are valid batch payload fragments. The first removes an existing edge; the
 ```
 
 ```clojure
-{:refs {:old "strand-old" :new "strand-new" :target "strand-target"}
- :edges [{:op :remove :from :old :to :target :type "serves"}
-         {:op :upsert :from :new :to :target :type "serves" :attributes {}}]}
+{:refs {:run "strand-run" :old-target "strand-old-target" :new-target "strand-new-target"}
+ :edges [{:op :remove :from :run :to :old-target :type "serves"}
+         {:op :upsert :from :run :to :new-target :type "serves" :attributes {}}]}
 ```
 
 ## PROP-Xer-001.C2 — exact identity, fail loud on absence
 
-At the op's submitted vector position, load the exact normalized edge row. If it is absent — including a wrong direction or a wrong relation type — fail loudly with structured `ex-data` naming the refs, resolved durable ids, and relation, and roll the transaction back (TEN-003).
+At the op's submitted vector position, load the exact storage-shaped edge row. If it is absent — including a wrong direction or a wrong relation type — fail loudly with `ex-data` exactly `{:from submitted-from :to submitted-to :from-id resolved-from-id :to-id resolved-to-id :type submitted-type}` and roll the transaction back (TEN-003). The submitted refs and the resolved durable ids are distinct values.
 
 Absence is strict, not idempotent. There is no ignore-missing flag. A stale retry that finds the edge already gone fails and forces the caller to reread and reconcile (PROP-Xer-001.Q1). Privileged cutover migrations that want idempotent deletion keep their own lower-level path and are out of this contract.
 
@@ -80,11 +80,11 @@ No hidden remove-first phase, and no blanket duplicate-identity rejection. The s
 
 Every edge outcome becomes one transition with exactly `:op`, `:from`, `:to`, `:type`, `:before`, and `:after`, replacing the current upsert-only `:edge` outcome (`db.clj:1248-1258`).
 
-The enclosing transition keeps the submitted local refs in `:from` and `:to` and submitted relation text in `:type`. `:before` and `:after` are either `nil` or an existing normalized edge row with exactly `:from_strand_id`, `:to_strand_id`, `:edge_type`, and `:attributes`: the first two are durable ids, `:edge_type` is the relation, and `:attributes` is the decoded map.
+The enclosing transition keeps the submitted local refs in `:from` and `:to` and submitted relation text in `:type`. In `skein.core.db`, `:before` and `:after` are either `nil` or storage-shaped edge rows with exactly `:from_strand_id`, `:to_strand_id`, `:edge_type`, and `:attributes`; the first two are durable ids, `:edge_type` is the relation, and `:attributes` remains raw JSON text.
 
-For an upsert, `:before` is the old row or `nil` when the edge is new, and `:after` is the new row. For a remove, `:before` is the removed row and `:after` is `nil`. A replacement upsert must preserve its actual normalized pre-image in `:before`, rather than deriving it from the submitted op.
+For an upsert, `:before` is the old row or `nil` when the edge is new, and `:after` is the new row. For a remove, `:before` is the removed row and `:after` is `nil`. A replacement upsert must preserve its actual pre-image in `:before`, rather than deriving it from the submitted op.
 
-Rows contain durable ids, relation, and the decoded full attribute map, never storage JSON (TEN-007). Outcomes stay aligned to input order, so the outcome vector reads back against the submitted `:edges` vector one-to-one. There is no compatibility `:edge` key.
+`skein.api.batch.alpha/apply!` calls `skein.core.weaver.access/normalize` on the core result before the validation hook, return value, and event. Those public images have durable ids, relation, and the decoded full attribute map, never storage JSON (TEN-007). Outcomes stay aligned to input order, so the outcome vector reads back against the submitted `:edges` vector one-to-one. There is no compatibility `:edge` key.
 
 The ordered vector in result `:edges`, hook `:batch/edge-ops`, and event `:batch/edges` is equal by value, including every transition's keys, before-image, after-image, and position. This is one shape change threaded through the existing plumbing, not a new channel.
 
@@ -98,7 +98,7 @@ No `:edge/removed` event is minted. Post-commit enqueue is bounded and not trans
 
 ## PROP-Xer-001.C6 — replacement stays caller-composed
 
-There is no generic replace or rewire op. A caller that wants to change the source of a `serves` edge submits the ordered remove and upsert shown in C1; the two commit together or not at all.
+There is no generic replace or rewire op. A caller that wants to change a `serves` target submits the ordered remove and upsert shown in C1; the two commit together or not at all.
 
 `supersede!` is not graph substitution and is untouched here: it writes `replacement --supersedes--> old`, marks `old` replaced, and rewires only incoming `depends-on` edges to the replacement (`db.clj:816` and its region). It does not move `old`'s outgoing edges, so a caller that needs the old outgoing edge retired composes the exact `:remove` plus the new `:upsert` explicitly. Direction, relation, attributes, and any required reachability are the caller's choice.
 
@@ -110,7 +110,7 @@ Core does not promise whole-graph acyclicity, connectedness, one root, stable ro
 
 ## PROP-Xer-001.C8 — spec and doc deltas
 
-- **`devflow/specs/strand-model.md` SPEC-001.P6** (batch, ~L74-76): name the supported upsert and remove ops. State that remove requires exact identity, accepts only top-level pre-bound `:refs`, forbids `:attributes` and unknown keys, and fails loudly after a clean post-lock absence. Define each result edge transition with exactly `:op`, `:from`, `:to`, `:type`, `:before`, and `:after`; define a non-nil image with exactly `:from_strand_id`, `:to_strand_id`, `:edge_type`, and decoded-map `:attributes`. State that `:edges`, `:batch/edge-ops`, and `:batch/edges` are equal ordered vectors of these transitions, with no `:edge` alias.
+- **`devflow/specs/strand-model.md` SPEC-001.P6** (batch, ~L74-76): name the supported upsert and remove ops. State that remove requires exact identity, accepts only top-level pre-bound `:refs`, forbids `:attributes` and unknown keys, and fails loudly after a clean post-lock absence with the exact C2 `ex-data`. Define each public result edge transition with exactly `:op`, `:from`, `:to`, `:type`, `:before`, and `:after`; define a non-nil public image with exactly `:from_strand_id`, `:to_strand_id`, `:edge_type`, and decoded-map `:attributes`. State that `:edges`, `:batch/edge-ops`, and `:batch/edges` are equal ordered vectors of these transitions, with no `:edge` alias.
 - **`devflow/specs/alpha-surface.md` SPEC-005.C2:** no new namespace — `batch` is already blessed and this accretes within its subnamespace. No edit unless the reviewer wants the outcome-shape change called out; the change is source-visible through the strand-model delta.
 - **`src/skein/api/batch/alpha.clj`** docstring for `apply!` (`alpha.clj:21-31`): state the same two op grammar and exact transition shape from SPEC-001.P6, including submitted refs versus durable row ids, replacement-upsert `:before`, equal ordered result/hook/event vectors, and no `:edge` alias; regenerate `docs/api/batch.api.md` with `make api-docs`.
 - **`docs/reference.md`** (batch region, ~L680-687) and **`docs/tutorial.md`** (batch example, ~L276): add a one-line `:remove` mention where each already shows `:op :upsert`.
@@ -121,17 +121,17 @@ CLI verb, `:edge/removed` event, standalone one-edge helper, generic replace/rew
 
 ## PROP-Xer-001.P5 Ordered-transition cases
 
-- **PROP-Xer-001.T1 — `serves` swap.** Apply the C1 replacement payload. The single-`serves` rule (SPEC-001.P5) rejects a second outgoing target, so the remove must precede the upsert; the reverse order fails the cardinality check and rolls back with the committed prestate byte-identical.
+- **PROP-Xer-001.T1 — `serves` swap.** Apply the C1 replacement payload. The single-`serves` rule (SPEC-001.P5) rejects a second outgoing target from `:run`, so the remove must precede the upsert; the reverse order fails the cardinality check and rolls back with the complete committed prestate unchanged.
 - **PROP-Xer-001.T2 — DAG reversal.** Remove the edge from `:a` to `:b`, then upsert one from `:b` to `:a` on a declared acyclic relation. The remove must precede the upsert or the acyclicity check rejects the transient cycle. Submitted order is what makes the legal program commit and the illegal order roll back.
 
 ## PROP-Xer-001.P6 Proof obligations
 
 - **PROP-Xer-001.PO1 — monotone graph:** one present exact removal yields the graph minus only that row, leaves strands and other edges unchanged, and preserves endpoint existence, no-self, relation-local DAG, identity uniqueness, and `serves` cardinality.
-- **PROP-Xer-001.PO2 — exactness and shape matrix:** absent edge, wrong direction, wrong type, nil or non-map entry, missing `:op`, `:from`, `:to`, or `:type`, extra keys, `:attributes` present, and an unknown/new/burned ref each fail atomically with structured `ex-data`; removing a raw self-edge is allowed.
+- **PROP-Xer-001.PO2 — exactness and shape matrix:** absent edge, wrong direction, wrong type, nil or non-map entry, missing `:op`, `:from`, `:to`, or `:type`, extra keys, `:attributes` present, and an unknown/new/burned ref each fail atomically with structured `ex-data`; absent, wrong-direction, and wrong-type removes each return exactly the C2 `ex-data` map and leave no mutation. Removing a raw self-edge is allowed.
 - **PROP-Xer-001.PO3 — ordered transitions:** T1 and T2 succeed in the legal order and fail in the reversed order with an unchanged committed prestate.
 - **PROP-Xer-001.PO4 — repeated identity:** upsert/upsert keeps shipped last-writer behavior; remove/remove fails at the second op by exact presence and rolls back; remove/upsert and upsert/remove of one identity are deterministic ordered outcomes.
 - **PROP-Xer-001.PO5 — atomic multi-op:** removing three obsolete `depends-on` edges is all-or-none (the `4cdsu` case); remove-old plus upsert-distinct-replacement commits together; a later failure restores the whole graph.
-- **PROP-Xer-001.PO6 — uniform outcome:** a new upsert has nil `:before`, a replacement upsert has the exact normalized pre-image, and a remove has the exact normalized removed row. Each result transition has the exact C4 key set and row shape, with no `:edge` key. Result `:edges`, hook `:batch/edge-ops`, and event `:batch/edges` are equal ordered vectors, including before-images and after-images; the hook can veto a removal with no mutation and no event.
+- **PROP-Xer-001.PO6 — uniform outcome:** a new upsert has nil `:before`, a replacement upsert has the exact pre-image, and a remove has the exact removed row. Core tests assert transition keys, order, and storage-shaped images; public `apply!` tests assert decoded-map images. Each public result transition has the exact C4 key set and row shape, with no `:edge` key. Result `:edges`, hook `:batch/edge-ops`, and event `:batch/edges` are equal ordered vectors, including before-images and after-images; the hook can veto a removal with no mutation and no event.
 - **PROP-Xer-001.PO7 — semantic locks:** a `depends-on` removal that makes work ready and a `parent-of` removal that creates a root or hides a subtree both commit without core rejection.
 
 ## PROP-Xer-001.P7 Validation gates
