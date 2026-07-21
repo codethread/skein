@@ -19,8 +19,8 @@ question:
 
 ```sh
 strand help              # every registered op; strand help <op> for exact invocation
-strand <op> about        # an op's manual: semantics, conventions, attribute contracts
-strand <op> prime        # an area's working discipline, when the op ships one
+strand about <op>        # an op's manual: semantics, conventions, attribute contracts
+strand prime <op>        # an area's working discipline, when the op ships one
 ```
 
 Start from `strand help`. When an op's meaning goes beyond its flags (a board, a delegation
