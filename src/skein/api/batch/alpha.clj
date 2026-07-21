@@ -62,7 +62,11 @@
 
   The published shapes are the `::normalized-payload` grammar (whose `::edge-op`
   is the closed `::upsert-edge`/`::remove-edge` alternative) and the `::result`
-  contract (whose `:edges` are `::edge-transition`s over `::edge-row`s).
+  contract (whose `:created`/`:updated`/`:burned` entries are the closed
+  `::strand-row`/`::updated-row`/`::burned-row` shapes and whose `:edges` are
+  `::edge-transition`s over `::edge-row`s). Every published map boundary is
+  closed: an unexpected key at the payload or result top level, on an edge row,
+  or on a lifecycle entry fails loudly at the seam.
   `skein.core.db/normalize-batch-payload!` stays the grammar authority for
   malformed public input, rejecting it with detailed errors; apply! then
   consults `::normalized-payload` on that authority's output, and `::result` on
@@ -130,18 +134,21 @@
 
 (s/def ::burn (s/coll-of ::batch-ref :kind vector?))
 
-;; The normalized payload: every section present, defaulted by the grammar
-;; authority. apply! consults this on that authority's output.
+;; The normalized payload: exactly the four sections, all present and defaulted
+;; by the grammar authority. apply! consults this closed shape on that
+;; authority's output, so an unexpected top-level key fails loudly.
 (s/def ::normalized-payload
-  (s/keys :req-un [::refs ::strands :skein.api.batch.payload/edges ::burn]))
+  (s/and (s/keys :req-un [::refs ::strands :skein.api.batch.payload/edges ::burn])
+         #(every? #{:refs :strands :edges :burn} (keys %))))
 
-;; A normalized edge row carries durable endpoint ids, the relation text, and a
-;; decoded-map `:attributes` — never storage JSON.
+;; A normalized edge row carries exactly durable endpoint ids, the relation
+;; text, and a decoded-map `:attributes` — never storage JSON, never extra keys.
 (s/def ::from_strand_id ::specs/id)
 (s/def ::to_strand_id ::specs/id)
 (s/def ::edge_type ::specs/edge-type)
 (s/def ::edge-row
-  (s/keys :req-un [::from_strand_id ::to_strand_id ::edge_type ::attributes]))
+  (s/and (s/keys :req-un [::from_strand_id ::to_strand_id ::edge_type ::attributes])
+         #(every? #{:from_strand_id :to_strand_id :edge_type :attributes} (keys %))))
 
 ;; One edge transition: the submitted local refs and relation text plus the
 ;; pre-/post-images. An upsert always writes an `:after`; a remove clears
@@ -159,14 +166,53 @@
 (s/def :skein.api.batch.result/edges
   (s/coll-of ::edge-transition :kind vector?))
 
-;; The public result: resolved refs, per-lifecycle strand rows, and the ordered
-;; edge transitions shared by the result, the pre-commit hook, and the event.
-(s/def ::created (s/coll-of map? :kind vector?))
-(s/def ::updated (s/coll-of map? :kind vector?))
-(s/def ::burned (s/coll-of map? :kind vector?))
+;; A persisted strand row as the batch engine returns it and `access/normalize`
+;; decodes it: exactly the durable id, core fields, decoded-map `:attributes`,
+;; and the SQLite timestamps. Closed — created rows and the before/after images
+;; of updated and burned entries all carry this shape. Its `:state` is the full
+;; stored lifecycle set (a burned row may be `"replaced"`), not the create-only
+;; generic state accepted on input.
+(s/def ::timestamp (s/and string? #(not (str/blank? %))))
+(s/def :skein.api.batch.row/id ::specs/id)
+(s/def :skein.api.batch.row/state ::specs/state)
+(s/def :skein.api.batch.row/created_at ::timestamp)
+(s/def :skein.api.batch.row/updated_at ::timestamp)
+(s/def ::strand-row
+  (s/and (s/keys :req-un [:skein.api.batch.row/id ::title
+                          :skein.api.batch.row/state ::attributes
+                          :skein.api.batch.row/created_at
+                          :skein.api.batch.row/updated_at])
+         #(every? #{:id :title :state :attributes :created_at :updated_at}
+                  (keys %))))
+
+;; One updated entry: its local `:ref`, resolved durable `:id`, and the full
+;; pre-/post-mutation strand rows. Both images are always present.
+(s/def :skein.api.batch.updated/before ::strand-row)
+(s/def :skein.api.batch.updated/after ::strand-row)
+(s/def ::updated-row
+  (s/and (s/keys :req-un [::ref :skein.api.batch.row/id
+                          :skein.api.batch.updated/before
+                          :skein.api.batch.updated/after])
+         #(every? #{:ref :id :before :after} (keys %))))
+
+;; One burned entry: its local `:ref`, resolved durable `:id`, and the deleted
+;; strand's pre-image. There is no `:after` — the row is gone.
+(s/def :skein.api.batch.burned/before ::strand-row)
+(s/def ::burned-row
+  (s/and (s/keys :req-un [::ref :skein.api.batch.row/id
+                          :skein.api.batch.burned/before])
+         #(every? #{:ref :id :before} (keys %))))
+
+;; The public result: exactly resolved refs, the per-lifecycle entry vectors,
+;; and the ordered edge transitions shared by the result, the pre-commit hook,
+;; and the event. Closed — an unexpected top-level key fails loudly.
+(s/def ::created (s/coll-of ::strand-row :kind vector?))
+(s/def ::updated (s/coll-of ::updated-row :kind vector?))
+(s/def ::burned (s/coll-of ::burned-row :kind vector?))
 (s/def ::result
-  (s/keys :req-un [::refs ::created ::updated ::burned
-                   :skein.api.batch.result/edges]))
+  (s/and (s/keys :req-un [::refs ::created ::updated ::burned
+                          :skein.api.batch.result/edges])
+         #(every? #{:refs :created :updated :burned :edges} (keys %))))
 
 (s/fdef apply!
   :args (s/or :default (s/cat :runtime ::runtime :payload map?)

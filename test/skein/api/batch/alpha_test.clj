@@ -114,3 +114,66 @@
                               (batch/apply! rt {:strands [{:ref :x :title "X"}]}))))
       (is (empty? @captured-contexts)
           "the malformed result never reached the pre-commit hook"))))
+
+(deftest drifted-result-shapes-never-reach-hook-or-event
+  ;; Closed-seam guard matrix: an unexpected top-level result key, an extra key
+  ;; on a nested edge row, and malformed lifecycle entries each violate the
+  ;; closed `::batch/result` shape, so a drifted engine's output is rejected
+  ;; before the pre-commit hook runs and never enters the validation gate or the
+  ;; event stream.
+  (t/with-weaver-world [ctx {:storage :sqlite-memory}]
+    (let [rt (:runtime ctx)
+          edge-row {:from_strand_id "strand-x" :to_strand_id "strand-y"
+                    :edge_type "depends-on" :attributes {}}
+          strand-row {:id "strand-x" :title "X" :state "active"
+                      :attributes {} :created_at "t" :updated_at "t"}
+          cases {"extra top-level result key"
+                 {:refs {} :created [] :updated [] :burned [] :edges []
+                  :bogus 1}
+                 "extra nested edge-row key"
+                 {:refs {} :created [] :updated [] :burned []
+                  :edges [{:op :upsert :from :a :to :b :type "depends-on"
+                           :before nil :after (assoc edge-row :bogus 1)}]}
+                 "created row with an unexpected key"
+                 {:refs {} :created [(assoc strand-row :bogus 1)]
+                  :updated [] :burned [] :edges []}
+                 "updated entry missing :after"
+                 {:refs {} :created []
+                  :updated [{:ref :keep :id "strand-x" :before strand-row}]
+                  :burned [] :edges []}
+                 "burned entry missing :before"
+                 {:refs {} :created [] :updated []
+                  :burned [{:ref :gone :id "strand-x"}] :edges []}}]
+      (hooks/register-hook! rt :capture #{:batch/apply-before-commit}
+                            'skein.api.batch.alpha-test/capture-hook {})
+      (doseq [[label malformed] cases]
+        (reset! captured-contexts [])
+        (with-redefs [db/apply-batch-in-transaction! (fn [_ _] malformed)]
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                                #"Batch result violates its published contract"
+                                (batch/apply! rt {:strands [{:ref :x :title "X"}]}))
+              label))
+        (is (empty? @captured-contexts) label)))))
+
+(deftest apply-created-updated-burned-result-conforms-to-the-result-spec
+  ;; The consulted closed `::batch/result` accepts a real mixed batch: a create,
+  ;; an update over an existing ref, a burn, and an edge upsert all produce
+  ;; lifecycle rows that conform, so the seam guard cannot reject valid output.
+  (t/with-weaver-world [ctx {:storage :sqlite-memory}]
+    (let [rt (:runtime ctx)
+          seeded (batch/apply! rt {:strands [{:ref :keep :title "Keep"}
+                                             {:ref :gone :title "Gone"}]})
+          keep-id (get-in seeded [:refs :keep])
+          gone-id (get-in seeded [:refs :gone])
+          result (batch/apply! rt {:refs {:keep keep-id :gone gone-id}
+                                   :strands [{:ref :new :title "New"
+                                              :attributes {:owner "client"}}
+                                             {:ref :keep :title "Kept"}]
+                                   :edges [{:op :upsert :from :new :to :keep
+                                            :type "depends-on"}]
+                                   :burn [:gone]})]
+      (is (s/valid? ::batch/result result)
+          (s/explain-str ::batch/result result))
+      (is (= 1 (count (:created result))))
+      (is (= 1 (count (:updated result))))
+      (is (= 1 (count (:burned result)))))))
