@@ -387,3 +387,20 @@ Append notes here. Do not rewrite earlier notes.
   cross-repo spool validation against an unmerged skein branch.
 - REMAINING: full flocked skein-src suite (queue-acceptance) → HITL spool releases (agent v8, kanban v5)
   → coordinate bump (Task 11) → spool-suite-gate green → spec promotion (Task 12) → PR.
+
+### PLAN-Dtf-001.DN10 Queue-acceptance: full suite + config-test baseline — 2026-07-21
+
+- The full flocked suite surfaced 14 config-test failures (shard C, unrunnable focused) invisible to
+  per-slice runs: PURELY the `:source` field — Task 4 made source resolve, Task 1's frozen
+  `surface_baseline.edn` had `:source nil`. The absolute source path would also break CI. Fixed by opus
+  (run bll7c, commit `854b8a4`): test-side `portable-source` normalization in `capture-config-surface`
+  (strips the checkout-root prefix → repo-relative; runtime projection UNCHANGED, stays absolute), a
+  committed one-shot `scripts/regen_surface_baseline.clj`, and regenerated baseline — diff confirmed
+  source-only (14 lines nil→relative, no other drift). Also fixed stale retired-sugar `:manual` pointers
+  the grammar change broke: `strand agent about`→`strand about agent` (agent's about subcommand removed),
+  kanban/land→canonical meta-verb form, and the ops_test example.
+- **FULL FLOCKED SUITE GREEN: 780 tests / 5548 assertions / 0 failures / 0 errors; quality gates exit 0.**
+  The entire in-repo feature (Tasks 1-8 + config-test integration fix) is complete and passing.
+- LESSON: shard namespaces (config-test, runtime-deps-test) only run in the full flocked suite, so
+  surface-baseline drift from any help-affecting change is invisible per-slice — run the full suite at
+  queue acceptance before the PR, and regenerate the baseline as the last help-affecting step.
