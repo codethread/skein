@@ -88,3 +88,7 @@ Append notes here. Do not rewrite earlier notes.
 ### PLAN-Xer-001.DN1 Task 1: core removal and transitions — 2026-07-21
 
 - Commit `d3861da` implements the database slice. The cold focused gate passed with 68 tests and 370 assertions; Terra review `gd1yq` signed off with no findings. Core images deliberately remain storage-shaped for the existing public normalization boundary.
+
+### PLAN-Xer-001.DN2 Task 2: public batch contract — 2026-07-21
+
+- Commit `e89e327` documents and proves the normalized public transition path without new runtime plumbing. The cold focused gate passed with 92 tests and 934 assertions; regenerated API docs are reproducible, and Terra review `d0ici` signed off clean.
