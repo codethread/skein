@@ -10,6 +10,7 @@
             [skein.api.batch.alpha :as batch]
             [skein.api.hooks.alpha :as hooks]
             [skein.core.db :as db]
+            [skein.core.weaver.dispatch :as dispatch]
             [skein.test.alpha :as t]))
 
 ;; Namespace-level on purpose: hooks are registered by symbol and resolved to
@@ -94,6 +95,36 @@
       (is (nil? (:after transition)))
       (is (s/valid? ::batch/edge-row (:before transition))
           (s/explain-str ::batch/edge-row (:before transition))))))
+
+(deftest drifted-normalized-payload-never-reaches-transaction-hook-or-event
+  ;; The grammar authority normally supplies this complete shape. If it drifts
+  ;; by adding a top-level key, apply! rejects it at the published seam before
+  ;; it opens a transaction, runs the pre-commit hook, or enqueues an event.
+  (t/with-weaver-world [ctx {:storage :sqlite-memory}]
+    (let [rt (:runtime ctx)
+          malformed {:refs {} :strands [] :edges [] :burn [] :bogus true}
+          transaction-called? (atom false)
+          event-enqueued? (atom false)]
+      (hooks/register-hook! rt :capture #{:batch/apply-before-commit}
+                            'skein.api.batch.alpha-test/capture-hook {})
+      (let [error (with-redefs [db/normalize-batch-payload! (constantly malformed)
+                                db/apply-batch-in-transaction!
+                                (fn [& _] (reset! transaction-called? true))
+                                dispatch/enqueue!
+                                (fn [& _] (reset! event-enqueued? true))]
+                    (try
+                      (batch/apply! rt {:strands [{:ref :x :title "X"}]})
+                      nil
+                      (catch clojure.lang.ExceptionInfo error
+                        error)))]
+        (is (instance? clojure.lang.ExceptionInfo error))
+        (is (= ::batch/normalized-payload (:spec (ex-data error))))
+        (is (= malformed (:value (ex-data error))))
+        (is (string? (:explain (ex-data error))))
+        (is (seq (:explain (ex-data error))))
+        (is (false? @transaction-called?))
+        (is (empty? @captured-contexts))
+        (is (false? @event-enqueued?))))))
 
 (deftest invalid-normalized-result-never-reaches-hook-or-event
   ;; Seam guard: a transactional result that violates `::batch/result` is
