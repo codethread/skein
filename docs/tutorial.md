@@ -278,8 +278,7 @@ binds each handle to its generated id:
 ```
 
 The `:edges` vector also takes `{:op :remove :from :to :type}` to delete one exact edge by its
-`(from, to, type)` identity. Removal is strict — if that edge is already gone the whole batch fails
-loudly rather than passing silently.
+`(from, to, type)` identity. Both endpoint handles must come from top-level `:refs` bound to existing durable strand ids: refs created in the same payload work for `:upsert`, but not `:remove`. Removal is strict — if that edge is already gone the whole batch fails loudly rather than passing silently.
 
 Now write a small helper and use it:
 
