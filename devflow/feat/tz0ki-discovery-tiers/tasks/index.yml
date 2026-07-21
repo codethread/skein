@@ -17,7 +17,7 @@ tasks:
   - id: 4
     description: Meta-verbs + about/prime metadata + source pointer
     task_file: tasks/004-meta-verbs-metadata-source.md
-    status: in_progress
+    status: complete
     blocked_by: [2, 3]
   - id: 5
     description: --help grammar (weaver rewrite + Go dispatcher)
@@ -27,7 +27,7 @@ tasks:
   - id: 6
     description: Default-transform slot + help-render integration
     task_file: tasks/006-transform-slot-and-render.md
-    status: pending
+    status: in_progress
     blocked_by: [4]
   - id: 7
     description: Batteries reference renderer + depth proof + adoption

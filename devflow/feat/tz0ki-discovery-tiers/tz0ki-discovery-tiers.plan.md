@@ -307,3 +307,17 @@ Append notes here. Do not rewrite earlier notes.
 - Task 4 wiring note (from 6alho): annotations flow through `op-node` reading `(:annotations arg-spec)` on
   the root and `(get-in arg-spec [:subcommands <name> :annotations])` per child — authoring real values on
   ops populates use-when/notes/failure-modes + the closure with no further help wiring.
+
+### PLAN-Dtf-001.DN5 Task 4: meta-verbs + metadata + source — 2026-07-21
+
+- Run 3jhrx hit a mid-response API connection error (infra, not a task failure) after leaving valid
+  uncommitted edits; recovered by session-resume (run sfw6h, commit `0f46d73`) which self-fixed a stray
+  paren and finished. terra-med review (ytxgb) found one TEN-003 gap — explicit `{:annotations nil}`
+  silently ignored — fixed by opus (run 545bm, commit `befe090`), gates green.
+- Delivered: `:about`/`:prime` non-blank op-metadata keys; raw-envelope root `:annotations` key with
+  arg-spec mutual-exclusion + structural validation + glossary-ref existence + root-node folding; builtin
+  arity-1 `about`/`prime` ops (`{x, source}`, missing→`discovery/unavailable`, verb-path→loud redirect);
+  op-wide `source` at projection (requiring-resolve under spool classloader, null in exactly 3 cases,
+  no swallowing). New blessed `skein.api.cli/validate-annotations!`.
+- LESSON: infra failures are resumable — check the worktree, then `agent retry` (session-resume)
+  preserves partial work and context rather than restarting.
