@@ -620,6 +620,12 @@ Two caveats. The recovered strand gets a new id, so anything that referenced the
 re-pointed. And only the edges the tombstone recorded are available to replay — inbound edges from
 strands that were never burned are not restored, so re-create them explicitly against the new id.
 
+The same `:edges` vector accepts `{:op :remove :from :to :type}` to delete one exact
+`(from, to, type)` edge, using pre-bound `:refs` for both endpoints. Removal is strict: an absent
+edge fails the whole batch loudly rather than succeeding silently, so a stale remover must reread
+and reconcile. Core deletes only that row and adds no graph guard — whether a removal may strand a
+node or unblock work is caller and hook policy, not an engine promise.
+
 ## Startup config and customisation
 
 The weaver loads trusted startup files from the selected workspace in order — `init.clj`, then
@@ -684,7 +690,7 @@ fail loudly and leave no partial batch writes.
 
 `weave --pattern` is the CLI-safe, named, spec-checked, create-only front door over the same
 transactional batch engine as REPL-only `skein.api.batch.alpha/apply!`. Raw batch is the trusted
-loading-dock door: it can create, update, burn, and upsert edges, so it remains a Clojure
+loading-dock door: it can create, update, burn, and upsert or remove edges, so it remains a Clojure
 config/REPL workflow instead of a public CLI command.
 
 Like queries, patterns are weaver-lifetime runtime state. Register them from startup config if they should always exist after restart or reload.

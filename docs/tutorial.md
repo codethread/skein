@@ -277,6 +277,10 @@ binds each handle to its generated id:
                {:op :upsert :from :docs  :to :build  :type "depends-on"}]})))
 ```
 
+The `:edges` vector also takes `{:op :remove :from :to :type}` to delete one exact edge by its
+`(from, to, type)` identity. Removal is strict — if that edge is already gone the whole batch fails
+loudly rather than passing silently.
+
 Now write a small helper and use it:
 
 ```clojure

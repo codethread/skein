@@ -3,7 +3,7 @@
 **Document ID:** `DELTA-Xer-001`
 **Root spec:** [strand-model.md](../../../specs/strand-model.md) (`SPEC-001`)
 **Feature:** [../proposal.md](../proposal.md) (`PROP-Xer-001`)
-**Status:** Draft
+**Status:** Merged
 **Last Updated:** 2026-07-21
 **Configuration identification:** Document IDs are ordered as document type, short name, sequential id, then optional version: `DELTA-Xer-001` for v1, `DELTA-Xer-001@2` for v2. Omit `@1`. Prefix every nested point ID with the full document ID (`DELTA-Xer-001.P1`) so references are globally grepable.
 
