@@ -30,24 +30,44 @@
   (:datasource runtime))
 
 (defn query-registry
-  "Return the runtime's named-query registry atom."
+  "Return the runtime's named-query effective-projection atom."
   [runtime]
   (:query-registry runtime))
 
+(defn query-store
+  "Return the runtime's named-query owner-partition store."
+  [runtime]
+  (:query-store runtime))
+
 (defn pattern-registry
-  "Return the runtime's weave-pattern registry atom."
+  "Return the runtime's weave-pattern effective-projection atom."
   [runtime]
   (:pattern-registry runtime))
 
+(defn pattern-store
+  "Return the runtime's weave-pattern owner-partition store."
+  [runtime]
+  (:pattern-store runtime))
+
 (defn op-registry
-  "Return the runtime's CLI-op registry atom."
+  "Return the runtime's CLI-op effective-projection atom."
   [runtime]
   (:op-registry runtime))
 
+(defn op-store
+  "Return the runtime's CLI-op owner-partition store."
+  [runtime]
+  (:op-store runtime))
+
 (defn hook-registry
-  "Return the runtime's lifecycle-hook registry atom."
+  "Return the runtime's lifecycle-hook effective-projection atom."
   [runtime]
   (:hook-registry runtime))
+
+(defn hook-store
+  "Return the runtime's lifecycle-hook owner-partition store."
+  [runtime]
+  (:hook-store runtime))
 
 (defn approved-spool-sync-state
   "Return the runtime's approved-spool sync-state atom."
@@ -63,6 +83,11 @@
   "Return the runtime's event system."
   [runtime]
   (:event-system runtime))
+
+(defn handler-store
+  "Return the runtime event system's event-handler owner-partition store."
+  [runtime]
+  (:handler-store (event-system runtime)))
 
 (defn with-spool-classloader
   "Run f with the runtime bound and its spool classloader installed."

@@ -1,0 +1,105 @@
+(ns skein.core.weaver.core-registry-test
+  "Owner-partition semantics shared by the five core weaver registries.
+
+  Each core kind (ops, queries, patterns, hooks, events) is backed by the same
+  owner-registry kernel, so the deletion-completeness, same-layer collision,
+  cross-layer override/restoration, and owner-isolation guarantees are proven
+  once per kind against the backing store (TASK-Olr-002.DW2)."
+  (:require [clojure.test :refer [deftest is testing]]
+            [skein.core.weaver.core-registry :as cr]))
+
+(def ^:private kinds [:ops :queries :patterns :hooks :events])
+
+(defn- value
+  "A representative entry value valid for `kind`'s declared entry spec. Named
+  queries store a where-vector; every other core kind stores an entry map."
+  [kind tag]
+  (if (= kind :queries)
+    [:= [:attr :tag] (name tag)]
+    {:tag tag}))
+
+(defn- effective [store] (cr/effective store))
+
+(deftest owner-removal-is-complete-and-isolated
+  (doseq [kind kinds]
+    (testing kind
+      (let [store (cr/backed-registry kind)]
+        (cr/replace-owner! store :owner-a
+                           {:layer :workspace :entries {:a (value kind :a)} :overrides #{}})
+        (cr/replace-owner! store :owner-b
+                           {:layer :workspace :entries {:b (value kind :b)} :overrides #{}})
+        (is (= {:a (value kind :a) :b (value kind :b)} (effective store))
+            "both owners contribute their keys")
+        (cr/remove-owner! store :owner-a)
+        (is (= {:b (value kind :b)} (effective store))
+            "removing owner-a drops only its keys and leaves owner-b intact")))))
+
+(deftest same-layer-collision-fails-before-publication
+  (doseq [kind kinds]
+    (testing kind
+      (let [store (cr/backed-registry kind)]
+        (cr/replace-owner! store :owner-a
+                           {:layer :workspace :entries {:k (value kind :a)} :overrides #{}})
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"same layer"
+                              (cr/replace-owner! store :owner-b
+                                                 {:layer :workspace
+                                                  :entries {:k (value kind :b)}
+                                                  :overrides #{}})))
+        (is (= {:k (value kind :a)} (effective store))
+            "the refused publication leaves the prior effective view unchanged")))))
+
+(deftest cross-layer-shadowing-requires-explicit-override
+  (doseq [kind kinds]
+    (testing kind
+      (let [store (cr/backed-registry kind)]
+        (cr/replace-owner! store :base
+                           {:layer :spools :entries {:k (value kind :low)} :overrides #{}})
+        (testing "a higher layer without override intent is refused"
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"override intent"
+                                (cr/replace-owner! store :top
+                                                   {:layer :workspace
+                                                    :entries {:k (value kind :high)}
+                                                    :overrides #{}})))
+          (is (= {:k (value kind :low)} (effective store))))
+        (testing "an authorized override wins and restores the base when removed"
+          (cr/replace-owner! store :top
+                             {:layer :workspace
+                              :entries {:k (value kind :high)}
+                              :overrides #{:k}})
+          (is (= {:k (value kind :high)} (effective store)))
+          (cr/remove-owner! store :top)
+          (is (= {:k (value kind :low)} (effective store))
+              "removing the overriding owner restores the shadowed base entry"))))))
+
+(deftest direct-per-entry-writes-carry-the-ambient-owner
+  (doseq [kind kinds]
+    (testing kind
+      (let [store (cr/backed-registry kind)]
+        (cr/put-entry! store :k (value kind :a))
+        (is (= {:k (value kind :a)} (effective store))
+            "a direct write lands under the default REPL owner")
+        (cr/put-entry! store :k2 (value kind :b))
+        (cr/remove-entry! store :k)
+        (is (= {:k2 (value kind :b)} (effective store))
+            "removing one key leaves the owner's other keys")
+        (cr/remove-entry! store :k2)
+        (is (= {} (effective store))
+            "removing the last key empties the projection")
+        (testing "a system-owned entry is shadowed loudly by a direct write"
+          (cr/with-owner* cr/system-owner cr/system-layer
+            (fn [] (cr/put-entry! store :sys (value kind :low))))
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"override intent"
+                                (cr/put-entry! store :sys (value kind :high))))
+          (is (= {:sys (value kind :low)} (effective store))))))))
+
+(deftest reset-store-clears-every-owner-partition
+  (let [store (cr/backed-registry :ops)]
+    (cr/replace-owner! store :owner-a
+                       {:layer :workspace :entries {:a (value :ops :a)} :overrides #{}})
+    (cr/with-owner* cr/system-owner cr/system-layer
+      (fn [] (cr/put-entry! store :s (value :ops :s))))
+    (cr/reset-store! store)
+    (is (= {} (effective store)))
+    (testing "the kind stays declared so contributions resume after a reset"
+      (cr/put-entry! store :k (value :ops :k))
+      (is (= {:k (value :ops :k)} (effective store))))))

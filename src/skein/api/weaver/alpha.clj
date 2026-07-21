@@ -34,7 +34,8 @@
             [skein.core.query :as query]
             [skein.core.specs :as specs]
             [skein.core.weaver.access :refer [ds normalize query-registry op-registry
-                                              with-spool-classloader]]
+                                              op-store with-spool-classloader]]
+            [skein.core.weaver.core-registry :as core-registry]
             [skein.core.weaver.dispatch :as dispatch]
             [skein.core.weaver.help :as help]
             [skein.core.weaver.lifecycle :refer [event-base request-context
@@ -387,14 +388,12 @@
    (register-op! runtime op-name nil fn-sym))
   ([runtime op-name opts fn-sym]
    (let [entry (validated-op-entry op-name opts fn-sym)]
-     (swap! (op-registry runtime)
-            (fn [registry]
-              (when-let [existing (get registry (:name entry))]
-                (throw (ex-info "Operation already registered"
-                                {:operation (:name entry)
-                                 :existing-provenance (:provenance existing)
-                                 :attempted-provenance (:provenance entry)})))
-              (assoc registry (:name entry) entry)))
+     (when-let [existing (get @(op-registry runtime) (:name entry))]
+       (throw (ex-info "Operation already registered"
+                       {:operation (:name entry)
+                        :existing-provenance (:provenance existing)
+                        :attempted-provenance (:provenance entry)})))
+     (core-registry/put-entry! (op-store runtime) (:name entry) entry)
      entry)))
 
 (s/fdef register-op!
@@ -412,13 +411,11 @@
    (replace-op! runtime op-name nil fn-sym))
   ([runtime op-name opts fn-sym]
    (let [entry (validated-op-entry op-name opts fn-sym)]
-     (swap! (op-registry runtime)
-            (fn [registry]
-              (when-not (contains? registry (:name entry))
-                (throw (ex-info "Operation not registered; cannot replace"
-                                {:operation (:name entry)
-                                 :available (sort (keys registry))})))
-              (assoc registry (:name entry) entry)))
+     (when-not (contains? @(op-registry runtime) (:name entry))
+       (throw (ex-info "Operation not registered; cannot replace"
+                       {:operation (:name entry)
+                        :available (sort (keys @(op-registry runtime)))})))
+     (core-registry/put-entry! (op-store runtime) (:name entry) entry)
      entry)))
 
 (s/fdef replace-op!

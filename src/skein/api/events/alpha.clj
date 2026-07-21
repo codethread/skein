@@ -17,6 +17,7 @@
   (:require [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [skein.core.weaver.access :as access]
+            [skein.core.weaver.core-registry :as core-registry]
             [skein.core.weaver.dispatch :as dispatch]))
 
 (declare handler-registry recent-failures-state
@@ -41,7 +42,7 @@
                 :fn fn-sym
                 :fn-value (resolve-handler-fn! runtime fn-sym)
                 :metadata (validate-handler-metadata! metadata)}]
-     (swap! (handler-registry runtime) assoc (:key entry) entry)
+     (core-registry/put-entry! (access/handler-store runtime) (:key entry) entry)
      (dissoc entry :fn-value))))
 
 (defn unregister-handler!
@@ -52,7 +53,7 @@
   returns `{:unregistered key}`."
   [runtime key]
   (let [key (validate-handler-key! key)]
-    (swap! (handler-registry runtime) dissoc key)
+    (core-registry/remove-entry! (access/handler-store runtime) key)
     {:unregistered key}))
 
 (defn handlers

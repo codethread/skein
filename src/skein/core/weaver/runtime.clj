@@ -7,6 +7,7 @@
             [skein.api.cli.alpha :as cli]
             [skein.core.specs :as specs]
             [skein.core.weaver.config :as weaver-config]
+            [skein.core.weaver.core-registry :as core-registry]
             [skein.core.weaver.metadata :as metadata]
             [skein.core.weaver.scheduler :as scheduler]
             [skein.core.weaver.socket :as socket]
@@ -44,15 +45,20 @@
 (declare stop! with-spool-classloader with-runtime-binding)
 
 (defn- event-system-base []
-  {:handler-registry (atom {})
-   :recent-failures (atom [])
-   :queue (ArrayBlockingQueue. event-queue-capacity)
-   :running? (atom true)
-   ;; Raised before the worker claims an event, lowered after its handlers
-   ;; return, so await-quiescent! never reports settled while a just-claimed
-   ;; dispatch is still in flight (TEN-003).
-   :dispatch-in-progress? (atom false)
-   :worker (atom nil)})
+  (let [handler-store (core-registry/backed-registry :events)]
+    {;; The handler store is the owner-partition source of truth; its effective
+     ;; projection stays under :handler-registry so the dispatch worker and
+     ;; `skein.api.events.alpha` keep reading the flat `{key -> entry}` map.
+     :handler-registry (:effective handler-store)
+     :handler-store handler-store
+     :recent-failures (atom [])
+     :queue (ArrayBlockingQueue. event-queue-capacity)
+     :running? (atom true)
+     ;; Raised before the worker claims an event, lowered after its handlers
+     ;; return, so await-quiescent! never reports settled while a just-claimed
+     ;; dispatch is still in flight (TEN-003).
+     :dispatch-in-progress? (atom false)
+     :worker (atom nil)}))
 
 (defn stop-event-system!
   "Stop the runtime event worker and clear queued events."
@@ -144,9 +150,9 @@
 (defn clear-event-system-for-reload!
   "Stop event dispatch and clear handlers, queued events, and failures."
   [runtime]
-  (let [{:keys [handler-registry recent-failures queue running?]} (:event-system runtime)]
+  (let [{:keys [handler-store recent-failures queue running?]} (:event-system runtime)]
     (stop-event-system! runtime)
-    (reset! handler-registry {})
+    (core-registry/reset-store! handler-store)
     (reset! recent-failures [])
     (.clear ^ArrayBlockingQueue queue)
     (reset! running? false)
@@ -267,10 +273,10 @@
 (defn- clear-reload-state! [runtime]
   (reset! (:approved-spool-sync-state runtime) {})
   (reset! (:module-use-state runtime) {})
-  (reset! (:query-registry runtime) {})
-  (reset! (:pattern-registry runtime) {})
-  (reset! (:op-registry runtime) {})
-  (reset! (:hook-registry runtime) {})
+  (core-registry/reset-store! (:query-store runtime))
+  (core-registry/reset-store! (:pattern-store runtime))
+  (core-registry/reset-store! (:op-store runtime))
+  (core-registry/reset-store! (:hook-store runtime))
   (clear-event-system-for-reload! runtime)
   (install-built-in-ops! runtime))
 
@@ -549,14 +555,26 @@
                                          :world world
                                          :name (or name (default-name world))
                                          :started-at (str (Instant/now))})
+          op-store (core-registry/backed-registry :ops)
+          query-store (core-registry/backed-registry :queries)
+          pattern-store (core-registry/backed-registry :patterns)
+          hook-store (core-registry/backed-registry :hooks)
           runtime-base {:storage storage
                         :datasource ds
                         :clock (atom (fn [] (Instant/now)))
                         :clock-pumps (atom {})
-                        :query-registry (atom {})
-                        :pattern-registry (atom {})
-                        :op-registry (atom {})
-                        :hook-registry (atom {})
+                        ;; Each core registry is an owner-partition store; its
+                        ;; effective projection stays under the historical key so
+                        ;; the access accessors and direct-key readers keep the
+                        ;; flat map shape while mutation routes through the store.
+                        :query-registry (:effective query-store)
+                        :query-store query-store
+                        :pattern-registry (:effective pattern-store)
+                        :pattern-store pattern-store
+                        :op-registry (:effective op-store)
+                        :op-store op-store
+                        :hook-registry (:effective hook-store)
+                        :hook-store hook-store
                         :generation-id (str (java.util.UUID/randomUUID))
                         :release-marker resolved-release-marker
                         :approved-spool-sync-state (atom {})

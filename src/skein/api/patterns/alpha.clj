@@ -12,8 +12,9 @@
             [skein.api.format.alpha :as format-alpha]
             [skein.core.db :as db]
             [skein.core.query :as query]
-            [skein.core.weaver.access :refer [ds normalize pattern-registry
+            [skein.core.weaver.access :refer [ds normalize pattern-registry pattern-store
                                               with-spool-classloader validate-fn-symbol!]]
+            [skein.core.weaver.core-registry :as core-registry]
             [skein.core.weaver.dispatch :as dispatch]
             [skein.core.weaver.lifecycle :refer [event-base request-context
                                                  run-validation-hooks! run-transform-hooks]])
@@ -28,7 +29,7 @@
    (register-pattern! runtime pattern-name nil fn-sym input-spec))
   ([runtime pattern-name doc fn-sym input-spec]
    (let [entry (pattern-entry pattern-name doc fn-sym input-spec)]
-     (swap! (pattern-registry runtime) assoc (:name entry) entry)
+     (core-registry/put-entry! (pattern-store runtime) (:name entry) entry)
      entry)))
 
 (defn patterns

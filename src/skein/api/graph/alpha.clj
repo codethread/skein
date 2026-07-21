@@ -18,6 +18,7 @@
             [skein.core.query :as query]
             [skein.core.specs :as specs]
             [skein.core.weaver.access :as access]
+            [skein.core.weaver.core-registry :as core-registry]
             [skein.core.weaver.dispatch :as dispatch]
             [skein.core.weaver.lifecycle :as lifecycle]))
 
@@ -50,8 +51,8 @@
   grammar authority for definitions and compiles the stored definition at
   each use."
   [runtime query-name query-def]
-  (let [entry (validated-entry query-name query-def)]
-    (swap! (access/query-registry runtime) conj entry)
+  (let [[canonical-name definition :as entry] (validated-entry query-name query-def)]
+    (core-registry/put-entry! (access/query-store runtime) canonical-name definition)
     (into {} [entry])))
 
 (s/fdef register-query!

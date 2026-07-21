@@ -7,6 +7,7 @@
   `skein.core.weaver.lifecycle`."
   (:require [clojure.string :as str]
             [skein.core.weaver.access :as access]
+            [skein.core.weaver.core-registry :as core-registry]
             [skein.core.weaver.dispatch :as dispatch]))
 
 (declare validate-hook-key! validate-hook-types! validate-hook-opts! resolve-hook-fn!)
@@ -30,7 +31,7 @@
                 :fn-value (resolve-hook-fn! runtime fn-sym)
                 :order (get opts :order 0)
                 :metadata (dissoc opts :order)}]
-     (swap! (access/hook-registry runtime) assoc (:key entry) entry)
+     (core-registry/put-entry! (access/hook-store runtime) (:key entry) entry)
      (dissoc entry :fn-value))))
 
 (defn unregister-hook!
@@ -39,7 +40,7 @@
   Unregistering an absent key is a no-op returning the validated key."
   [runtime key]
   (let [key (validate-hook-key! key)]
-    (swap! (access/hook-registry runtime) dissoc key)
+    (core-registry/remove-entry! (access/hook-store runtime) key)
     key))
 
 (defn hooks

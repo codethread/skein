@@ -19,7 +19,8 @@
   surface, the same idiom the socket transport uses for `op!`."
   (:require [skein.api.cli.alpha :as cli]
             [skein.api.format.alpha :as format-alpha]
-            [skein.api.return-shape.alpha :as return-shape]))
+            [skein.api.return-shape.alpha :as return-shape]
+            [skein.core.weaver.core-registry :as core-registry]))
 
 (defn- registered-op-entries
   "Return `runtime`'s registered op entries sorted by canonical name.
@@ -112,31 +113,38 @@
   Resolves `register-op!` at call time: this namespace sits below `access` in
   the load graph, so a static require of the alpha module would close a cycle —
   the same constraint that made `skein.core.weaver.runtime` reach the previous
-  alpha registrar dynamically."
+  alpha registrar dynamically.
+
+  Built-in ops register under the system owner in the defaults layer, so a
+  workspace op that deliberately replaces one restates explicit override intent
+  (TASK-Olr-002.MI3)."
   [runtime]
-  ((requiring-resolve 'skein.api.weaver.alpha/register-op!)
-   runtime 'help
-   {:doc (:doc help-arg-spec)
-    :hook-class :read
-    :arg-spec help-arg-spec
-    :returns {:type :map
-              :optional {:ops {:type :collection
+  (core-registry/with-owner*
+    core-registry/system-owner core-registry/system-layer
+    (fn []
+      ((requiring-resolve 'skein.api.weaver.alpha/register-op!)
+       runtime 'help
+       {:doc (:doc help-arg-spec)
+        :hook-class :read
+        :arg-spec help-arg-spec
+        :returns {:type :map
+                  :optional {:ops {:type :collection
                                ;; :doc is optional in both projections: registration
                                ;; accepts docless ops, and op-summary omits the key.
-                               :items {:type :map
-                                       :required {:name :string
-                                                  :provenance :string
-                                                  :stream? :boolean
-                                                  :deadline-class :string
-                                                  :hook-class :string}
-                                       :optional {:doc :string}}}
-                         :name :string
-                         :doc :string
-                         :provenance :string
-                         :stream? :boolean
-                         :deadline-class :string
-                         :hook-class :string
-                         :arg-spec {:type :map :extra :json}
-                         :raw-envelope :boolean
-                         :returns :json}}}
-   'skein.core.weaver.help/op-help-handler))
+                                   :items {:type :map
+                                           :required {:name :string
+                                                      :provenance :string
+                                                      :stream? :boolean
+                                                      :deadline-class :string
+                                                      :hook-class :string}
+                                           :optional {:doc :string}}}
+                             :name :string
+                             :doc :string
+                             :provenance :string
+                             :stream? :boolean
+                             :deadline-class :string
+                             :hook-class :string
+                             :arg-spec {:type :map :extra :json}
+                             :raw-envelope :boolean
+                             :returns :json}}}
+       'skein.core.weaver.help/op-help-handler))))

@@ -7,7 +7,7 @@ tasks:
   - id: 2
     description: Migrate core registries to owner partitions
     task_file: tasks/002-core-registry-owner-migration.md
-    status: pending
+    status: complete
     blocked_by: [1]
   - id: 3
     description: Add loaded namespace ledger and resolve uxc5f
