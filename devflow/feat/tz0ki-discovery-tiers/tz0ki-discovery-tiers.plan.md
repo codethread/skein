@@ -404,3 +404,17 @@ Append notes here. Do not rewrite earlier notes.
 - LESSON: shard namespaces (config-test, runtime-deps-test) only run in the full flocked suite, so
   surface-baseline drift from any help-affecting change is invisible per-slice — run the full suite at
   queue acceptance before the PR, and regenerate the baseline as the last help-affecting step.
+
+### PLAN-Dtf-001.DN11 Task 12 (docs portion) + subcommand-vs-metadata distinction — 2026-07-21
+
+- Docs sweep by opus (run u6dv0, commit `5aaa417`): `docs/reference.md` Discovery-tiers section rewritten
+  (new envelope, meta-verbs, `--json` floor, glossary, retired sugar); `spools/roster.md` bare `roster help`
+  → trailing `--help`. batteries.md/batteries.api.md already correct.
+- IMPORTANT DISTINCTION the sweep verified (folded into DELTA-Dtf-002.CC3): a declared `about`/`prime`
+  **subcommand** ≠ `:about`/`:prime` **op-metadata**. The retired-sugar redirect is SUPPRESSED for an op
+  declaring a real subcommand by that name, so `<op> about` still routes there; but the meta-verb `strand
+  about <op>` reads op-METADATA and returns `discovery/unavailable` when absent (no fallback to a
+  subcommand). Net: agent (adopted → metadata) uses `strand about agent`; roster/land/kanban/spool (still
+  declare about/prime subcommands, no metadata) keep `<op> about`. This is the correct v1 migration state
+  (NG1: only agent + batteries adopt); fast-follow migrates the rest's subcommands to metadata. Docs
+  document only the resolving form per op — the sweep correctly did NOT convert the subcommand ops.

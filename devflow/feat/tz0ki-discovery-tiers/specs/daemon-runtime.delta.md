@@ -58,7 +58,15 @@ wire-compat key.
   SPEC-004.C63e's subcommand-only sole-token alias. Only the flag forms `--help`/`-h` rewrite; the
   **bare word** `help` (and `about`/`prime`) in verb position is **not** rewritten — it is the retired
   `<op> help`/`<op> about`/`<op> prime` sugar (migration-only, retired in alpha, TEN-000@1), which
-  fails with the loud redirect to `strand help <op>` (DELTA-Dtf-001.CC5). Like C63e, the flag rewrite
+  fails with the loud redirect to `strand help <op>` (DELTA-Dtf-001.CC5). **Exemption:** the retired-sugar
+  redirect is **suppressed when the op declares a real subcommand by that name** — so an op that still
+  declares an `about`/`prime` *subcommand* (a pre-adoption op like roster/land/kanban) routes `<op>
+  about`/`<op> prime` to that declared subcommand as normal. `help` is a reserved subcommand name
+  (SPEC-003.C65) and can never be declared, so bare `<op> help` always redirects. Note the meta-verbs
+  (CC6) read `:about`/`:prime` **op-metadata**, a *distinct* surface from a declared `about`/`prime`
+  subcommand: for an op that declares the subcommand but carries no metadata, `strand about <op>` returns
+  `discovery/unavailable` while `<op> about` still resolves — until that op migrates its subcommand to
+  op-metadata (fast-follow adoption; v1 adopts only agent + batteries). Like C63e, the flag rewrite
   resolves **before lifecycle hook gating** (a read-class registry projection; the target op's
   mutating-class hooks do not fire and the handler is never called). Any other argv shape flows
   through normal parsing and its loud errors. `help`/`-h`/`--help` remain reserved subcommand names
