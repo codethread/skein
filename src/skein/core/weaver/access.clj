@@ -49,6 +49,11 @@
   [runtime]
   (:glossary-registry runtime))
 
+(defn help-transform-slot
+  "Return the runtime's reload-cleared default-help-transform slot atom."
+  [runtime]
+  (:help-transform-slot runtime))
+
 (defn hook-registry
   "Return the runtime's lifecycle-hook registry atom."
   [runtime]

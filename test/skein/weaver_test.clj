@@ -16,6 +16,7 @@
             [skein.api.return-shape.alpha :as return-shape]
             [skein.api.runtime.alpha :as runtime]
             [skein.api.runtime.glossary.alpha :as glossary]
+            [skein.api.runtime.help-transform.alpha :as help-transform]
             [skein.api.weaver.alpha :as weaver]
             [skein.core.weaver.config :as weaver-config]
             [skein.core.weaver.help :as weaver-help]
@@ -2466,6 +2467,54 @@
             (is (= "discovery/help-grammar" (:code (ex-data e))))
             (is (= "described" (:operation (ex-data e))))
             (is (= ["sub"] (:verbs (ex-data e))))))))))
+
+(deftest weaver-help-transform-render
+  ;; The default-help-transform slot renders every `help` invocation through the
+  ;; registered transform (input = the full envelope); `--json` bypasses it back
+  ;; to the raw envelope, a throwing transform fails loudly without bricking help,
+  ;; and about/prime output is never transformed (DELTA-Dtf-002.CC1,
+  ;; DELTA-Dtf-001.CC4).
+  (with-runtime
+    (fn [rt _]
+      (weaver/register-op! rt 'described
+                           {:about "About prose." :prime "Prime prose."}
+                           'skein.weaver-test/test-op)
+      (testing "with no transform registered, help output is the raw envelope"
+        (is (map? (weaver/op! rt 'help ["described"])))
+        (is (= 1 (:schema-version (weaver/op! rt 'help ["described"]))))
+        (is (map? (weaver/op! rt 'help []))))
+      (testing "an elected transform renders the full envelope to its string"
+        (help-transform/register-default-help-transform!
+         rt {:transform (fn [env] (str "RENDERED:" (get-in env [:operation :name])))
+             :owner 'my.spool/render})
+        (is (= "RENDERED:described" (weaver/op! rt 'help ["described"])))
+        (testing "the no-arg catalog is a help invocation and renders too"
+          (is (string? (weaver/op! rt 'help []))))
+        (testing "the trailing --help rewrite is a help invocation and renders"
+          (is (= "RENDERED:described" (weaver/op! rt 'described ["--help"]))))
+        (testing "leading --json bypasses the slot back to the raw envelope"
+          (is (map? (weaver/op! rt 'help ["--json" "described"])))
+          (is (= 1 (:schema-version (weaver/op! rt 'help ["--json" "described"]))))
+          (is (map? (weaver/op! rt 'help ["--json"])))
+          (is (contains? (weaver/op! rt 'help ["--json"]) :ops)))
+        (testing "--json is leading-only within the help surface"
+          (let [e (is (thrown-with-msg? clojure.lang.ExceptionInfo #"must lead"
+                                        (weaver/op! rt 'help ["described" "--json"])))]
+            (is (= "discovery/help-grammar" (:code (ex-data e))))))
+        (testing "about/prime output is never transformed"
+          (is (= "About prose." (:about (weaver/op! rt 'about ["described"]))))
+          (is (= "Prime prose." (:prime (weaver/op! rt 'prime ["described"]))))))
+      (testing "a throwing transform fails loudly naming it, without bricking help"
+        (help-transform/replace-default-help-transform!
+         rt {:transform (fn [_] (throw (ex-info "boom" {})))
+             :owner 'my.spool/broken})
+        (let [e (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                                      #"Default help transform failed"
+                                      (weaver/op! rt 'help ["described"])))]
+          (is (= "discovery/help-transform-failed" (:code (ex-data e))))
+          (is (= 'my.spool/broken (:transform (ex-data e)))))
+        (testing "help is not bricked: --json bypasses the broken transform"
+          (is (map? (weaver/op! rt 'help ["--json" "described"]))))))))
 
 (deftest weaver-op-source-pointer-resolution
   ;; The op-wide `source` resolves best-effort at projection: `requiring-resolve`

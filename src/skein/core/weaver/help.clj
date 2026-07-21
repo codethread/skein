@@ -33,6 +33,17 @@
   `access/with-spool-classloader`) are call-time reaches into the public surface,
   the same idiom the socket transport uses for `op!`.
 
+  Every `help` invocation renders through the registered default help transform
+  when one is present, else emits the raw canonical envelope (DELTA-Dtf-001.CC4).
+  The transform is the runtime-owned at-most-one slot
+  (`skein.api.runtime.help-transform.alpha`), read here off the runtime map's
+  `:help-transform-slot` key directly — the blessed accessor sits above this
+  namespace in the load graph, like the op- and glossary-registry reads. It
+  receives the full envelope and returns the string the CLI relays; a throwing
+  transform fails loudly naming it (never a silent fallback, TEN-003), and
+  `--json` always bypasses the slot so a broken transform never bricks help.
+  `about`/`prime` output is never transformed.
+
   Besides the `help` catalog/detail projection, this namespace owns the two
   builtin arity-1 meta-verbs `about` and `prime` (DELTA-Dtf-002.CC6): each
   resolves one op and returns its declared `:about`/`:prime` prose beside the same
@@ -335,6 +346,39 @@
   {:schema-version schema-version
    :ops (mapv #(catalog-entry runtime %) (registered-op-entries runtime))})
 
+(defn- registered-transform
+  "The runtime's registered default help transform, or nil.
+
+  Reads the runtime map's `:help-transform-slot` cell directly — the blessed
+  accessor (`skein.core.weaver.access/help-transform-slot`) sits above this
+  namespace in the load graph, so requiring it would close a cycle, exactly as
+  for the op- and glossary-registry reads."
+  [runtime]
+  @(:help-transform-slot runtime))
+
+(defn- render-help
+  "Render a help `envelope` through the registered default transform, or return
+  the raw envelope.
+
+  With `json?` true, or with no transform registered, returns the raw canonical
+  envelope (the `--json` floor and the default, DELTA-Dtf-001.CC4). A registered
+  transform receives the full envelope and returns the string the CLI relays
+  (DELTA-Dtf-002.CC1). A throwing transform fails loudly naming its owner
+  (`discovery/help-transform-failed`, TEN-003) — never a silent fallback — while
+  `--json` always bypasses the slot so a broken transform never bricks help."
+  [runtime envelope json?]
+  (if json?
+    envelope
+    (if-let [{:keys [transform owner]} (registered-transform runtime)]
+      (try
+        (transform envelope)
+        (catch Throwable t
+          (throw (ex-info "Default help transform failed"
+                          {:code "discovery/help-transform-failed"
+                           :transform owner}
+                          t))))
+      envelope)))
+
 (def ^:private help-flag-tokens
   "The `--help`/`-h` flag forms the weaver rewrites to the `help` op.
 
@@ -394,7 +438,9 @@
   `--help` remain reserved subcommand names (`help-flag-tokens` derives from
   `skein.api.cli.alpha/reserved-subcommand-names`), so the rewrite shadows
   nothing. `runtime` is passed so the rewritten projection resolves the envelope
-  glossary closure exactly as the `help` op does (DELTA-Dtf-002.CC5)."
+  glossary closure and renders through the registered default help transform
+  exactly as the `help` op does (DELTA-Dtf-002.CC1/CC5); the `--help` rewrite
+  carries no `--json`, so its only bypass is `strand help <op> --json`."
   [runtime entry argv envelope]
   (let [argv (vec argv)
         payloads (or (:payloads envelope) {})
@@ -407,8 +453,8 @@
       clean-trailing?
       (let [verbs (pop argv)]
         (cond
-          (empty? verbs) (op-envelope runtime entry)
-          (= 1 (count verbs)) (verb-envelope runtime entry (first verbs))
+          (empty? verbs) (render-help runtime (op-envelope runtime entry) false)
+          (= 1 (count verbs)) (render-help runtime (verb-envelope runtime entry (first verbs)) false)
           :else (help-grammar-redirect! entry "`--help` takes at most one verb.")))
 
       (and (contains? retired-sugar-tokens head)
@@ -424,30 +470,49 @@
       :else nil)))
 
 (defn op-help-handler
-  "Project the op registry as canonical help.
+  "Project the op registry as canonical help, rendered through the transform slot.
 
-  With no positional op name, return the versioned catalog `{schema-version,
-  ops[]}` of shallow per-op envelopes sorted by name. With one op name, return
-  that op's detail envelope `{schema-version, operation, source, glossary,
-  node}`. With an op name and a verb, slice `node` to that verb's child node.
-  Unknown op names fail loudly through `resolve-op` (carrying available names);
-  an unknown verb fails loudly carrying the available verbs."
+  With no positional op name, build the versioned catalog `{schema-version,
+  ops[]}` of shallow per-op envelopes sorted by name. With one op name, build that
+  op's detail envelope `{schema-version, operation, source, glossary, node}`. With
+  an op name and a verb, slice `node` to that verb's child node. Unknown op names
+  fail loudly through `resolve-op` (carrying available names); an unknown verb
+  fails loudly carrying the available verbs.
+
+  The result is then rendered through the registered default help transform
+  (`render-help`); `--json` bypasses the slot back to the raw envelope. `--json`
+  is leading-only within the help surface (DELTA-Dtf-001.CC4): a non-leading
+  `--json` fails loudly and redirects to the canonical `strand help --json ...`
+  grammar."
   [ctx]
   (let [runtime (:op/runtime ctx)
-        {:keys [op verb]} (:op/args ctx)]
-    (cond
-      (and op verb) (verb-envelope runtime (resolve-entry runtime op) verb)
-      op (op-envelope runtime (resolve-entry runtime op))
-      :else (op-catalog runtime))))
+        {:keys [op verb json]} (:op/args ctx)]
+    (when (and json (not= "--json" (first (:op/argv ctx))))
+      (throw (ex-info "`--json` must lead the help surface. Run `strand help --json ...` instead."
+                      {:code "discovery/help-grammar"})))
+    (render-help runtime
+                 (cond
+                   (and op verb) (verb-envelope runtime (resolve-entry runtime op) verb)
+                   op (op-envelope runtime (resolve-entry runtime op))
+                   :else (op-catalog runtime))
+                 (boolean json))))
 
 (def ^:private help-arg-spec
-  "Arg-spec for the built-in `help` op: an optional op name and verb.
+  "Arg-spec for the built-in `help` op: a leading `--json` flag, an optional op
+  name, and an optional verb.
 
   This makes `help` the first parser-consuming op, so `op!` parses its argv and
   supplies the resolved positionals as `:op/args`. A trailing `verb` slices the
-  detail envelope's node to one subcommand (DELTA-Dtf-001.CC2)."
+  detail envelope's node to one subcommand (DELTA-Dtf-001.CC2). `--json` is the
+  sole opt-out to the raw canonical envelope and is leading-only (the handler
+  rejects a non-leading `--json`); no other flags are valid on the help surface
+  (DELTA-Dtf-001.CC4)."
   {:op "help"
    :doc "Show the help catalog, one op's detail envelope, or one verb's node."
+   :flags {:json {:type :boolean
+                  :doc (format-alpha/reflow
+                        "|Bypass any registered help transform and emit the raw
+                         |canonical envelope JSON. Leading-only.")}}
    :positionals [{:name :op
                   :type :string
                   :required? false

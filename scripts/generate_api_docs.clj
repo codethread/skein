@@ -26,6 +26,9 @@
    [{:name "runtime-glossary"
      :source "src/skein/api/runtime/glossary/alpha.clj"
      :outfile "docs/api/runtime-glossary.api.md"}
+    {:name "runtime-help-transform"
+     :source "src/skein/api/runtime/help_transform/alpha.clj"
+     :outfile "docs/api/runtime-help-transform.api.md"}
     {:name "test"
      :source "src/skein/test/alpha.clj"
      :outfile "docs/api/test.api.md"}]))
