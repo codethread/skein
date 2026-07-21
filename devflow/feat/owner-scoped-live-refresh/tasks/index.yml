@@ -117,7 +117,7 @@ tasks:
   - id: 24
     description: Publish owner registry API for spool domains
     task_file: tasks/024-owner-registry-api.md
-    status: pending
+    status: complete
     blocked_by: [1]
   - id: 25
     description: Add dispatch snapshots and owner introspection

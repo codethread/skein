@@ -18,8 +18,8 @@
 (def alpha-api-docs
   (concat
    (for [nm ["batch" "cli" "current" "events" "format" "graph" "hooks" "notes"
-             "patterns" "peers" "relations" "return-shape" "runtime" "scheduler" "spool"
-             "vocab" "weaver"]]
+             "patterns" "peers" "registry" "relations" "return-shape" "runtime" "scheduler"
+             "spool" "vocab" "weaver"]]
      {:name nm
       :source (str "src/skein/api/" (if (= nm "return-shape") "return_shape" nm) "/alpha.clj")
       :outfile (str "docs/api/" nm ".api.md")})
