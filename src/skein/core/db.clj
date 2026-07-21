@@ -1296,11 +1296,12 @@
          :burned (mapv (fn [ref id row] {:ref ref :id id :before row}) burn burn-ids burned-rows)
          :edges edge-outcomes}))))
 
-(defn apply-batch!
+(defn ^:no-doc apply-batch!
   "Apply a mixed batch mutation transaction.
 
-  Payload refs bind existing and newly-created strands, edges are upserted, and burns
-  delete strands after mutation validation succeeds."
+  Payload refs bind existing and newly-created strands, edges run ordered
+  `:upsert`/`:remove` operations, and burns delete strands after validation
+  succeeds."
   [ds payload]
   (jdbc/with-transaction [tx ds]
     (apply-batch-in-transaction! tx payload)))

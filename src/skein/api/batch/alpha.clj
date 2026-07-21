@@ -24,7 +24,8 @@
 (defn apply!
   "Apply one transactional batch graph mutation payload to `runtime`.
 
-  The payload is a map of `:refs` (symbol -> existing strand id), `:strands`
+  The payload is a map of `:refs` (unqualified non-blank keyword -> existing
+  strand id), `:strands`
   (patches keyed by `:ref`), `:edges` (ordered edge ops between refs), and
   `:burn` (refs to burn); `skein.core.db/normalize-batch-payload!` is the
   grammar authority and rejects malformed payloads loudly.

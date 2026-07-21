@@ -24,7 +24,8 @@ Function.
 
 Apply one transactional batch graph mutation payload to `runtime`.
 
-  The payload is a map of `:refs` (symbol -> existing strand id), `:strands`
+  The payload is a map of `:refs` (unqualified non-blank keyword -> existing
+  strand id), `:strands`
   (patches keyed by `:ref`), `:edges` (ordered edge ops between refs), and
   `:burn` (refs to burn); `skein.core.db/normalize-batch-payload!` is the
   grammar authority and rejects malformed payloads loudly.
@@ -73,4 +74,4 @@ Apply one transactional batch graph mutation payload to `runtime`.
   the transactional engine's output before the pre-commit hook, events, and
   return. Those two seam checks only catch impossible drift and never weaken the
   authority's rejections.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/batch/alpha.clj#L24-L95">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/batch/alpha.clj#L24-L96">Source</a></sub></p>
