@@ -128,3 +128,9 @@ User-approved amendments folded before checkpoint `nnv6c` release, derived from 
 - **Dispositions**: guild op declarations and core vocab become registered kinds (Task 6); batteries `::read-limit`/`::git-client` spool-state slots gain versions (Task 6); `.skein/attention.clj` unbounded module-level atom replaced (Task 8).
 - **Cutover hardening**: Task 21 gains an old-durable-data rehearsal leg — the new generation is started over a snapshot copy of the canonical SQLite, and rollback is rehearsed against the touched copy, before Task 23 ever meets the real database.
 - **Accepted knowingly**: Tasks 12 and 16 remain heavy slices; expect mid-task handoffs rather than restructuring.
+
+### PLAN-Olr-001.DN3 Owner-registry kernel: 2026-07-21
+
+- Task 1 stores each partition as `{:layer ... :entries {...} :overrides #{...}}` under `[kind-id owner-key]`. Stable owners and kind ids are keywords; override intent is restated per entry on every complete partition replacement.
+- Kind declarations carry a registered entry-spec keyword, binding-moment datum, and the fixed low-to-high `[:defaults :spools :workspace :direct]` policy. Normalization validates all partitions and collisions before deriving sorted effective, owner, and provenance projections for one atom publication.
+- Empty partitions remain distinguishable from removed owners. Identical replacements retain the existing snapshot object, while malformed declarations, undeclared kinds, same-layer duplicates, and missing cross-layer override intent leave the atom unchanged.

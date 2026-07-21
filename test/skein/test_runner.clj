@@ -11,7 +11,9 @@
 
 (def parallel-namespaces
   "Test namespaces that are safe to run concurrently, one namespace per worker."
-  ['skein.core.db-test 'skein.core.query-compile-test 'skein.core.contract-props-test 'skein.core.specs-test 'skein.core.scheduler-test 'skein.plugin-test 'skein.relations-test 'skein.notes-test 'skein.vocab-test
+  ['skein.core.db-test 'skein.core.query-compile-test 'skein.core.contract-props-test 'skein.core.specs-test 'skein.core.scheduler-test
+   'skein.core.weaver.owner-registry-test
+   'skein.plugin-test 'skein.relations-test 'skein.notes-test 'skein.vocab-test
    'skein.spools.text-search-test
    'skein.guild-test 'skein.test.alpha-test 'skein.warm-test 'skein.api.cli.alpha-test
    'skein.source-file-test
