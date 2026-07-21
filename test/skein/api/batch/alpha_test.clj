@@ -8,6 +8,7 @@
   (:require [clojure.spec.alpha :as s]
             [clojure.test :refer [deftest is use-fixtures]]
             [skein.api.batch.alpha :as batch]
+            [skein.api.events.alpha :as events]
             [skein.api.hooks.alpha :as hooks]
             [skein.core.db :as db]
             [skein.core.weaver.dispatch :as dispatch]
@@ -16,14 +17,23 @@
 ;; Namespace-level on purpose: hooks are registered by symbol and resolved to
 ;; top-level vars, so capture state cannot be a per-test local.
 (def captured-contexts (atom []))
+(def captured-batch-events (atom []))
 
-(use-fixtures :each (fn [f] (reset! captured-contexts []) (f)))
+(use-fixtures :each (fn [f]
+                      (reset! captured-contexts [])
+                      (reset! captured-batch-events [])
+                      (f)))
 
 (defn capture-hook
   "Validation hook that records its context and approves the batch."
   [ctx]
   (swap! captured-contexts conj ctx)
   :ok)
+
+(defn capture-batch-event
+  "Event handler that records delivered batch-applied events."
+  [event]
+  (swap! captured-batch-events conj event))
 
 (deftest apply-threads-a-caller-request-context-into-the-validation-gate
   (t/with-weaver-world [ctx {:storage :sqlite-memory}]
@@ -171,17 +181,19 @@
                   [{} {:owner "client"}]))
       (hooks/register-hook! rt :capture #{:batch/apply-before-commit}
                             'skein.api.batch.alpha-test/capture-hook {})
+      (events/register-handler! rt :capture-batch-applied #{:batch/applied}
+                                'skein.api.batch.alpha-test/capture-batch-event {})
       (doseq [[label malformed] cases]
-        (let [event-enqueued? (atom false)]
-          (reset! captured-contexts [])
-          (with-redefs [db/apply-batch-in-transaction! (fn [_ _] malformed)
-                        dispatch/enqueue! (fn [& _] (reset! event-enqueued? true))]
-            (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                                  #"Batch result violates its published contract"
-                                  (batch/apply! rt {:strands [{:ref :x :title "X"}]}))
-                label))
-          (is (empty? @captured-contexts) label)
-          (is (false? @event-enqueued?) label))))))
+        (reset! captured-contexts [])
+        (reset! captured-batch-events [])
+        (with-redefs [db/apply-batch-in-transaction! (fn [_ _] malformed)]
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                                #"Batch result violates its published contract"
+                                (batch/apply! rt {:strands [{:ref :x :title "X"}]}))
+              label))
+        (t/await-quiescent! rt)
+        (is (empty? @captured-contexts) label)
+        (is (empty? @captured-batch-events) label)))))
 
 (deftest drifted-result-shapes-never-reach-hook-or-event
   ;; Closed-seam guard matrix: an unexpected top-level result key, an extra key
