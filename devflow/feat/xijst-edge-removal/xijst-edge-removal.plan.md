@@ -1,0 +1,86 @@
+# Exact edge removal Plan
+
+**Document ID:** `PLAN-Xer-001`
+**Feature:** `xijst-edge-removal`
+**Proposal:** [proposal.md](./proposal.md) (`PROP-Xer-001`)
+**RFC:** none
+**Root specs:** [strand-model.md](../../specs/strand-model.md) (`SPEC-001`)
+**Feature specs:** [specs/strand-model.delta.md](./specs/strand-model.delta.md) (`DELTA-Xer-001`)
+**Status:** Draft
+**Last Updated:** 2026-07-21
+**Configuration identification:** Document IDs are ordered as document type, short name, sequential id, then optional version: `PLAN-Xer-001` for v1, `PLAN-Xer-001@2` for v2. Omit `@1`. Prefix every nested point ID with the full document ID (`PLAN-Xer-001.P1`) so references are globally grepable.
+
+## PLAN-Xer-001.P1 Goal and scope
+
+Add one closed batch edge op, `{:op :remove :from :to :type}`, to the transactional batch graph mutation primitive, and convert every edge outcome to a uniform before/after transition shared by the result, the pre-commit hook, and the `:batch/applied` event. Removal is exact-identity, closed-shape, and fails loudly on absence; it adds no new graph invariant. See [PROP-Xer-001](./proposal.md) for why the gap matters and [DELTA-Xer-001](./specs/strand-model.delta.md) for the settled contract. Scope is the batch primitive only — the `apply-batch-in-transaction!` outcome at `src/skein/core/db.clj:1248-1258`, not the create-path edge declarations of `add-strand-batch!` (the `:strand/edge-ops` surface, `db.clj:604-609`), which keep their existing shape.
+
+## PLAN-Xer-001.P2 Approach
+
+- **PLAN-Xer-001.A1 — op-specific grammar in `normalize-batch-payload!`:** The edge-validation loop (`db.clj:1190-1203`) currently rejects any `:op` that is not `:upsert`. Split validation per op. A `:remove` entry must be a non-nil map with exactly `:op`, `:from`, `:to`, and `:type` (reuse `require-no-unknown-keys!` against a remove-specific key set, so `:attributes` and any unknown key reject), both endpoints valid batch refs, and a valid `::specs/edge-type`. `:upsert` keeps its current checks including optional `:attributes`. The closed-op switch stays fail-loud for anything else.
+
+- **PLAN-Xer-001.A2 — pre-bound-ref restriction in `apply-batch-in-transaction!`:** The endpoint-resolution loop (`db.clj:1224-1229`) already rejects unknown and burned refs against `known-refs` (bound plus created). Add, for `:remove` ops only, that both endpoints are in `bound-refs` (the top-level `:refs` keys), never a created ref. Upsert continues to resolve against `known-refs`.
+
+- **PLAN-Xer-001.A3 — remove execution and the ordered state machine:** The edge reducer (`db.clj:1248-1259`) maps over `edges` in submitted order inside the existing `jdbc/with-transaction`; that ordering is already correct and needs no phase split. For `:remove`, resolve `from-id`/`to-id` from `final-refs`, load the exact normalized row, and delete it. Absence — no row for `(from, to, type)` — throws structured `ex-info` naming submitted refs, resolved durable ids, and relation, which rolls the transaction back. Promote the core-private `delete-edge!` (`db.clj:761`, returns the pre-delete row) or its `edge-row` lookup to serve this; make the absent-row case throw rather than return `nil`. Contention (WAL/`IMMEDIATE`/busy-timeout) propagates unchanged and is never translated to absence.
+
+- **PLAN-Xer-001.A4 — uniform transition outcome:** Replace the upsert-only `{:op :from :to :type :edge ...}` outcome with a transition of exactly `:op`, `:from`, `:to`, `:type`, `:before`, and `:after`. For upsert, `:before` is the actual normalized pre-image row (loaded before the write, `nil` when the edge is new) and `:after` is the written row; a replacement upsert must load its real pre-image, not derive it from the submitted op. For remove, `:before` is the removed row and `:after` is `nil`. Each non-nil image is a normalized edge row with exactly `:from_strand_id`, `:to_strand_id`, `:edge_type`, and decoded-map `:attributes` (`add-edge!` already returns this shape via its `RETURNING`; the pre-image lookup must decode `:attributes` the same way). This is the only shape change; there is no `:edge` alias.
+
+- **PLAN-Xer-001.A5 — hook and event thread unchanged:** `skein.api.batch.alpha` already relays `(:edges result)` verbatim into `:batch/edge-ops` (`alpha.clj:89`) and `:batch/edges` (`alpha.clj:100`), so the new transition shape flows through the pre-commit gate and the `:batch/applied` event with no plumbing change. The only `alpha.clj` edit is the `apply!` docstring (`alpha.clj:21-31`), which must state the two-op grammar, the exact transition shape, submitted refs versus durable row ids, the replacement-upsert pre-image, and the equal ordered result/hook/event vectors with no `:edge` alias.
+
+## PLAN-Xer-001.P3 Affected areas
+
+| ID | Area | Expected change |
+| --- | --- | --- |
+| PLAN-Xer-001.AA1 | `src/skein/core/db.clj` | `:remove` grammar in `normalize-batch-payload!`; pre-bound-ref check and remove execution in `apply-batch-in-transaction!`; edge outcomes become before/after transitions; a fail-loud exact-row delete built from `delete-edge!`/`edge-row` |
+| PLAN-Xer-001.AA2 | `test/skein/core/db_test.clj` | Remove happy path, absence/wrong-direction/wrong-type fail-loud, closed-shape rejection, pre-bound-ref rejection, ordered `serves` swap and DAG reversal, atomic multi-remove, transition-shape assertions on `:edges` |
+| PLAN-Xer-001.AA3 | `test/skein/core/contract_props_test.clj` | Extend the coherent-batch edge generator to emit `:remove` ops (or add a focused property) so batch spec-validity still matches db acceptance with the new op |
+| PLAN-Xer-001.AA4 | `src/skein/api/batch/alpha.clj` | `apply!` docstring states the two-op grammar and transition shape; no logic change |
+| PLAN-Xer-001.AA5 | `test/skein/weaver_test.clj` | Batch edge tests assert the transition shape reaches result, `:batch/edge-ops`, and `:batch/edges` equally, including a remove and a hook veto with no mutation and no event |
+| PLAN-Xer-001.AA6 | `test/skein/api/batch/alpha_test.clj` | Surface-level loud rejection of a malformed `:remove` (extra key, `:attributes`, missing endpoint) |
+| PLAN-Xer-001.AA7 | `docs/api/batch.api.md` | Regenerated from the `apply!` docstring by `make api-docs` |
+| PLAN-Xer-001.AA8 | `devflow/specs/strand-model.md` | Merge `DELTA-Xer-001` into `SPEC-001.P6` at ship |
+| PLAN-Xer-001.AA9 | `docs/reference.md`, `docs/tutorial.md` | One-line `:remove` mention beside each existing `:op :upsert` example |
+
+## PLAN-Xer-001.P4 Contract and migration impact
+
+- **PLAN-Xer-001.CM1:** No schema change — removal deletes from the existing `strand_edges` table, and the new grammar is validation only. No migration.
+- **PLAN-Xer-001.CM2:** Breaking outcome-shape change: the upsert `:edge` outcome key is replaced by `:before`/`:after` with no alias (`TEN-000@1`, `DELTA-Xer-001.D4`). Any in-tree or pinned-spool reader of the old `:edge` key breaks loudly. Cross-channel equality assertions (`(:edges result)` vs `:batch/edges`) survive unchanged; only readers that dig into `:edge` need updating. `make spool-suite-gate` is the external-spool detection gate.
+- **PLAN-Xer-001.CM3:** The durable contract change lives in `DELTA-Xer-001` (`SPEC-001.P6`); `alpha-surface.md` needs no delta because `batch` is already blessed and this accretes within its subnamespace.
+
+## PLAN-Xer-001.P5 Implementation phases
+
+### PLAN-Xer-001.PH1 Core op, state machine, and uniform outcome
+
+Outcome: `{:op :remove :from :to :type}` is a supported batch edge op in `skein.core.db` — exact-identity, closed-shape, top-level-pre-bound-ref, fail-loud on clean absence, ordered in the one transaction — and every edge outcome is the before/after transition with no `:edge` alias. Cold `clojure -M:test skein.core.db-test skein.core.contract-props-test` green, covering `PROP-Xer-001`'s proof obligations PO1–PO7 at the db tier: monotone single removal, the exactness/shape matrix, ordered `serves` swap and DAG reversal in the legal and reversed order, repeated-identity cases, atomic multi-op, and the uniform-outcome key set. This is one vertical slice: the op and the outcome shape are one coherent contract, and shipping the op without the shared transition would leave a half-shape.
+
+### PLAN-Xer-001.PH2 Surface docstring, observation channels, and api docs
+
+Outcome: the `apply!` docstring states the two-op grammar and transition shape; `skein.weaver-test` and `skein.api.batch.alpha-test` pin that the transition reaches the result, the `:batch/apply-before-commit` hook (`:batch/edge-ops`), and the `:batch/applied` event (`:batch/edges`) as equal ordered vectors, that a hook can veto a removal with no mutation and no event, and that a malformed `:remove` rejects loudly at the public surface. `make api-docs` regenerates `docs/api/batch.api.md` cleanly. Cold `clojure -M:test skein.weaver-test skein.api.batch.alpha-test` green.
+
+### PLAN-Xer-001.PH3 Spec promotion and user docs
+
+Outcome: `DELTA-Xer-001` is merged into `SPEC-001.P6` (both `CC1` and `CC2`), the delta marked Merged, and the devflow README index updated if it lists the feature. `docs/reference.md` and `docs/tutorial.md` gain a one-line `:remove` mention beside each `:op :upsert` example. `make docs-check` clean; the human-prose edits pass the `docs-style` sweep.
+
+## PLAN-Xer-001.P6 Validation strategy
+
+- **PLAN-Xer-001.V1:** Per-slice cold focused runs are the Done-when gate: `clojure -M:test skein.core.db-test skein.core.contract-props-test` for PH1, `clojure -M:test skein.weaver-test skein.api.batch.alpha-test` for PH2. Warm output never satisfies a gate.
+- **PLAN-Xer-001.V2:** Queue-acceptance gates from `PROP-Xer-001.P7`: `make build`; `flock -w 3600 /tmp/skein-test.lock clojure -M:test`; `(cd cli && go test ./...)`; `clojure -M:smoke`; `make fmt-check lint reflect-check docs-check` held at zero findings; `make api-docs` clean regen with `git status --short` showing only the expected `docs/api/batch.api.md` change and no generated SQLite or runtime-metadata artifacts.
+- **PLAN-Xer-001.V3:** `make spool-suite-gate` doubles as the CM2 external-spool probe for readers of the dropped `:edge` key.
+
+## PLAN-Xer-001.P7 Risks and open questions
+
+- **PLAN-Xer-001.R1:** The `:edge` → `:before`/`:after` shape change is breaking. Mitigation: in-tree callers are updated in PH1/PH2, and `make spool-suite-gate` catches pinned-spool readers; a hit is a coordinated spool fix, not a weakened contract (`TEN-000@1`).
+- **PLAN-Xer-001.R2:** Scope creep into the `add-strand-batch!` create-path (`:strand/edge-ops`, `db.clj:604-609`), which also carries an `:edge` outcome key. Mitigation: that path is explicitly out of scope (`PLAN-Xer-001.P1`); do not touch it, and confirm its tests (e.g. `skein.weaver-test` weave assertions) stay green untouched.
+- **PLAN-Xer-001.Q1:** None blocking task generation. The contract questions are resolved in `DELTA-Xer-001.Q1` / `PROP-Xer-001.P9`.
+
+## PLAN-Xer-001.P8 Task context
+
+- **PLAN-Xer-001.TC1:** Read this plan plus `DELTA-Xer-001` and `PROP-Xer-001` before code. The proof obligations `PROP-Xer-001.PO1-PO7` and the ordered cases `PROP-Xer-001.T1` (`serves` swap) and `PROP-Xer-001.T2` (DAG reversal) are the behavior checklist.
+- **PLAN-Xer-001.TC2:** The pre-image for a replacement upsert must be the actual normalized row loaded before the write, not derived from the submitted op (`PROP-Xer-001.C4`). Load `:before` before mutating.
+- **PLAN-Xer-001.TC3:** Absence is a clean post-lock lookup finding no row; contention exceptions propagate unchanged and are never absence (`PROP-Xer-001.C2`, `DELTA-Xer-001.D1`). No ignore-missing flag exists.
+- **PLAN-Xer-001.TC4:** Removal applies no insertion-only check; deleting a row only shrinks the edge set, so self-edge, DAG, single-`serves`, and duplicate-identity guards do not run on remove, and removing a raw invalid edge (a raw self-edge) is allowed.
+- **PLAN-Xer-001.TC5:** Do not build any C9-declined surface: no CLI verb, `:edge/removed` event, standalone helper, generic replace/rewire op, nested stages, variadic `apply!`, graph projector, tombstone, or connectivity/readiness invariant. Reopening one is a new decision, not an implementation choice.
+- **PLAN-Xer-001.TC6:** Do not edit implementation code as part of the design slice; this plan and the delta are the artifacts. Implementation is the tasked work that follows.
+
+## PLAN-Xer-001.P9 Developer Notes
+
+Append notes here. Do not rewrite earlier notes.

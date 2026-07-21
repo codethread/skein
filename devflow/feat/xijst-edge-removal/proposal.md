@@ -8,6 +8,8 @@
 
 **Related root specs:** [Strand Model](../../specs/strand-model.md) (SPEC-001.P5 Edges, SPEC-001.P6 Batch graph mutation), [Alpha Surface](../../specs/alpha-surface.md) (SPEC-005.C2)
 
+**Feature artifacts:** [Plan](./xijst-edge-removal.plan.md) (`PLAN-Xer-001`), [Strand Model delta](./specs/strand-model.delta.md) (`DELTA-Xer-001`)
+
 **Related source:** `src/skein/api/batch/alpha.clj`, `src/skein/core/db.clj` (`normalize-batch-payload!` `db.clj:1155`, `apply-batch-in-transaction!` `db.clj:1206`, `delete-edge!` `db.clj:761`, `add-edge!` `db.clj:736`)
 
 ## PROP-Xer-001.P1 Problem
