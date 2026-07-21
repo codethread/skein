@@ -294,3 +294,16 @@ Append notes here. Do not rewrite earlier notes.
   `--help` stays usage. Worker ran full locked suite green (767 tests, 0 fail).
 - LESSON for later slices: worker tests can pass while missing the *intended* semantics — the per-slice
   terra-med review probing intent (not just the DW matrix) is what caught the whole-tree-dump regression.
+
+### PLAN-Dtf-001.DN4 Task 3: help glossary-closure — 2026-07-21
+
+- Implemented by opus (run 6alho, commit `9394ca0`): help.clj resolves the referenced-term closure once
+  into the envelope `glossary`; nodes read authored annotations from the arg-spec `:annotations` sub-map
+  and stay name-only; slicing narrows the closure; catalog omits glossary.
+- terra-med review (cwluo) found a TEN-003 fail-loud violation: a `keep` silently dropped an unresolved
+  glossary ref (reachable when a help projection races a reload that clears op- and glossary-registries
+  separately). Fixed by opus (run ovfsk, commit `a18dbba`): now throws `discovery/glossary-ref-unresolved`
+  naming the missing outcome(s)/op, with a reload-race regression test. Gates green.
+- Task 4 wiring note (from 6alho): annotations flow through `op-node` reading `(:annotations arg-spec)` on
+  the root and `(get-in arg-spec [:subcommands <name> :annotations])` per child — authoring real values on
+  ops populates use-when/notes/failure-modes + the closure with no further help wiring.

@@ -12,12 +12,12 @@ tasks:
   - id: 3
     description: Help glossary-closure integration
     task_file: tasks/003-help-glossary-closure.md
-    status: in_progress
+    status: complete
     blocked_by: [1, 2]
   - id: 4
     description: Meta-verbs + about/prime metadata + source pointer
     task_file: tasks/004-meta-verbs-metadata-source.md
-    status: pending
+    status: in_progress
     blocked_by: [2, 3]
   - id: 5
     description: --help grammar (weaver rewrite + Go dispatcher)
