@@ -32,12 +32,12 @@ tasks:
   - id: 7
     description: Batteries reference renderer + depth proof + adoption
     task_file: tasks/007-batteries-renderer-and-adoption.md
-    status: in_progress
+    status: complete
     blocked_by: [3, 4, 6]
   - id: 8
     description: init.clj transform election + discovery E2E
     task_file: tasks/008-init-election-e2e.md
-    status: pending
+    status: in_progress
     blocked_by: [5, 7]
   - id: 9
     description: agent-harness.spool adoption + producer tests/docs

@@ -333,3 +333,23 @@ Append notes here. Do not rewrite earlier notes.
   help only; end-to-end smoke test with a real transform fixture. Gates green.
 - DURABLE CONTRACT surfaced: the optional `verbatim` success-frame boolean — folded into
   DELTA-Dtf-001.CC4a (backward-compatible frame extension; promote to SPEC-002 at Task 12).
+
+### PLAN-Dtf-001.DN7 Task 7: batteries reference renderer (FORCING FUNCTION) — 2026-07-21
+
+- Implemented by opus (run bxbze, commit `9984416`); terra-med review (yrvqq) PASS. **The forcing
+  function HELD**: `render-node` (batteries.clj:1321) is genuinely one recursive fn with no per-level
+  branches — op/verb/subverb are the same shape; the only top-level branch is the documented
+  catalog-vs-detail envelope-family choice, both feeding the same renderer. Synthetic depth-3 test proves
+  the arbitrary-depth invariant. **The fractal schema design is validated.** Batteries registers 7
+  glossary outcomes in install! before its ops; ops adopt :annotations/:about/:prime; transformer
+  exported (not auto-registered). In-repo gates green.
+- CROSS-REPO SCOPE EXPANSION (surfaced by Task 7's honest spool-suite-gate run): `make spool-suite-gate`
+  is RED because the pinned external `kanban.spool` (v4) tests the retired `<op> help` sole-token alias
+  (kanban_test.clj:165), deliberately retired by the Tasks 4/6 grammar change. The gate runs THREE pinned
+  external spools (codethread/devflow, codethread/kanban, ct.spools/agent-run); the grammar break affects
+  subcommand-declaring ops' help-alias tests. The plan's cross-repo phase (PH6-PH8) scoped only the AGENT
+  spool; it must GENERALIZE to every affected pinned spool (kanban confirmed; agent expected; devflow to
+  verify — its ops are mostly flat so likely unaffected). Plan: enumerate exact breakage, minimally update
+  each affected producer's tests to the new grammar (agent also gets full pattern adoption per Task 9),
+  re-tag, and bump ALL affected coordinates together (generalized Task 11) so spool-suite-gate goes green.
+  Tracked as new tasks in the cross-repo phase.
