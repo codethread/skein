@@ -10,11 +10,11 @@
 
 **Feature artifacts:** [Plan](./xijst-edge-removal.plan.md) (`PLAN-Xer-001`), [Strand Model delta](./specs/strand-model.delta.md) (`DELTA-Xer-001`)
 
-**Related source:** `src/skein/api/batch/alpha.clj`, `src/skein/core/db.clj` (`normalize-batch-payload!` `db.clj:1155`, `apply-batch-in-transaction!` `db.clj:1206`, `delete-edge!` `db.clj:761`, `add-edge!` `db.clj:736`)
+**Related source:** `src/skein/api/batch/alpha.clj` (`apply!` and its docstring), `src/skein/core/db.clj` (`normalize-batch-payload!`, `apply-batch-in-transaction!`, `delete-edge!`, and `add-edge!`)
 
 ## PROP-Xer-001.P1 Problem
 
-Spools can create and replace edges but cannot remove one. `skein.api.batch.alpha/apply!` upserts edges (`{:op :upsert ...}`, `db.clj:1194`), and `delete-edge!` (`db.clj:761`) is core-private, so a worker that needs to retire a stale edge has no blessed path.
+Spools can create and replace edges but cannot remove one. `skein.api.batch.alpha/apply!` accepts edge upserts (`{:op :upsert ...}`), while the core-private `delete-edge!` has no public path, so a worker that needs to retire a stale edge has no blessed path.
 
 The gap is not cosmetic. When a stale edge survives it still participates in traversal, readiness, and queries, so filtering it becomes distributed userland policy. `xijst` was raised (note `6snea`) after run `9v0p0` left a stale `delegates` edge and worked around it with a `treadle/superseded-by` provenance marker. Card `4cdsu` later had to call core-private `delete-edge!` directly to retire three obsolete `depends-on` edges (task note `n746p`).
 
@@ -39,11 +39,11 @@ The work is design clauses C1–C9. C1 adds the `:remove` op to the batch edge g
 
 ## PROP-Xer-001.C1 — the `:remove` op
 
-Extend the batch `:edges` grammar (`normalize-batch-payload!`, `db.clj:1190-1203`) with one closed op beside the shipped `:upsert`:
+Extend the batch `:edges` grammar in `normalize-batch-payload!` with one closed op beside the shipped `:upsert`:
 
 Its keys are `:op`, `:from`, `:to`, and `:type`, with `:op` equal to `:remove`.
 
-Validation is op-specific. A remove entry must be a non-nil map with exactly `:op`, `:from`, `:to`, and `:type`; it rejects a missing required key, `:attributes`, and every unknown key (`require-no-unknown-keys!`, already applied at `db.clj:1193`). Both endpoints must be refs from the top-level pre-bound `:refs` map. A remove rejects a newly created ref even when an earlier upsert created the edge; upserts retain their existing ability to use newly created refs. Neither endpoint may be burned in the same payload (the burned-ref check at `db.clj:1224-1229` already covers every edge op).
+Validation is op-specific. A remove entry must be a non-nil map with exactly `:op`, `:from`, `:to`, and `:type`; it rejects a missing required key, `:attributes`, and every unknown key through `require-no-unknown-keys!`. Both endpoints must be refs from the top-level pre-bound `:refs` map. A remove rejects a newly created ref even when an earlier upsert created the edge; upserts retain their existing ability to use newly created refs. Neither endpoint may be burned in the same payload; `apply-batch-in-transaction!` applies that check to every edge op.
 
 Identity is `(from, to, type)` alone. Edge attributes are neither identity, selector, nor a compare-and-set precondition. `:remove` does not submit attributes.
 
@@ -72,13 +72,13 @@ Removal applies no insertion-only check. Self-edge, DAG, and single-`serves` rul
 
 ## PROP-Xer-001.C3 — submitted order and atomicity
 
-Edge ops execute in submitted `:edges` order, each at its vector position, inside the one `jdbc/with-transaction` that already wraps the batch (`alpha.clj:38`, `apply-batch-in-transaction!` `db.clj:1206`). Any op failing — an absent remove, a rejected upsert, a burn conflict, or the pre-commit hook — rolls back every strand, edge, and burn mutation in the payload.
+Edge ops execute in submitted `:edges` order, each at its vector position, inside the one `jdbc/with-transaction` in `apply-batch-in-transaction!`. Any op failing — an absent remove, a rejected upsert, a burn conflict, or the pre-commit hook — rolls back every strand, edge, and burn mutation in the payload.
 
 No hidden remove-first phase, and no blanket duplicate-identity rejection. The shipped vector already lets repeated upserts of one identity apply last-writer-wins; ordering `:remove` and `:upsert` of the same identity is a deterministic ordered program, and `:remove`/`:remove` of one identity fails at the second op by exact presence (C2). Phase splitting or duplicate rejection would change shipped edge-vector semantics and belongs to a separate batch-grammar redesign, not to this accretion (`3773y` §3, note `onqzu`).
 
 ## PROP-Xer-001.C4 — uniform ordered transition outcome
 
-Every edge outcome becomes one transition with exactly `:op`, `:from`, `:to`, `:type`, `:before`, and `:after`, replacing the current upsert-only `:edge` outcome (`db.clj:1248-1258`).
+Every edge outcome becomes one transition with exactly `:op`, `:from`, `:to`, `:type`, `:before`, and `:after`, replacing the upsert-only `:edge` outcome produced by `apply-batch-in-transaction!`.
 
 The enclosing transition keeps the submitted local refs in `:from` and `:to` and submitted relation text in `:type`. In `skein.core.db`, `:before` and `:after` are either `nil` or storage-shaped edge rows with exactly `:from_strand_id`, `:to_strand_id`, `:edge_type`, and `:attributes`; the first two are durable ids, `:edge_type` is the relation, and `:attributes` remains raw JSON text.
 
@@ -90,7 +90,7 @@ The ordered vector in result `:edges`, hook `:batch/edge-ops`, and event `:batch
 
 ## PROP-Xer-001.C5 — existing hook and event only
 
-The `:batch/apply-before-commit` validation gate runs once after the whole candidate graph is realized (`alpha.clj:41-44`); it sees the exact ordered result `:edges` vector as `:batch/edge-ops`, including remove and replacement-upsert before-images. A rejection rolls everything back with no mutation and no event. After commit, `:batch/applied` carries that same vector, unchanged, as `:batch/edges` (`alpha.clj:93-100`). An edge-only batch emits no per-strand fanout, as today.
+The `:batch/apply-before-commit` validation gate runs once after the whole candidate graph is realized in `apply!`; it sees the exact ordered result `:edges` vector as `:batch/edge-ops`, including remove and replacement-upsert before-images. A rejection rolls everything back with no mutation and no event. The `apply!` post-commit `:batch/applied` publication carries that same vector, unchanged, as `:batch/edges`. An edge-only batch emits no per-strand fanout, as today.
 
 A hook that wants a projected view folds the before/after deltas over a committed predecessor slice it loads itself. Core does not ship a reusable graph projector: correctness depends on snapshot completeness and on the caller's view semantics (adjacency versus rooted subgraph versus a named query), and a removed edge may have connected data the hook never loaded. If repeated userland projection proves painful, a narrowly shaped relation-subgraph projector is a separate later design (note `to8k1`), not part of this contract.
 
@@ -100,7 +100,7 @@ No `:edge/removed` event is minted. Post-commit enqueue is bounded and not trans
 
 There is no generic replace or rewire op. A caller that wants to change a `serves` target submits the ordered remove and upsert shown in C1; the two commit together or not at all.
 
-`supersede!` is not graph substitution and is untouched here: it writes `replacement --supersedes--> old`, marks `old` replaced, and rewires only incoming `depends-on` edges to the replacement (`db.clj:816` and its region). It does not move `old`'s outgoing edges, so a caller that needs the old outgoing edge retired composes the exact `:remove` plus the new `:upsert` explicitly. Direction, relation, attributes, and any required reachability are the caller's choice.
+`supersede!` is not graph substitution and is untouched here: it writes `replacement --supersedes--> old`, marks `old` replaced, and rewires only incoming `depends-on` edges to the replacement. It does not move `old`'s outgoing edges, so a caller that needs the old outgoing edge retired composes the exact `:remove` plus the new `:upsert` explicitly. Direction, relation, attributes, and any required reachability are the caller's choice.
 
 ## PROP-Xer-001.C7 — invariant boundary
 
@@ -110,10 +110,10 @@ Core does not promise whole-graph acyclicity, connectedness, one root, stable ro
 
 ## PROP-Xer-001.C8 — spec and doc deltas
 
-- **`devflow/specs/strand-model.md` SPEC-001.P6** (batch, ~L74-76): name the supported upsert and remove ops. State that remove requires exact identity, accepts only top-level pre-bound `:refs`, forbids `:attributes` and unknown keys, and fails loudly after a clean post-lock absence with the exact C2 `ex-data`. Define each public result edge transition with exactly `:op`, `:from`, `:to`, `:type`, `:before`, and `:after`; define a non-nil public image with exactly `:from_strand_id`, `:to_strand_id`, `:edge_type`, and decoded-map `:attributes`. State that `:edges`, `:batch/edge-ops`, and `:batch/edges` are equal ordered vectors of these transitions, with no `:edge` alias.
+- **`devflow/specs/strand-model.md` SPEC-001.P6, “Batch graph mutation”:** name the supported upsert and remove ops. State that remove requires exact identity, accepts only top-level pre-bound `:refs`, forbids `:attributes` and unknown keys, and fails loudly after a clean post-lock absence with the exact C2 `ex-data`. Define each public result edge transition with exactly `:op`, `:from`, `:to`, `:type`, `:before`, and `:after`; define a non-nil public image with exactly `:from_strand_id`, `:to_strand_id`, `:edge_type`, and decoded-map `:attributes`. State that `:edges`, `:batch/edge-ops`, and `:batch/edges` are equal ordered vectors of these transitions, with no `:edge` alias.
 - **`devflow/specs/alpha-surface.md` SPEC-005.C2:** no new namespace — `batch` is already blessed and this accretes within its subnamespace. No edit unless the reviewer wants the outcome-shape change called out; the change is source-visible through the strand-model delta.
-- **`src/skein/api/batch/alpha.clj`** docstring for `apply!` (`alpha.clj:21-31`): state the same two op grammar and exact transition shape from SPEC-001.P6, including submitted refs versus durable row ids, replacement-upsert `:before`, equal ordered result/hook/event vectors, and no `:edge` alias; regenerate `docs/api/batch.api.md` with `make api-docs`.
-- **`docs/reference.md`** ("Burn recovery" batch/recovery guidance, ~L613-627) and **`docs/tutorial.md`** (batch example, ~L276): add a one-line `:remove` mention where each already shows `:op :upsert`.
+- **`src/skein/api/batch/alpha.clj` `apply!` docstring and the generated `docs/api/batch.api.md` API channel:** state the same two op grammar and exact transition shape from SPEC-001.P6, including submitted refs versus durable row ids, replacement-upsert `:before`, equal ordered result/hook/event vectors, and no `:edge` alias; regenerate the API reference with `make api-docs`.
+- **`docs/reference.md` “Burn recovery” batch/recovery guidance and `docs/tutorial.md` batch example:** add a one-line `:remove` mention where each already shows `:op :upsert`.
 
 ## PROP-Xer-001.C9 — deliberately not built
 
