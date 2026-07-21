@@ -280,12 +280,17 @@
     (if-let [err (:error entry)]
       (write-frame! err)
       (let [entry (:ok entry)
-            envelope (invoke-envelope args)]
-        (if-let [alias (help/help-alias-result entry (get args "argv") envelope)]
-          (write-frame! (success request-id alias))
-          (if (:stream? entry)
-            (handle-stream-invoke! runtime request-id args entry envelope write-frame!)
-            (handle-single-invoke! runtime request-id args entry envelope write-frame!)))))))
+            envelope (invoke-envelope args)
+            ;; The `--help` rewrite is a read-class projection consulted before
+            ;; hook gating; a retired-sugar or malformed shape redirects loudly
+            ;; here (DELTA-Dtf-002.CC3) rather than reaching the handler.
+            alias (try {:result (help/help-alias-result entry (get args "argv") envelope)}
+                       (catch Exception e {:error (error-frame request-id e)}))]
+        (cond
+          (:error alias) (write-frame! (:error alias))
+          (some? (:result alias)) (write-frame! (success request-id (:result alias)))
+          (:stream? entry) (handle-stream-invoke! runtime request-id args entry envelope write-frame!)
+          :else (handle-single-invoke! runtime request-id args entry envelope write-frame!))))))
 
 (defn handle-request!
   "Handle one newline-delimited JSON protocol request, writing one or more

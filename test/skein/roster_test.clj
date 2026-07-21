@@ -286,10 +286,14 @@
       (roster/install!)
       (testing "help projections list the declared verb surface"
         (let [detail (weaver/op! rt 'help ["roster"])
-              alias (op! rt "help")
               verbs (mapv :name (get-in detail [:node :children]))]
-          (is (= detail alias))
-          (is (= ["about" "await-quiet" "finish" "heartbeat" "list" "prime" "start"] verbs))))
+          (is (= ["about" "await-quiet" "finish" "heartbeat" "list" "prime" "start"] verbs))
+          ;; the bare word `roster help` is retired sugar (help is reserved and
+          ;; undeclared here), so it redirects loudly to `strand help roster`
+          ;; rather than projecting the detail envelope (DELTA-Dtf-002.CC3).
+          (let [e (is (thrown-with-msg? clojure.lang.ExceptionInfo #"retired sugar"
+                                        (op! rt "help")))]
+            (is (= "discovery/help-grammar" (:code (ex-data e)))))))
       (testing "missing and unknown verbs fail during parser routing with available names"
         (let [missing (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Missing subcommand"
                                             (op! rt)))

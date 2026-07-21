@@ -224,22 +224,52 @@
   stays reserved but flows to normal parsing (DELTA-Dtf-002.CC3)."
   (into #{} (filter #(str/starts-with? % "-")) cli/reserved-subcommand-names))
 
+(def ^:private retired-sugar-tokens
+  "Bare-word meta-verbs whose `<op> <word>` verb-position sugar is retired.
+
+  `help`/`about`/`prime` were the migration-only `<op> help`/`about`/`prime`
+  sugar (TEN-000@1); in verb position they are no longer rewritten and fail with
+  a loud redirect to `strand help <op>` (DELTA-Dtf-002.CC3/CC5). The redirect is
+  suppressed when the op declares a real subcommand by that name (e.g. a spool's
+  own `about`/`prime` verb) or when the op is itself the meta-verb, since then
+  the word is a legitimate argument that flows to normal parsing."
+  #{"help" "about" "prime"})
+
+(defn- declared-subcommand?
+  "True when `entry`'s arg-spec declares a subcommand named `token`."
+  [entry token]
+  (contains? (get-in entry [:arg-spec :subcommands]) token))
+
+(defn- help-grammar-redirect!
+  "Fail loudly, redirecting a retired-sugar or malformed `--help` shape to the
+  canonical `strand help <op>` grammar (DELTA-Dtf-001.CC5, DELTA-Dtf-002.CC3)."
+  [entry detail]
+  (throw (ex-info (str detail " Run `strand help " (:name entry) "` instead.")
+                  {:code "discovery/help-grammar"
+                   :operation (:name entry)})))
+
 (defn help-alias-result
-  "Return the op's canonical help envelope for a trailing `--help`/`-h` rewrite.
+  "Resolve a post-op `--help` shape to a help projection, or govern the retired
+  `<op> help` grammar, before the target op's handler or hooks run.
 
-  The weaver rewrites a trailing `--help`/`-h` **flag** token — the final argv
-  token, with no other flag token before it and no attached payloads — to the
-  `help` op, for **every** op (flat, subcommand, and raw-envelope), returning
-  that op's detail envelope instead of running the handler (DELTA-Dtf-002.CC3).
-  Both `op!` and the socket transport consult this before hook gating, so the
-  rewrite is a read-class projection and the target op's mutating hooks never
-  fire.
+  A **clean trailing** `--help`/`-h` — the final argv token, with no other flag
+  token before it and no attached payloads — rewrites to the `help` op for every
+  op class (flat, subcommand, and raw-envelope). It resolves to the SAME node as
+  `strand help <op> <verb...>`: a bare `<op> --help` yields the op's detail
+  envelope, and a verb token before the flag narrows it to that verb's sliced
+  node (DELTA-Dtf-002.CC3). Both `op!` and the socket transport consult this
+  before hook gating, so the rewrite is a read-class projection and the target
+  op's mutating hooks never fire.
 
-  Only the flag forms rewrite: the bare word `help` (and `about`/`prime`) in
-  verb position is the retired `<op> help` sugar (TEN-000@1) and is not rewritten
-  — it returns nil and flows through normal parsing, failing loudly. Any
-  non-clean `--help` shape (a non-final flag, another flag alongside it, or
-  attached payloads) likewise returns nil and surfaces its own loud parse error.
+  Everything else is not a rewrite. The bare word `help`/`about`/`prime` in verb
+  position is the retired `<op> help`/`about`/`prime` sugar (TEN-000@1) and fails
+  with the loud redirect to `strand help <op>` — unless the op declares a real
+  subcommand by that name or is itself the meta-verb (then the word is a
+  legitimate argument and flows to normal parsing). Any other `--help`/`-h` shape
+  (a non-final flag, another flag alongside it, or attached payloads) likewise
+  fails with the loud redirect rather than reaching a handler; on raw-envelope
+  ops this is the only guard, since they parse no arg-spec. A shape with no
+  `--help`/`-h` and no retired verb returns nil and flows through normal parsing.
 
   Supersedes SPEC-004.C63e's subcommand-only sole-token alias. `help`/`-h`/
   `--help` remain reserved subcommand names (`help-flag-tokens` derives from
@@ -247,12 +277,31 @@
   nothing."
   [entry argv envelope]
   (let [argv (vec argv)
-        payloads (or (:payloads envelope) {})]
-    (when (and (seq argv)
-               (contains? help-flag-tokens (peek argv))
-               (not-any? #(str/starts-with? % "-") (pop argv))
-               (empty? payloads))
-      (op-envelope entry))))
+        payloads (or (:payloads envelope) {})
+        trailing-flag? (and (seq argv) (contains? help-flag-tokens (peek argv)))
+        clean-trailing? (and trailing-flag?
+                             (not-any? #(str/starts-with? % "-") (pop argv))
+                             (empty? payloads))
+        head (first argv)]
+    (cond
+      clean-trailing?
+      (let [verbs (pop argv)]
+        (cond
+          (empty? verbs) (op-envelope entry)
+          (= 1 (count verbs)) (verb-envelope entry (first verbs))
+          :else (help-grammar-redirect! entry "`--help` takes at most one verb.")))
+
+      (and (contains? retired-sugar-tokens head)
+           (not (contains? retired-sugar-tokens (:name entry)))
+           (not (declared-subcommand? entry head)))
+      (help-grammar-redirect!
+       entry (str "`strand " (:name entry) " " head "` is retired sugar."))
+
+      (some help-flag-tokens argv)
+      (help-grammar-redirect!
+       entry "`--help` must be the final token with no other flags or payloads.")
+
+      :else nil)))
 
 (defn op-help-handler
   "Project the op registry as canonical help.

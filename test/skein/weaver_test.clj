@@ -2050,35 +2050,55 @@
             ;; detail, never the routed handler context (which carries :op/argv).
             (is (= expected actual) (str op " " flag))
             (is (not (contains? actual :op/argv)) (str op " " flag)))))
-      (testing "a trailing --help flag rewrites even after a leading verb token"
-        (is (= (weaver/op! rt 'help ["subbed"])
-               (weaver/op! rt 'subbed ["add" "--help"]))))
-      (testing "the bare word help is retired sugar: not rewritten, fails loudly"
-        (let [e (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                                      #"Unknown subcommand"
-                                      (weaver/op! rt 'subbed ["help"])))]
-          (is (= :unknown-subcommand (:reason (ex-data e)))))
-        (let [e (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                                      #"Unexpected extra arguments"
-                                      (weaver/op! rt 'flat-no-positionals ["help"])))]
-          (is (= :trailing-tokens (:reason (ex-data e)))))
-        ;; a raw-envelope op has no parser, so the bare word rides to the handler.
-        (let [ctx (weaver/op! rt 'raw ["help"])]
-          (is (not (contains? ctx :op/args)))
-          (is (= ["help"] (:op/argv ctx)))))
-      (testing "non-clean --help shapes are not rewritten and surface loud errors"
+      (testing "a trailing --help flag after a verb token slices to the verb node"
+        ;; the rewrite must resolve to the SAME sliced node as `help <op> <verb>`,
+        ;; never the whole-op detail — the verb path survives the rewrite.
+        (is (= (weaver/op! rt 'help ["subbed" "add"])
+               (weaver/op! rt 'subbed ["add" "--help"])))
+        (is (= (weaver/op! rt 'help ["subbed" "list"])
+               (weaver/op! rt 'subbed ["list" "-h"])))
+        ;; regression guard: it is distinct from the whole-op detail.
+        (is (not= (weaver/op! rt 'help ["subbed"])
+                  (weaver/op! rt 'subbed ["add" "--help"]))))
+      (weaver/register-op! rt 'raw-side-effect 'skein.weaver-test/side-effecting-op)
+      (testing "the bare word help/about/prime in verb position redirects loudly"
+        (reset! op-side-effects [])
+        ;; every op class — including raw-envelope, which parses no arg-spec —
+        ;; fails with the concise redirect before any handler runs.
+        (doseq [op '[subbed flat-no-positionals raw-side-effect]
+                word ["help" "about" "prime"]]
+          (let [e (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                                        #"retired sugar"
+                                        (weaver/op! rt op [word]))
+                      (str op " " word))]
+            (is (= "discovery/help-grammar" (:code (ex-data e))) (str op " " word))
+            (is (= (name op) (:operation (ex-data e))) (str op " " word))))
+        (is (empty? @op-side-effects)))
+      (testing "a declared subcommand named like a retired verb is not redirected"
+        ;; the redirect is suppressed when the op owns a real subcommand by that
+        ;; name, so a spool's own about/prime verb still routes to its handler.
+        (weaver/register-op! rt 'sugarful
+                             {:arg-spec {:op "sugarful"
+                                         :subcommands {"about" {:doc "About this op"}
+                                                       "prime" {:doc "Prime this op"}}}}
+                             'skein.weaver-test/context-echo-op)
+        (is (= "about" (:subcommand (:op/args (weaver/op! rt 'sugarful ["about"])))))
+        (is (= "prime" (:subcommand (:op/args (weaver/op! rt 'sugarful ["prime"]))))))
+      (testing "non-clean --help shapes redirect loudly and never reach a handler"
         (weaver/register-op! rt 'subbed-side-effect
                              {:arg-spec {:op "subbed-side-effect"
                                          :subcommands {"ok" {:doc "Run"}}}}
                              'skein.weaver-test/side-effecting-op)
         (reset! op-side-effects [])
-        (doseq [[argv envelope] [[["--help" "add"] {}]                        ; non-final
+        (doseq [op '[subbed-side-effect raw-side-effect]
+                [argv envelope] [[["--help" "add"] {}]                        ; non-final
                                  [["--force" "--help"] {}]                     ; another flag
                                  [["--help"] {:payloads {"stdin" "attached"}}]]] ; payloads
           (let [e (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                                        #"Unknown subcommand"
-                                        (weaver/op! rt 'subbed-side-effect argv envelope)))]
-            (is (= :unknown-subcommand (:reason (ex-data e))) (pr-str argv))))
+                                        #"must be the final token"
+                                        (weaver/op! rt op argv envelope))
+                      (str op " " (pr-str argv)))]
+            (is (= "discovery/help-grammar" (:code (ex-data e))) (str op " " (pr-str argv)))))
         (is (empty? @op-side-effects)))
       (testing "unknown subcommands fail during parse before the handler runs"
         (reset! op-side-effects [])

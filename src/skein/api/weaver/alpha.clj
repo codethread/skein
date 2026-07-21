@@ -465,9 +465,11 @@
   socket transport for `:stream? true` ops) into `:op/emit!`. When the resolved
   op declares an `:arg-spec`, `:op/argv` and the attached payloads are parsed
   through `skein.api.cli.alpha/parse` and the result is supplied as `:op/args`;
-  a parse failure throws before the handler runs. A trailing `--help`/`-h` flag
-  (the final argv token, no other flags, no payloads) is rewritten to the op's
-  help detail instead of running the handler, for every op class
+  a parse failure throws before the handler runs. A clean trailing `--help`/`-h`
+  flag (the final argv token, no other flags, no payloads) is rewritten to the
+  op's help projection instead of running the handler, for every op class — the
+  op detail, or a verb's sliced node when a verb token precedes the flag; retired
+  `<op> help`/`about`/`prime` sugar and malformed `--help` shapes redirect loudly
   (DELTA-Dtf-002.CC3). Subcommand map results receive a
   canonical `:operation` label containing the registered op name and full
   resolved path, including a nested `:action`. A handler-supplied `:operation`
