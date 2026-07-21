@@ -91,6 +91,13 @@ func relaySingle(frame map[string]json.RawMessage, line []byte, stdout, stderr i
 		return 1, fmt.Errorf("malformed weaver response: %w", err)
 	}
 	if ok {
+		// A `verbatim` frame carries a default help transform's rendered output as
+		// a JSON string; its decoded value is relayed byte-for-byte, never
+		// re-encoded as JSON (DELTA-Dtf-002.CC1). Every other single result is
+		// relayed as canonical envelope JSON.
+		if verbatim, _ := frameBool(frame, "verbatim"); verbatim {
+			return relayVerbatim(frame["result"], stdout)
+		}
 		var resp struct {
 			Result any `json:"result"`
 		}
@@ -107,6 +114,27 @@ func relaySingle(frame map[string]json.RawMessage, line []byte, stdout, stderr i
 		return 0, nil
 	}
 	return surfaceError(frame["error"], stderr)
+}
+
+// relayVerbatim writes a verbatim-flagged result to stdout with no JSON
+// re-encoding. The frame's `result` is a JSON string (the transport encoding of
+// the help transform's output); its decoded value is the exact text to relay, so
+// text stays text with no quoting or escaping (DELTA-Dtf-002.CC1, SPEC-002.C4/
+// C36). A trailing newline is added only when absent, mirroring the stream relay.
+func relayVerbatim(raw json.RawMessage, stdout io.Writer) (int, error) {
+	var s string
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return 1, fmt.Errorf("malformed weaver verbatim result: %w", err)
+	}
+	if _, err := io.WriteString(stdout, s); err != nil {
+		return 1, fmt.Errorf("writing weaver response: %w", err)
+	}
+	if len(s) == 0 || s[len(s)-1] != '\n' {
+		if _, err := fmt.Fprintln(stdout); err != nil {
+			return 1, fmt.Errorf("writing weaver response: %w", err)
+		}
+	}
+	return 0, nil
 }
 
 func relayStream(r *bufio.Reader, stdout, stderr io.Writer) (int, error) {

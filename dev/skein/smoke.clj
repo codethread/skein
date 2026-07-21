@@ -18,6 +18,7 @@
 (def mill-bin (.getAbsolutePath (java.io.File. "cli/bin/mill")))
 (def checkout-root (.getAbsolutePath (java.io.File. ".")))
 (def stream-op-fixture (str checkout-root "/test/fixtures/stream-op-init.clj"))
+(def help-transform-fixture (str checkout-root "/test/fixtures/help-transform-init.clj"))
 (def smoke-run-root
   (doto (java.io.File. "/tmp" (str "sk" (.pid (java.lang.ProcessHandle/current))))
     (.mkdirs)))
@@ -223,8 +224,8 @@
   (assert (clojure.string/includes? haystack needle)
           (str message "\nmissing: " (pr-str needle) "\nin: " haystack)))
 
-(defn append-stream-op-fixture! [init-path]
-  (spit init-path (str (slurp init-path) "\n(load-file " (pr-str stream-op-fixture) ")\n")))
+(defn append-load-fixture! [init-path fixture]
+  (spit init-path (str (slurp init-path) "\n(load-file " (pr-str fixture) ")\n")))
 
 (defn smoke-cli-help! []
   (let [root (run-process! "Go CLI root help succeeds" [strand-bin "--help"])
@@ -252,8 +253,10 @@
     (delete-tree! (smoke-workspace (str db-file ".dispatcher")))
     (run-mill-config! workspace "init")
     ;; Register the pinned streaming-op fixture from the workspace init.clj so the
-    ;; weaver serves `test-stream` alongside the shipped batteries ops.
-    (append-stream-op-fixture! init-path)
+    ;; weaver serves `test-stream` alongside the shipped batteries ops, and elect a
+    ;; default help transform so `strand help` exercises the verbatim relay.
+    (append-load-fixture! init-path stream-op-fixture)
+    (append-load-fixture! init-path help-transform-fixture)
     (start-weaver-config! workspace)
     (try
       (let [design (cli-add-config! workspace "Design model" "--state" "closed" "--attr" "priority=high")
@@ -296,13 +299,25 @@
         (let [all (titles (parse-json (run-strand-config! workspace "list")))]
           (doseq [t ["Design model" "Write docs v2" "Body via stdin" "Body via payload" "Large body"]]
             (assert (some #{t} all) (str "dispatcher list returns all strands, missing: " t "\nin: " (pr-str all)))))
-        ;; Live op discovery through the core help op.
-        (let [help-list (parse-json (run-strand-config! workspace "help"))
-              help-add (parse-json (run-strand-config! workspace "help" "add"))]
-          (assert (some #(= "add" (:name %)) (:ops help-list)) "strand help lists the add batteries op")
-          (assert (some #(= "test-stream" (:name %)) (:ops help-list)) "strand help lists the fixture stream op")
-          (assert= "add" (:name help-add) "strand help <op> returns the op detail")
-          (assert (contains? help-add :arg-spec) "strand help <op> renders the op arg-spec"))
+        ;; Live op discovery through the core help op. With a default help
+        ;; transform elected (help-transform fixture), `--json` bypasses it to the
+        ;; raw canonical envelope (DELTA-Dtf-001.CC4).
+        (let [help-list (parse-json (run-strand-config! workspace "help" "--json"))
+              help-add (parse-json (run-strand-config! workspace "help" "--json" "add"))]
+          (assert (= 1 (:schema-version help-list)) "strand help --json catalog carries the versioned schema")
+          (assert (some #(= "add" (get-in % [:operation :name])) (:ops help-list)) "strand help --json lists the add batteries op")
+          (assert (some #(= "test-stream" (get-in % [:operation :name])) (:ops help-list)) "strand help --json lists the fixture stream op")
+          (assert= "add" (get-in help-add [:operation :name]) "strand help --json <op> returns the op detail envelope")
+          (assert (= "add" (get-in help-add [:node :name])) "strand help --json <op> projects the op's fractal node"))
+        ;; The elected transform's output relays through the full socket -> mill ->
+        ;; client chain VERBATIM: raw text, never a JSON-quoted string
+        ;; (DELTA-Dtf-002.CC1). The `--json` floor above proves the same op still
+        ;; yields the canonical envelope when asked.
+        (let [help-text (run-strand-config! workspace "help" "add")]
+          (assert (clojure.string/starts-with? help-text "RENDERED add:")
+                  (str "elected help transform relays raw text verbatim\n" help-text))
+          (assert (not (clojure.string/starts-with? (clojure.string/trim help-text) "\""))
+                  (str "verbatim help text must not be JSON-quoted\n" help-text)))
         ;; Unknown ops fail non-zero with the registry's available-names domain error.
         (assert-contains (run-strand-config-fails! workspace "no-such-op")
                          "Operation not found"

@@ -29,6 +29,7 @@
             [next.jdbc :as jdbc]
             [skein.api.cli.alpha :as cli]
             [skein.api.return-shape.alpha :as return-shape]
+            [skein.api.runtime.glossary.alpha :as glossary]
             [skein.api.weaver.internal.op-entry :as op-entry]
             [skein.core.db :as db]
             [skein.core.query :as query]
@@ -42,7 +43,8 @@
 
 (declare apply-edges! reject-unknown-update-keys! supersede-context
          require-archive-result! require-lean-result!
-         validated-op-entry operation-label)
+         validated-op-entry validate-op-annotations! check-op-glossary-refs!
+         operation-label)
 
 ;; A runtime is an opaque, non-nil handle; callers select it and pass it first.
 (s/def ::runtime some?)
@@ -387,6 +389,7 @@
    (register-op! runtime op-name nil fn-sym))
   ([runtime op-name opts fn-sym]
    (let [entry (validated-op-entry op-name opts fn-sym)]
+     (check-op-glossary-refs! runtime entry)
      (swap! (op-registry runtime)
             (fn [registry]
               (when-let [existing (get registry (:name entry))]
@@ -412,6 +415,7 @@
    (replace-op! runtime op-name nil fn-sym))
   ([runtime op-name opts fn-sym]
    (let [entry (validated-op-entry op-name opts fn-sym)]
+     (check-op-glossary-refs! runtime entry)
      (swap! (op-registry runtime)
             (fn [registry]
               (when-not (contains? registry (:name entry))
@@ -462,9 +466,12 @@
   socket transport for `:stream? true` ops) into `:op/emit!`. When the resolved
   op declares an `:arg-spec`, `:op/argv` and the attached payloads are parsed
   through `skein.api.cli.alpha/parse` and the result is supplied as `:op/args`;
-  a parse failure throws before the handler runs. For subcommand ops, sole-token
-  `help`, `-h`, or `--help` invocations with no payloads return the op's help
-  detail instead of running the handler. Subcommand map results receive a
+  a parse failure throws before the handler runs. A clean trailing `--help`/`-h`
+  flag (the final argv token, no other flags, no payloads) is rewritten to the
+  op's help projection instead of running the handler, for every op class — the
+  op detail, or a verb's sliced node when a verb token precedes the flag; retired
+  `<op> help`/`about`/`prime` sugar and malformed `--help` shapes redirect loudly
+  (DELTA-Dtf-002.CC3). Subcommand map results receive a
   canonical `:operation` label containing the registered op name and full
   resolved path, including a nested `:action`. A handler-supplied `:operation`
   equal to the derived label is preserved; any other value, including explicit
@@ -476,7 +483,7 @@
   ([runtime op-name argv envelope]
    (let [{fn-sym :fn name :name arg-spec :arg-spec :as entry} (resolve-op runtime op-name)
          argv (vec argv)]
-     (if-let [alias (help/help-alias-result entry argv envelope)]
+     (if-let [alias (help/help-alias-result runtime entry argv envelope)]
        alias
        (let [payloads (or (:payloads envelope) {})
              ctx (cond-> {:op/name name
@@ -603,9 +610,74 @@
       (op-entry/validate-op-doc! (:doc opts)))
     (when (some? (:arg-spec opts))
       (validate-op-arg-spec! op-name (:arg-spec opts)))
+    (when (contains? opts :annotations)
+      (validate-op-annotations! op-name (:annotations opts)))
     (when (contains? opts :returns)
       (validate-op-returns! op-name (:arg-spec opts) stream? (:returns opts)))
     (op-entry/assemble op-name opts fn-sym)))
+
+(defn- validate-op-annotations!
+  "Structurally validate a raw-envelope op's root `:annotations` metadata
+  (DELTA-Dtf-002.MI1a) through the CLI annotation contract, returning it.
+
+  The reach into `skein.api.cli.alpha` happens here for the same reason
+  `validate-op-arg-spec!` does: an internal namespace never requires an alpha one
+  (SPEC-003.C19a). The glossary-ref existence check for its `failure-modes` names
+  runs separately in `check-op-glossary-refs!`.
+
+  A SUPPLIED `:annotations` value must be a map (MI1a): the CLI validator treats
+  a nil sub-map as \"absent\" (optional on an arg-spec node), so an explicit nil or
+  any non-map at the op-metadata root is an author error rejected here."
+  [op-name annotations]
+  (when-not (map? annotations)
+    (throw (ex-info "Operation :annotations metadata is invalid"
+                    {:operation (op-entry/canonical-op-name op-name)
+                     :reason :invalid-annotations
+                     :annotations annotations})))
+  (try
+    (cli/validate-annotations! (op-entry/canonical-op-name op-name) annotations)
+    (catch clojure.lang.ExceptionInfo e
+      (throw (ex-info "Operation :annotations metadata is invalid"
+                      (assoc (ex-data e) :operation (op-entry/canonical-op-name op-name))
+                      e)))))
+
+(defn- arg-spec-failure-modes
+  "Return every `failure-modes` outcome name referenced across `arg-spec`'s
+  annotation sub-maps — the flat/root node plus each declared subcommand's node."
+  [arg-spec]
+  (when (map? arg-spec)
+    (into (vec (get-in arg-spec [:annotations :failure-modes]))
+          (mapcat (fn [[_ nested]] (get-in nested [:annotations :failure-modes])))
+          (:subcommands arg-spec))))
+
+(defn- entry-failure-modes
+  "Return every `failure-modes` outcome name `entry` references.
+
+  Gathers from the arg-spec's annotation sub-maps (Task 2) and, for a
+  raw-envelope op that declares no arg-spec, from the entry's root `:annotations`
+  metadata (MI1a) — the two annotation surfaces are mutually exclusive by
+  construction (`validate-op-metadata!`), so this simply unions them."
+  [entry]
+  (into (vec (get-in entry [:annotations :failure-modes]))
+        (arg-spec-failure-modes (:arg-spec entry))))
+
+(defn- check-op-glossary-refs!
+  "Fail loudly unless every `failure-modes` name `entry` references — across its
+  arg-spec annotation sub-maps and its raw-envelope root `:annotations` metadata —
+  points at an already-registered glossary outcome.
+
+  The unconditional glossary-ref existence check (DELTA-Dtf-003.CC2), run at
+  registration because that is where the runtime glossary is in hand. It enforces
+  the load-order contract: an op's outcomes must be registered — from the owning
+  spool's `install!` or trusted config — before the op that references them."
+  [runtime entry]
+  (doseq [outcome-name (entry-failure-modes entry)]
+    (when-not (glossary/outcome-registered? runtime outcome-name)
+      (throw (ex-info "Operation failure-mode references an unregistered glossary outcome"
+                      {:operation (:name entry)
+                       :failure-mode outcome-name
+                       :available-outcomes (mapv :name
+                                                 (glossary/glossary-outcomes runtime))})))))
 
 ;; -- op dispatch helpers --
 

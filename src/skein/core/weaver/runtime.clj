@@ -270,6 +270,8 @@
   (reset! (:query-registry runtime) {})
   (reset! (:pattern-registry runtime) {})
   (reset! (:op-registry runtime) {})
+  (reset! (:glossary-registry runtime) {})
+  (reset! (:help-transform-slot runtime) nil)
   (reset! (:hook-registry runtime) {})
   (clear-event-system-for-reload! runtime)
   (install-built-in-ops! runtime))
@@ -556,6 +558,8 @@
                         :query-registry (atom {})
                         :pattern-registry (atom {})
                         :op-registry (atom {})
+                        :glossary-registry (atom {})
+                        :help-transform-slot (atom nil)
                         :hook-registry (atom {})
                         :generation-id (str (java.util.UUID/randomUUID))
                         :release-marker resolved-release-marker

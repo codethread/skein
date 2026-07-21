@@ -11,6 +11,17 @@
   CLI root. The namespace owns no module-level state:
   op handlers read the runtime from their invocation context (`:op/runtime`).
 
+  Ops adopt the discovery-tier pattern (DELTA-Dtf-003.CC2): their arg-specs drive
+  help, and where it adds value they carry closed `:annotations` sub-maps
+  (`use-when`/`notes`/`failure-modes`) and op-level `:about`/`:prime` prose.
+  `failure-modes` reference the batteries-owned glossary outcomes registered from
+  `install!` before the ops (the load-order contract, DELTA-Dtf-002.CC7).
+
+  Batteries also EXPORTS `default-help-transform` — the reference default help
+  transform (DELTA-Dtf-002.CC1): one recursive renderer over the uniform fractal
+  node (DELTA-Dtf-001.CC2) with no per-level branch. It is exported for trusted
+  `init.clj` election, never auto-registered from `install!`.
+
   Attribute/edge flag semantics reproduce old SPEC-002.C6–C11: `--attr key=value`
   is a repeatable, highest-precedence string map whose values may be payload
   references; `--attributes` references a JSON object of typed bulk attributes at
@@ -29,6 +40,7 @@
             [skein.api.notes.alpha :as notes]
             [skein.api.patterns.alpha :as patterns]
             [skein.api.runtime.alpha :as runtime-api]
+            [skein.api.runtime.glossary.alpha :as glossary]
             [skein.api.vocab.alpha :as vocab]
             [skein.api.weaver.alpha :as weaver]
             [skein.core.query :as query]
@@ -900,7 +912,11 @@
            :edge {:type :string
                   :repeat? true
                   :doc "Outgoing edge edge-type:to-id; repeatable."}}
-   :positionals [{:name :title :type :string :required? true :doc "Strand title."}]})
+   :positionals [{:name :title :type :string :required? true :doc "Strand title."}]
+   :annotations {:use-when ["Minting a new unit of work with its initial attributes, state, and edges in one call."]
+                 :failure-modes ["batteries/state-invalid"
+                                 "batteries/attr-key-duplicate"
+                                 "batteries/edge-malformed"]}})
 
 (def ^:private update-arg-spec
   {:op "update"
@@ -917,12 +933,17 @@
            :edge {:type :string
                   :repeat? true
                   :doc "Outgoing edge edge-type:to-id; repeatable."}}
-   :positionals [{:name :id :type :string :required? true :doc "Strand id."}]})
+   :positionals [{:name :id :type :string :required? true :doc "Strand id."}]
+   :annotations {:notes ["Omitting every attribute flag leaves the stored attribute map untouched; supply --attr or --attributes to patch it."]
+                 :failure-modes ["batteries/state-invalid"
+                                 "batteries/attr-key-duplicate"
+                                 "batteries/edge-malformed"]}})
 
 (def ^:private show-arg-spec
   {:op "show"
    :doc "Return one strand by id."
-   :positionals [{:name :id :type :string :required? true :doc "Strand id."}]})
+   :positionals [{:name :id :type :string :required? true :doc "Strand id."}]
+   :annotations {:use-when ["Fetching one strand's full normalized shape by id, including its typed attributes."]}})
 
 (def ^:private supersede-arg-spec
   {:op "supersede"
@@ -945,7 +966,9 @@
            :param {:type :map
                    :doc "Named-query parameter key=value; repeatable."}
            :limit {:type :int
-                   :doc "Explicit maximum result count; set above the total for an intentional full read."}}})
+                   :doc "Explicit maximum result count; set above the total for an intentional full read."}}
+   :annotations {:use-when ["Browsing or filtering strands; combine --state and --query to narrow the set."]
+                 :failure-modes ["batteries/state-invalid" "batteries/query-unknown"]}})
 
 (def ^:private ready-arg-spec
   {:op "ready"
@@ -955,7 +978,9 @@
            :param {:type :map
                    :doc "Named-query parameter key=value; repeatable."}
            :limit {:type :int
-                   :doc "Explicit maximum result count; set above the total for an intentional full read."}}})
+                   :doc "Explicit maximum result count; set above the total for an intentional full read."}}
+   :annotations {:use-when ["Selecting actionable strands whose blocking dependencies are already closed."]
+                 :failure-modes ["batteries/query-unknown"]}})
 
 (def ^:private subgraph-arg-spec
   {:op "subgraph"
@@ -972,27 +997,33 @@
                      :doc "Registered weave pattern name."}
            :input {:type :string
                    :required? true
-                   :doc "Payload reference (e.g. :stdin) to exactly one JSON value for the pattern."}}})
+                   :doc "Payload reference (e.g. :stdin) to exactly one JSON value for the pattern."}}
+   :annotations {:use-when ["Applying a registered create-only pattern to bulk-mint a coordinated strand set from one JSON value."]
+                 :failure-modes ["batteries/weave-input-invalid" "batteries/pattern-unknown"]}})
 
 (def ^:private query-arg-spec
   {:op "query"
    :doc "Introspect registered named queries: list all or explain one."
+   :annotations {:use-when ["Discovering which named queries the runtime exposes before driving list or ready."]}
    :subcommands {"list" {:doc "List registered named query metadata."}
                  "explain" {:doc "Explain one registered named query."
                             :positionals [{:name :name
                                            :type :string
                                            :required? true
-                                           :doc "Query name."}]}}})
+                                           :doc "Query name."}]
+                            :annotations {:failure-modes ["batteries/query-unknown"]}}}})
 
 (def ^:private pattern-arg-spec
   {:op "pattern"
    :doc "Introspect registered weave patterns: list all or explain one."
+   :annotations {:use-when ["Discovering which weave patterns the runtime exposes before calling weave."]}
    :subcommands {"list" {:doc "List registered weave pattern metadata."}
                  "explain" {:doc "Explain one registered weave pattern."
                             :positionals [{:name :name
                                            :type :string
                                            :required? true
-                                           :doc "Pattern name."}]}}})
+                                           :doc "Pattern name."}]
+                            :annotations {:failure-modes ["batteries/pattern-unknown"]}}}})
 
 (def ^:private note-arg-spec
   {:op "note"
@@ -1022,6 +1053,7 @@
 (def ^:private spool-arg-spec
   {:op "spool"
    :doc "Add and bump validated spool family coordinates. Run `strand spool about` for conventions."
+   :annotations {:use-when ["Pinning or advancing an annotated Git spool release in the workspace spools.edn."]}
    :subcommands
    {"about" {:doc "Return spool helper conventions and status semantics."}
     "add" {:doc "Add one annotated Git spool release to spools.edn."
@@ -1032,14 +1064,16 @@
            :positionals [{:name :git-url
                           :type :string
                           :required? true
-                          :doc "Git repository URL."}]}
+                          :doc "Git repository URL."}]
+           :annotations {:failure-modes ["batteries/spool-release-unresolved"]}}
     "bump" {:doc "Bump one Git spool family atomically to an annotated release."
             :flags {:to {:type :string
                          :doc "Target annotated release tag vN; defaults from floors or latest."}}
             :positionals [{:name :family
                            :type :string
                            :required? true
-                           :doc "Declared spool family symbol."}]}}})
+                           :doc "Declared spool family symbol."}]
+            :annotations {:failure-modes ["batteries/spool-release-unresolved"]}}}})
 
 (def ^:private spool-status-arg-spec
   {:op "spool-status"
@@ -1157,9 +1191,236 @@
                   :required {:operation :string :families :json :requirements :json
                              :pending-generation :json :release-marker :json}}})
 
+;; --- op-level about/prime prose ---------------------------------------------
+
+(def ^:private add-meta
+  "Cross-verb narrative for `add`, projected by the `about`/`prime` meta-verbs
+  (DELTA-Dtf-002.CC4). Kept off the node: it frames add against its sibling verbs
+  rather than restating any node-derivable flag."
+  {:about (format-alpha/reflow
+           "|add is the create verb of the batteries strand surface: it mints one
+            |strand and hands back its generated id. update patches that strand
+            |afterward, supersede replaces it wholesale, and burn deletes it —
+            |add is where a unit of work first enters the graph.")
+   :prime (format-alpha/reflow
+           "|Reach for add the moment a unit of work appears. Prefer --edge over
+            |free-text references so later readiness and subgraph traversal can
+            |follow the structural links you record now.")})
+
+(def ^:private weave-meta
+  "Cross-verb narrative for `weave` (DELTA-Dtf-002.CC4)."
+  {:about (format-alpha/reflow
+           "|weave applies a registered create-only pattern to one JSON value,
+            |minting a coordinated set of strands and returning their refs. It is
+            |the bulk-creation counterpart to add's single-strand mint, and the
+            |pattern op explains which patterns a runtime exposes.")
+   :prime (format-alpha/reflow
+           "|Reach for weave when one input should fan out into several linked
+            |strands under a reviewed pattern. Run `strand pattern list` first to
+            |see the registered patterns and their input specs.")})
+
+;; --- batteries-owned glossary outcomes --------------------------------------
+
+(def ^:private batteries-glossary
+  "Batteries-owned named failure outcomes (DELTA-Dtf-002.CC5).
+
+  Registered from `install!` before any op whose `:annotations` `failure-modes`
+  reference them — the load-order contract (DELTA-Dtf-002.CC7). Each name is
+  qualified and stable; a changed meaning takes a new name, never a redefinition."
+  [{:name "batteries/state-invalid"
+    :definition "A mutation named a lifecycle state outside active|closed; list also permits replaced."}
+   {:name "batteries/attr-key-duplicate"
+    :definition "Two --attr flags in one invocation set the same key at the same precedence."}
+   {:name "batteries/edge-malformed"
+    :definition "An --edge token is not the required edge-type:to-id shape."}
+   {:name "batteries/query-unknown"
+    :definition "A --query names no registered query, or a --param names an undeclared query parameter."}
+   {:name "batteries/pattern-unknown"
+    :definition "A named weave pattern is not registered in the runtime."}
+   {:name "batteries/spool-release-unresolved"
+    :definition "No annotated vN release tag resolves for the requested spool coordinate."}
+   {:name "batteries/weave-input-invalid"
+    :definition "weave --input did not carry exactly one JSON value."}])
+
+;; --- reference default help renderer (the forcing function) -----------------
+;;
+;; DELTA-Dtf-002.CC1 / DELTA-Dtf-003.D1: batteries exports ONE recursive renderer
+;; over the uniform fractal node (DELTA-Dtf-001.CC2). `render-node` is the whole
+;; point: an op root, a verb child, and any deeper descendant render through its
+;; single body with no per-level branch, and the only recursion over nodes is its
+;; own closing tail over `:children`. Everything else here — the envelope headers,
+;; the leaf flag/positional lines, the returns pretty-printer — is non-recursive
+;; framing around that one uniform recursion.
+
+(defn- indent
+  "A two-space indent string for nesting `depth`."
+  [depth]
+  (str/join (repeat depth "  ")))
+
+(defn- source-label
+  "Render the op-wide `source` pointer (DELTA-Dtf-002.CC2) as `file:line`, or the
+  best-effort `unavailable`."
+  [source]
+  (if source (str (:file source) ":" (:line source)) "unavailable"))
+
+(defn- bullet-lines
+  "Render a labelled bullet block for a string-array annotation, or nil when empty."
+  [depth label items]
+  (when (seq items)
+    (cons (str (indent depth) label ":")
+          (map #(str (indent (inc depth)) "- " %) items))))
+
+(defn- flag-line
+  "Render one declared flag as a single readable line."
+  [depth {:keys [flag type required repeat parse doc]}]
+  (str (indent depth) flag " <" type ">"
+       (when required " (required)")
+       (when repeat " (repeatable)")
+       (when parse (str " {parse " parse "}"))
+       (when (seq doc) (str "  " doc))))
+
+(defn- positional-line
+  "Render one declared positional as a single readable line."
+  [depth {:keys [name type required variadic parse doc]}]
+  (str (indent depth) "<" name "> <" type ">"
+       (when required " (required)")
+       (when variadic " (variadic)")
+       (when parse (str " {parse " parse "}"))
+       (when (seq doc) (str "  " doc))))
+
+(defn- shape-lines
+  "Render one JSON-safe return-shape value as indented readable lines.
+
+  A generic recursion over the return-shape `explain` data (SPEC-003.C60b),
+  distinct from the fractal-node recursion — it descends return shapes, never
+  help nodes, so it does not touch the node-uniformity invariant."
+  [depth value]
+  (cond
+    (map? value)
+    (if (empty? value)
+      [(str (indent depth) "{}")]
+      (mapcat (fn [[k v]]
+                (let [label (if (keyword? k) (name k) (str k))]
+                  (cond
+                    (and (coll? v) (empty? v))
+                    [(str (indent depth) label ": " (if (map? v) "{}" "[]"))]
+                    (coll? v)
+                    (cons (str (indent depth) label ":") (shape-lines (inc depth) v))
+                    :else
+                    [(str (indent depth) label ": " v)])))
+              value))
+
+    (sequential? value)
+    (if (some coll? value)
+      (mapcat #(shape-lines depth %) value)
+      [(str (indent depth) "[" (str/join ", " value) "]")])
+
+    :else
+    [(str (indent depth) value)]))
+
+(defn- render-node
+  "THE recursive renderer over the uniform fractal node (DELTA-Dtf-001.CC2).
+
+  One body renders every level: an op root, a verb child, and any deeper
+  descendant are the same shape, and the sole node recursion is the closing tail
+  over `:children`. No branch keys off the node's depth or kind — that uniformity
+  is the schema's forcing function (DELTA-Dtf-003.D1). If a level ever needed its
+  own case, the schema would be wrong, not this renderer."
+  [depth {:keys [name doc invocation returns use-when notes failure-modes children]}]
+  (let [field (inc depth)
+        entry (inc field)]
+    (concat
+     [(str (indent depth) name (when (seq doc) (str " — " doc)))
+      (str (indent field) "invocation: " (:mode invocation))]
+     (when (seq (:flags invocation))
+       (cons (str (indent field) "flags:")
+             (map #(flag-line entry %) (:flags invocation))))
+     (when (seq (:positionals invocation))
+       (cons (str (indent field) "positionals:")
+             (map #(positional-line entry %) (:positionals invocation))))
+     (when returns
+       (cons (str (indent field) "returns:")
+             (shape-lines entry returns)))
+     (bullet-lines field "use-when" use-when)
+     (bullet-lines field "notes" notes)
+     (bullet-lines field "failure-modes" failure-modes)
+     (mapcat #(render-node field %) children))))
+
+(defn- operation-lines
+  "Render the op-wide envelope facts (DELTA-Dtf-001.CC1) that stay off the node."
+  [operation source]
+  [(str "operation: " (:name operation) "  [" (:provenance operation) "]")
+   (str (indent 1) "hook-class:   " (:hook-class operation)
+        "   deadline: " (:deadline-class operation)
+        "   streaming: " (:stream? operation)
+        "   raw-envelope: " (:raw-envelope operation))
+   (str (indent 1) "source:       " (source-label source))])
+
+(defn- glossary-lines
+  "Render the referenced-term glossary closure (DELTA-Dtf-002.CC5), or nil when
+  the returned subtree references no outcomes."
+  [glossary]
+  (when (seq glossary)
+    (cons "glossary:"
+          (map (fn [[name definition]] (str (indent 1) name " — " definition))
+               (sort glossary)))))
+
+(defn- render-detail
+  "Render a detail help envelope `{schema-version, operation, source, glossary,
+  node}` (DELTA-Dtf-001.CC1) as text."
+  [{:keys [schema-version operation source glossary node]}]
+  (str/join
+   "\n"
+   (concat [(str "strand help — schema v" schema-version) ""]
+           (operation-lines operation source)
+           [""]
+           (when-let [gloss (glossary-lines glossary)] (concat gloss [""]))
+           (render-node 0 node))))
+
+(defn- render-catalog
+  "Render the versioned no-arg catalog `{schema-version, ops[]}`
+  (DELTA-Dtf-001.CC3) as text.
+
+  Each shallow per-op envelope's summary node renders through the SAME uniform
+  `render-node`, so the catalog reuses the node contract unchanged."
+  [{:keys [schema-version ops]}]
+  (str/join
+   "\n"
+   (concat [(str "strand help — schema v" schema-version " — " (count ops) " ops") ""]
+           (mapcat (fn [{:keys [source node]}]
+                     (concat (render-node 0 node)
+                             [(str (indent 1) "source: " (source-label source)) ""]))
+                   ops))))
+
+(defn default-help-transform
+  "Render a canonical help envelope (DELTA-Dtf-001.CC1) as readable text.
+
+  The batteries reference default help transform (DELTA-Dtf-002.CC1): a full
+  envelope → the string the CLI relays verbatim. It is EXPORTED for trusted
+  `init.clj` election through `register-default-help-transform!` (Task 8) and is
+  deliberately NOT auto-registered from `install!`, so a fresh world keeps the
+  raw-JSON floor (DELTA-Dtf-002.D1).
+
+  Both members of the one help-schema family render through the single uniform
+  node renderer (`render-node`): the detail envelope carrying `node`, and the
+  no-arg catalog carrying `ops[]` of summary nodes (DELTA-Dtf-001.CC3). The only
+  branch is which envelope family this is — an envelope-shape choice, never a
+  per-node-level one, so the recursive node renderer stays uniform at every depth
+  (the forcing-function invariant, DELTA-Dtf-003.D1)."
+  [envelope]
+  (if (contains? envelope :ops)
+    (render-catalog envelope)
+    (render-detail envelope)))
+
+;; --- registration -----------------------------------------------------------
+
 (def ^:private op-registrations
-  "Each shipped op: [op-name arg-spec hook-class handler-symbol]."
-  [['add add-arg-spec :mutating 'skein.spools.batteries/add-op]
+  "Each shipped op: [op-name arg-spec hook-class handler-symbol op-meta?].
+
+  The optional trailing `op-meta` map carries extra registration metadata merged
+  over the derived defaults — today the `:about`/`:prime` prose (DELTA-Dtf-002.CC4)
+  a few ops declare."
+  [['add add-arg-spec :mutating 'skein.spools.batteries/add-op add-meta]
    ['update update-arg-spec :mutating 'skein.spools.batteries/update-op]
    ['show show-arg-spec :read 'skein.spools.batteries/show-op]
    ['supersede supersede-arg-spec :mutating 'skein.spools.batteries/supersede-op]
@@ -1167,7 +1428,7 @@
    ['list list-arg-spec :read 'skein.spools.batteries/list-op]
    ['ready ready-arg-spec :read 'skein.spools.batteries/ready-op]
    ['subgraph subgraph-arg-spec :read 'skein.spools.batteries/subgraph-op]
-   ['weave weave-arg-spec :mutating 'skein.spools.batteries/weave-op]
+   ['weave weave-arg-spec :mutating 'skein.spools.batteries/weave-op weave-meta]
    ['query query-arg-spec :read 'skein.spools.batteries/query-op]
    ['pattern pattern-arg-spec :read 'skein.spools.batteries/pattern-op]
    ['note note-arg-spec :mutating 'skein.spools.batteries/note-op]
@@ -1179,17 +1440,26 @@
 (defn install!
   "Register the batteries core strand ops into a weaver runtime.
 
+  Registers the batteries-owned glossary outcomes first, then the ops (the
+  load-order contract, DELTA-Dtf-002.CC7): an op's `failure-modes` references are
+  checked against the runtime glossary at registration. The reference default help
+  transform (`default-help-transform`) is NOT registered here — it is elected by
+  trusted config (DELTA-Dtf-002.D1).
+
   The no-arg arity registers into the active runtime for `use!`-style
   installation; the explicit-runtime arity is for tests and trusted callers."
   ([] (install! (current/runtime)))
   ([rt]
+   (doseq [outcome batteries-glossary]
+     (glossary/register-glossary-outcome! rt (assoc outcome :owner 'skein.spools.batteries)))
    {:installed true
     :namespace 'skein.spools.batteries
-    :ops (mapv (fn [[op-name arg-spec hook-class handler]]
+    :ops (mapv (fn [[op-name arg-spec hook-class handler op-meta]]
                  (weaver/register-op! rt op-name
-                                      {:doc (:doc arg-spec)
-                                       :arg-spec arg-spec
-                                       :returns (get op-returns op-name)
-                                       :hook-class hook-class}
+                                      (merge {:doc (:doc arg-spec)
+                                              :arg-spec arg-spec
+                                              :returns (get op-returns op-name)
+                                              :hook-class hook-class}
+                                             op-meta)
                                       handler))
                op-registrations)}))

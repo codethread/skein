@@ -333,18 +333,45 @@ Skein's discovery convention has three tiers — generated `help`, authored `abo
 means:
 
 1. **Declare your verbs as `:subcommands` arg-spec data; never hand-roll dispatch or usage errors.**
-   Declaring subcommands buys the whole `help` tier for free: `strand help <op>` renders your verbs,
-   `strand <op> help|-h|--help` aliases to it, and missing/unknown-verb failures become structured
-   parser errors carrying the available names. `help`, `-h`, `--help`, and the arg name `subcommand`
-   are reserved and rejected at registration. Bare `<op>` stays a loud non-zero error — never exit-0
-   help.
-2. **Ship `about` when your op has semantics beyond its argument shapes.** Return one structured JSON
-   document (purpose, conventions, attribute contracts, usage examples) from an `about` subcommand. Do
-   not duplicate arg shapes in it — that is `help`'s job and it never drifts.
-3. **Ship `prime` when your spool carries working discipline.** If an agent must load conventions
-   before acting (board lanes, handover contracts, workflow rules), expose a `prime` subcommand that
-   prints them, generated from the same definitions the spool installs so the discipline can never
-   drift from the installed surface.
+   Declaring subcommands buys the whole `help` tier for free: `strand help <op>` renders your verbs as
+   the fractal node's `children`, a trailing `strand <op> --help`/`-h` rewrites to it, and
+   missing/unknown-verb failures become structured parser errors carrying the available names. `help`,
+   `-h`, `--help`, and the arg name `subcommand` are reserved and rejected at registration. The old
+   sole-token `<op> help` alias is retired — a bare `<op> help` word now fails with a loud redirect to
+   `strand help <op>`. Bare `<op>` stays a loud non-zero error — never exit-0 help.
+2. **Author per-verb annotations on the arg-spec node, not prose blobs.** Each subcommand's spec may
+   carry a closed `use-when`/`notes`/`failure-modes` sub-map (string arrays; `failure-modes` holds
+   glossary outcome **names**). The projection folds them into that verb's node, so `help` stays the
+   single non-drifting source for anything derivable from a verb's shape.
+3. **Ship `:about` when your op has semantics beyond its argument shapes.** Author a non-blank `:about`
+   prose string in the op metadata (not an `about` subcommand); the builtin `strand about <op>`
+   meta-verb projects it in a minimal `{about, source}` envelope. Keep it cross-verb narrative
+   (purpose, conventions, attribute contracts) — never restate a node-derivable fact, that is `help`'s
+   job.
+4. **Ship `:prime` when your spool carries working discipline.** If an agent must load conventions
+   before acting (board lanes, handover contracts, workflow rules), author a non-blank `:prime` prose
+   string in the op metadata; `strand prime <op>` projects it. Generate it from the same definitions
+   the spool installs so the discipline can never drift from the installed surface.
+
+### Glossary outcomes: register from `install!`, before the ops that use them
+
+Shared failure outcomes are defined **once** in the runtime glossary and referenced by name from each
+verb's `failure-modes`. Register your outcomes with `register-glossary-outcome!` (qualified, stable
+names; a collision fails loudly — a deliberate change uses `replace-glossary-outcome!` or, better, a
+new name) **from your spool's `install!`, before you register any op that references them**. That
+ordering is a contract: the unconditional glossary-ref existence check runs at `register-op!` time, so
+an op registered before its outcomes fails loudly. `reload!` re-runs config in the same order, and a
+spool that ships its outcomes this way carries them portably wherever it is activated.
+
+### The `:about`/`:prime` metadata shape is a compatibility boundary
+
+Moving a spool from an `about`/`prime` *subcommand* to `:about`/`:prime` *op-metadata* changes the
+shape consumers see and raises the Skein API floor your spool needs. Treat it as a breaking change:
+ship it under a new release marker and, where relevant, an updated `:skein/min` floor, per
+[Versioning and release](#versioning-and-release). Until an op migrates, a declared `about`/`prime`
+subcommand still resolves via `<op> about` while `strand about <op>` returns `discovery/unavailable`
+for that op — the two surfaces are distinct, so migrate the whole op in one release rather than
+straddling both.
 
 ## CLI style
 

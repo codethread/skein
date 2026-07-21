@@ -56,10 +56,13 @@
 (declare parse-selected)
 
 (def reserved-subcommand-names
-  "Subcommand names reserved for dispatch-level help aliases.
+  "Subcommand names reserved from op declaration for the help grammar.
 
-  The single source of truth: registration/parse/explain validation here and
-  the weaver's dispatch-time help alias must agree on this set."
+  The single source of truth for the reserved set: registration/parse/explain
+  validation here blocks any op from declaring these as subcommands. The weaver
+  rewrites only the dash-prefixed flag forms (`--help`/`-h`) of a trailing token
+  to the `help` op (DELTA-Dtf-002.CC3); the bare word `help` stays reserved but
+  is the retired sugar that flows to normal parsing."
   #{"help" "-h" "--help"})
 
 (defn validate!
@@ -79,7 +82,21 @@
     (let [op (:op arg-spec)]
       (validation/validate-flags! op nil (:flags arg-spec))
       (validation/validate-positionals! op nil (:positionals arg-spec))
+      (validation/validate-annotations! op nil (:annotations arg-spec))
       arg-spec)))
+
+(defn validate-annotations!
+  "Structurally validate a standalone annotation sub-map for `op`, returning it.
+
+  The same closed-shape check `validate!` applies to an arg-spec node's
+  `:annotations` (closed `use-when`/`notes`/`failure-modes` keys, each an array of
+  non-blank strings), exposed for the raw-envelope root annotation surface an op
+  declares outside any arg-spec (DELTA-Dtf-002.MI1a). Purely structural: the
+  glossary-ref existence check for `failure-modes` names runs at registration
+  (DELTA-Dtf-003.CC2)."
+  [op annotations]
+  (validation/validate-annotations! op nil annotations)
+  annotations)
 
 (defn parse
   "Parse `argv` against `arg-spec`, resolving payload references from `payloads`.

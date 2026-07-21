@@ -32,8 +32,15 @@
   doc)
 
 (def op-metadata-keys
-  "Metadata keys a caller may supply to register-op!/replace-op!."
-  #{:doc :arg-spec :returns :stream? :deadline-class :hook-class})
+  "Metadata keys a caller may supply to register-op!/replace-op!.
+
+  `:about`/`:prime` are optional non-blank prose strings the `about`/`prime`
+  meta-verbs project (DELTA-Dtf-002.CC4). `:annotations` is the root annotation
+  sub-map for a **raw-envelope** op that declares no `:arg-spec`
+  (DELTA-Dtf-002.CC4/MI1a); an op with an `:arg-spec` carries annotations on the
+  arg-spec node instead (DELTA-Dtf-003.CC2)."
+  #{:doc :arg-spec :returns :stream? :deadline-class :hook-class
+    :about :prime :annotations})
 
 (def op-deadline-classes
   "Accepted :deadline-class values."
@@ -82,6 +89,19 @@
              (not (op-hook-classes (:hook-class opts))))
     (throw (ex-info "Operation :hook-class must be :read or :mutating"
                     {:hook-class (:hook-class opts)})))
+  (doseq [key [:about :prime]
+          :when (contains? opts key)
+          :let [value (get opts key)]]
+    (when-not (and (string? value) (not (str/blank? value)))
+      (throw (ex-info (str "Operation " key " must be a non-blank prose string")
+                      {key value}))))
+  ;; The root `:annotations` metadata is the raw-envelope root annotation surface
+  ;; (MI1a); an arg-spec op carries annotations on its arg-spec node instead
+  ;; (DELTA-Dtf-003.CC2), so declaring both would double-source the root node.
+  (when (and (contains? opts :annotations) (some? (:arg-spec opts)))
+    (throw (ex-info (str "Operation :annotations metadata is only for raw-envelope ops; "
+                         "an arg-spec op annotates its arg-spec node")
+                    {:annotations (:annotations opts)})))
   opts)
 
 (defn invalid-returns!
@@ -162,4 +182,7 @@
              :provenance (symbol (namespace fn-sym))}
       (:doc opts) (assoc :doc (:doc opts))
       (some? (:arg-spec opts)) (assoc :arg-spec (:arg-spec opts))
-      (contains? opts :returns) (assoc :returns (:returns opts)))))
+      (contains? opts :returns) (assoc :returns (:returns opts))
+      (:about opts) (assoc :about (:about opts))
+      (:prime opts) (assoc :prime (:prime opts))
+      (some? (:annotations opts)) (assoc :annotations (:annotations opts)))))

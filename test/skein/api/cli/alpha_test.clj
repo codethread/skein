@@ -394,3 +394,46 @@
                                               :parse :yaml}]}))]
       (is (= :yaml (:parse data)))
       (is (= [:json :jsonl] (:supported-parse-kinds data))))))
+
+;; ---------------------------------------------------------------------------
+;; Closed annotation sub-map structural validation (DELTA-Dtf-003.CC2)
+;; ---------------------------------------------------------------------------
+
+(deftest annotations-valid-shapes-pass
+  (testing "a flat spec's closed annotation sub-map validates"
+    (is (map? (cli/validate!
+               (assoc add-spec :annotations
+                      {:use-when ["When adding a strand"]
+                       :notes ["Idempotent on retry"]
+                       :failure-modes ["lifecycle/timeout"]})))))
+  (testing "a partial sub-map (only some keys) validates — each key is optional"
+    (is (map? (cli/validate! (assoc add-spec :annotations {:notes ["just a note"]})))))
+  (testing "annotations on a subcommand's nested spec validate"
+    (is (map? (cli/validate!
+               (assoc-in subcommand-spec [:subcommands "add" :annotations]
+                         {:failure-modes ["lifecycle/timeout"]}))))))
+
+(deftest annotations-structural-failures-are-loud
+  (testing "annotations must be a map"
+    (let [data (thrown-data #(cli/validate! (assoc add-spec :annotations [:not :a :map])))]
+      (is (= :invalid-annotations (:reason data)))
+      (is (= :annotations (:field data)))))
+  (testing "unknown annotation keys fail loudly"
+    (let [data (thrown-data #(cli/validate! (assoc add-spec :annotations {:bogus ["x"]})))]
+      (is (= :invalid-annotations (:reason data)))
+      (is (= [:bogus] (:unknown data)))
+      (is (= [:failure-modes :notes :use-when] (:allowed data)))))
+  (testing "annotation values must be arrays of non-blank strings"
+    (is (= :invalid-annotations
+           (reason #(cli/validate! (assoc add-spec :annotations {:use-when "not-an-array"})))))
+    (is (= :invalid-annotations
+           (reason #(cli/validate! (assoc add-spec :annotations {:notes [42]})))))
+    (is (= :invalid-annotations
+           (reason #(cli/validate! (assoc add-spec :annotations {:failure-modes ["  "]}))))))
+  (testing "subcommand annotation failures carry the subcommand and reason"
+    (let [data (thrown-data
+                #(cli/validate!
+                  (assoc-in subcommand-spec [:subcommands "add" :annotations]
+                            {:failure-modes [42]})))]
+      (is (= :invalid-subcommand-annotations (:reason data)))
+      (is (= "add" (:subcommand data))))))

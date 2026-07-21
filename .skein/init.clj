@@ -10,7 +10,8 @@
 ;; Gitignored init.local.clj binds each developer's notifier. Read docs/reference.md
 ;; before changing this config; smoke-test changes in a disposable world first.
 (require '[skein.api.current.alpha :as current]
-         '[skein.api.runtime.alpha :as runtime])
+         '[skein.api.runtime.alpha :as runtime]
+         '[skein.api.runtime.help-transform.alpha :as help-transform])
 
 (def runtime (current/runtime))
 
@@ -23,6 +24,17 @@
 (runtime/use! runtime :skein/spools-batteries
               {:ns 'skein.spools.batteries
                :call 'skein.spools.batteries/install!})
+;; Elect the batteries reference help transform (DELTA-Dtf-002.CC1): batteries
+;; EXPORTS it but never auto-registers from install!, so the canonical world opts
+;; in here as trusted config (config-election-only, the deliberate contrast with
+;; the glossary registry). The slot is reload-cleared and re-established when this
+;; config re-runs; `--json` always bypasses it, so a broken transform never bricks
+;; help (DELTA-Dtf-001.CC4). Batteries owns its glossary outcomes from its own
+;; install! above; this repo's config ops reference none of their own.
+(help-transform/register-default-help-transform!
+ runtime
+ {:transform skein.spools.batteries/default-help-transform
+  :owner 'skein.spools.batteries})
 (runtime/use! runtime :skein/spools-workflow
               {:ns 'skein.spools.workflow
                :spools ['skein.spools/workflow]

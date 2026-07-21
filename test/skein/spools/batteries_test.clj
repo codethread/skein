@@ -16,6 +16,7 @@
             [skein.api.patterns.alpha :as patterns]
             [skein.api.relations.alpha :as relations]
             [skein.api.runtime.alpha :as runtime]
+            [skein.api.runtime.glossary.alpha :as glossary]
             [skein.api.vocab.alpha :as vocab]
             [skein.api.weaver.alpha :as weaver]
             [skein.core.specs :as specs]
@@ -788,12 +789,13 @@
           (is (string? (get explained "summary")))))
       (testing "query help renders declared subcommands"
         (let [detail (weaver/op! rt 'help ["query"])]
-          (is (= ["explain" "list"] (mapv :name (get-in detail [:arg-spec :subcommands]))))
+          (is (= ["explain" "list"] (mapv :name (get-in detail [:node :children]))))
           (is (= [{:name "name" :type "string" :required true
                    :variadic false :parse nil :doc "Query name."}]
-                 (->> (get-in detail [:arg-spec :subcommands])
+                 (->> (get-in detail [:node :children])
                       (filter #(= "explain" (:name %)))
                       first
+                      :invocation
                       :positionals)))))
       (testing "unknown query subcommand fails in the parser with available names"
         (let [e (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unknown subcommand"
@@ -918,4 +920,102 @@
                                 (weaver/op! rt 'vocab ["--kind" "bogus"]))))
         (testing "vocab help renders the generated --kind arg-spec"
           (let [detail (weaver/op! rt 'help ["vocab"])]
-            (is (contains? (set (map :name (get-in detail [:arg-spec :flags]))) "kind"))))))))
+            (is (contains? (set (map :name (get-in detail [:node :invocation :flags]))) "kind"))))))))
+
+;; --- reference help renderer + discovery-tier adoption ----------------------
+
+(defn- synthetic-node
+  "A uniform fractal node (DELTA-Dtf-001.CC2) with empty defaults, for hand-built
+  renderer fixtures."
+  [node-name doc children]
+  {:name node-name
+   :doc doc
+   :invocation {:mode "declared" :flags [] :positionals []}
+   :returns nil
+   :use-when []
+   :notes []
+   :failure-modes []
+   :children children})
+
+(defn- head-indent
+  "The leading-space count of the first rendered line containing `needle`."
+  [lines needle]
+  (count (take-while #{\space} (some #(when (str/includes? % needle) %) lines))))
+
+(deftest reference-renderer-renders-arbitrary-depth
+  ;; DELTA-Dtf-003.CC3: arbitrary-depth children[] recursion is a schema
+  ;; INVARIANT, proven here with a hand-built node tree deeper than any live op
+  ;; (no live op nests past one level; validation rejects nested :subcommands).
+  ;; One recursive renderer, no per-level special-casing: the depth-3 leaf must
+  ;; render through the same body as the root, only more deeply indented.
+  (let [leaf (-> (synthetic-node "leaf" "deepest leaf doc" [])
+                 (assoc :invocation
+                        {:mode "declared"
+                         :flags [{:name "deep" :flag "--deep" :type "string"
+                                  :required false :repeat false :parse nil
+                                  :doc "flag at depth three"}]
+                         :positionals []}
+                        :failure-modes ["synthetic/leaf-outcome"]))
+        mid (synthetic-node "mid" "middle doc" [leaf])
+        root (synthetic-node "root" "root doc" [mid])
+        envelope {:schema-version 1
+                  :operation {:name "root" :provenance "test" :stream? false
+                              :deadline-class "standard" :hook-class "read"
+                              :raw-envelope false}
+                  :source nil
+                  :glossary {"synthetic/leaf-outcome"
+                             "an outcome only the depth-3 leaf references"}
+                  :node root}
+        rendered (batteries/default-help-transform envelope)
+        lines (str/split-lines rendered)]
+    (testing "every level renders through the one recursive body"
+      (is (str/includes? rendered "root — root doc"))
+      (is (str/includes? rendered "mid — middle doc"))
+      (is (str/includes? rendered "leaf — deepest leaf doc"))
+      (is (str/includes? rendered "--deep <string>  flag at depth three")
+          "the depth-3 leaf's own flags render, so recursion reached the deepest node")
+      (is (str/includes? rendered "- synthetic/leaf-outcome")))
+    (testing "depth drives strictly increasing indentation, no per-level branch"
+      (is (< (head-indent lines "root — root doc")
+             (head-indent lines "mid — middle doc")
+             (head-indent lines "leaf — deepest leaf doc"))))))
+
+(deftest batteries-adopts-discovery-tier-pattern
+  (with-batteries
+    (fn [rt]
+      (testing "install! registers the batteries-owned glossary outcomes"
+        (is (set/subset?
+             #{"batteries/state-invalid" "batteries/attr-key-duplicate"
+               "batteries/edge-malformed" "batteries/query-unknown"
+               "batteries/pattern-unknown" "batteries/spool-release-unresolved"
+               "batteries/weave-input-invalid"}
+             (set (map :name (glossary/glossary-outcomes rt))))))
+      (testing "a flat op's help node carries authored annotations and the closure"
+        (let [{:keys [glossary node]} (weaver/op! rt 'help ["add"])]
+          (is (= ["Minting a new unit of work with its initial attributes, state, and edges in one call."]
+                 (:use-when node)))
+          (is (= ["batteries/state-invalid" "batteries/attr-key-duplicate" "batteries/edge-malformed"]
+                 (:failure-modes node)))
+          (is (contains? glossary "batteries/state-invalid"))))
+      (testing "a subcommand op annotates the routed child; the closure narrows on slice"
+        (let [add-verb (weaver/op! rt 'help ["spool" "add"])]
+          (is (= ["batteries/spool-release-unresolved"] (:failure-modes (:node add-verb))))
+          (is (= {"batteries/spool-release-unresolved"
+                  "No annotated vN release tag resolves for the requested spool coordinate."}
+                 (:glossary add-verb)))))
+      (testing "about/prime prose projects for the ops that declare it"
+        (is (str/includes? (:about (weaver/op! rt 'about ["add"])) "create verb"))
+        (is (str/includes? (:prime (weaver/op! rt 'prime ["weave"])) "pattern list")))
+      (testing "the reference transform renders every live envelope family"
+        (doseq [argv [[] ["add"] ["spool"] ["spool" "add"] ["query"] ["weave"]]]
+          (let [text (batteries/default-help-transform (weaver/op! rt 'help argv))]
+            (is (string? text))
+            (is (not (str/blank? text)))
+            (is (str/includes? text "strand help — schema v1")))))
+      (testing "rendered detail includes authored annotations verbatim"
+        (let [text (batteries/default-help-transform (weaver/op! rt 'help ["add"]))]
+          (is (str/includes? text "use-when:"))
+          (is (str/includes? text "Minting a new unit of work"))
+          (is (str/includes? text "failure-modes:"))
+          (is (str/includes? text
+                             "batteries/state-invalid — A mutation named a lifecycle state")))))))
