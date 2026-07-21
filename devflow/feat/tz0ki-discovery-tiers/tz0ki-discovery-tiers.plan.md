@@ -280,3 +280,17 @@ Append notes here. Do not rewrite earlier notes.
   delta reconciliations (CC5 replace-is-trusted-override; CC2 non-blank strings) and one scope seam —
   **raw-envelope root `:annotations` op-metadata is now owned by Task 4 (TASK-Dtf-004.MI1a)**. No Task 2
   code change. Flag the two delta reconciliations for the final sol-med sign-off.
+
+### PLAN-Dtf-001.DN3 Task 5: --help grammar — 2026-07-21
+
+- Implemented by opus (run 7sf6u, commit `1257578`); terra-med review (8vgpa) found 3 semantic gaps the
+  original tests missed — verb-path dropped, and retired-sugar/malformed shapes returning nil instead of
+  a loud redirect. Fixed by opus (run 3gv4r, commit `4088256`), terra-med re-review PASS (wemt6).
+- Net behavior: `<op> <verb> --help`/`-h` slices to `help <op> <verb>`; bare `<op> --help` gives the op
+  node; retired bare `help`/`about`/`prime` and any non-clean `--help` shape throw a loud
+  `discovery/help-grammar` redirect BEFORE hooks/handler (incl. raw-envelope). Correct exemption: ops
+  declaring a real `about`/`prime` subcommand (roster/land/kanban) still route to it; `help` is reserved
+  so it always redirects; `help help` still projects. Go dispatcher: pre-op `--help <op>` errors; no-op
+  `--help` stays usage. Worker ran full locked suite green (767 tests, 0 fail).
+- LESSON for later slices: worker tests can pass while missing the *intended* semantics — the per-slice
+  terra-med review probing intent (not just the DW matrix) is what caught the whole-tree-dump regression.

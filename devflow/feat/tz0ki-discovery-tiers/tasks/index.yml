@@ -12,7 +12,7 @@ tasks:
   - id: 3
     description: Help glossary-closure integration
     task_file: tasks/003-help-glossary-closure.md
-    status: pending
+    status: in_progress
     blocked_by: [1, 2]
   - id: 4
     description: Meta-verbs + about/prime metadata + source pointer
@@ -22,7 +22,7 @@ tasks:
   - id: 5
     description: --help grammar (weaver rewrite + Go dispatcher)
     task_file: tasks/005-help-grammar-rewrite-dispatcher.md
-    status: in_progress
+    status: complete
     blocked_by: [1]
   - id: 6
     description: Default-transform slot + help-render integration
