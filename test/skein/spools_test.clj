@@ -2379,6 +2379,156 @@
     (catch clojure.lang.ExceptionInfo e
       (:reason (ex-data e)))))
 
+(defn- namespace-residual [rt ns-sym]
+  (some #(when (= ns-sym (:namespace %)) %)
+        (:residuals (spool-sync/loaded-namespace-status rt))))
+
+(deftest loaded-namespace-ledger-path-shrink-remains-residual
+  (with-runtime
+    (fn [rt config-dir]
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
+            ns-sym (symbol (str "demo.path-shrink-" suffix))
+            lib (symbol (str "demo/path-shrink-" suffix))
+            root (io/file config-dir "spools" (str "path-shrink-" suffix))
+            src-file (io/file root "legacy" "demo" (str "path_shrink_" suffix ".clj"))]
+        (.mkdirs (.getParentFile src-file))
+        (.mkdirs (io/file root "src"))
+        (spit src-file (str "(ns " ns-sym ")\n(defn version [] :v1)\n"))
+        (spit (io/file root "deps.edn") (pr-str {:paths ["src" "legacy"]}))
+        (write-spools! config-dir
+                       (pr-str {:spools {lib {:local/root (str "spools/path-shrink-" suffix)}}}))
+        (is (= :loaded (get-in (runtime/sync! rt) [:spools lib :status])))
+        (is (= :loaded (:status (runtime/use! rt :ledger/path-shrink
+                                              {:ns ns-sym :spools [lib]}))))
+        (let [record (last (spool-sync/namespace-load-ledger rt))]
+          (is (= {:root-lib lib
+                  :owner :ledger/path-shrink
+                  :namespace ns-sym
+                  :file (.getCanonicalPath src-file)}
+                 (select-keys record [:root-lib :owner :namespace :file])))
+          (is (re-matches #"[0-9a-f]{64}" (:sha256 record)))
+          (is (s/valid? :skein.core.weaver.spool-sync/namespace-load-ledger
+                        @(access/namespace-load-ledger rt))))
+        (spit (io/file root "deps.edn") (pr-str {:paths ["src"]}))
+        (let [ex (is (thrown? clojure.lang.ExceptionInfo (runtime/sync! rt)))
+              residual (namespace-residual rt ns-sym)]
+          (is (= :non-additive-sync-diff (:reason (ex-data ex))))
+          (is (= :path-shrunk (:reason residual)))
+          (is (= (.getCanonicalPath src-file) (get-in residual [:binding :file])))
+          (is (false? (:clean? (spool-sync/loaded-namespace-status rt))))
+          (is (= :pending (get-in (runtime/syncs rt) [:pending-generation :status]))))))))
+
+(deftest loaded-namespace-ledger-deleted-file-remains-residual
+  (with-runtime
+    (fn [rt config-dir]
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
+            ns-sym (symbol (str "demo.deleted-ledger-" suffix))
+            lib (symbol (str "demo/deleted-ledger-" suffix))
+            root (write-local-lib! config-dir (str "deleted-ledger-" suffix) ns-sym)
+            src-file (io/file root "src" "demo" (str "deleted_ledger_" suffix ".clj"))]
+        (write-spools! config-dir
+                       (pr-str {:spools {lib {:local/root (str "spools/deleted-ledger-" suffix)}}}))
+        (runtime/sync! rt)
+        (runtime/use! rt :ledger/deleted {:ns ns-sym :spools [lib]})
+        (is (.delete src-file))
+        (let [ex (is (thrown? clojure.lang.ExceptionInfo (runtime/sync! rt)))
+              residual (namespace-residual rt ns-sym)]
+          (is (= :non-additive-sync-diff (:reason (ex-data ex))))
+          (is (= :deleted-file (:reason residual)))
+          (is (= :pending (get-in (runtime/syncs rt) [:pending-generation :status])))
+          (is (= [ns-sym]
+                 (mapv :namespace (spool-sync/namespace-load-ledger rt)))))))))
+
+(deftest loaded-namespace-ledger-rename-stays-attributed-to-old-binding
+  (with-runtime
+    (fn [rt config-dir]
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
+            ns-sym (symbol (str "demo.renamed-ledger-" suffix))
+            lib (symbol (str "demo/renamed-ledger-" suffix))
+            root (write-local-lib! config-dir (str "renamed-ledger-" suffix) ns-sym)
+            old-file (io/file root "src" "demo" (str "renamed_ledger_" suffix ".clj"))
+            new-file (io/file root "src" "demo" (str "moved_ledger_" suffix ".clj"))]
+        (write-spools! config-dir
+                       (pr-str {:spools {lib {:local/root (str "spools/renamed-ledger-" suffix)}}}))
+        (runtime/sync! rt)
+        (runtime/use! rt :ledger/rename {:ns ns-sym :spools [lib]})
+        (spit new-file (slurp old-file))
+        (is (.delete old-file))
+        (is (thrown? clojure.lang.ExceptionInfo (runtime/sync! rt)))
+        (let [residual (namespace-residual rt ns-sym)]
+          (is (= :namespace-renamed (:reason residual)))
+          (is (= (.getCanonicalPath old-file) (get-in residual [:binding :file])))
+          (is (= [(.getCanonicalPath new-file)] (mapv :file (:providers residual)))))))))
+
+(deftest loaded-namespace-ledger-transfer-requires-successful-new-root-load
+  (with-runtime
+    (fn [rt config-dir]
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
+            ns-sym (symbol (str "demo.transfer-ledger-" suffix))
+            lib-a (symbol (str "demo/transfer-a-" suffix))
+            lib-b (symbol (str "demo/transfer-b-" suffix))
+            root-a (write-local-lib! config-dir (str "transfer-a-" suffix) ns-sym)
+            root-b (write-empty-lib! config-dir (str "transfer-b-" suffix))
+            file-a (io/file root-a "src" "demo" (str "transfer_ledger_" suffix ".clj"))
+            entry-a {:local/root (str "spools/transfer-a-" suffix)}
+            entry-b {:local/root (str "spools/transfer-b-" suffix)}]
+        (write-spools! config-dir (pr-str {:spools {lib-a entry-a lib-b entry-b}}))
+        (runtime/sync! rt)
+        (runtime/use! rt :ledger/transfer {:ns ns-sym :spools [lib-a]})
+        (is (.delete file-a))
+        (write-spool-ns! root-b ns-sym (str "(ns " ns-sym ")\n(defn marker [] :from-b)\n"))
+        (is (thrown? clojure.lang.ExceptionInfo (runtime/sync! rt)))
+        (is (= :transfer-pending (:reason (namespace-residual rt ns-sym))))
+        (is (= lib-a (get-in (namespace-residual rt ns-sym) [:binding :root-lib])))
+        (spool-sync/reload-synced-spool! rt lib-b)
+        (let [status (spool-sync/loaded-namespace-status rt)
+              current (get-in status [:current-bindings ns-sym])]
+          (is (= lib-b (:root-lib current)))
+          (is (= :ledger/transfer (:owner current)))
+          (is (= [lib-a] (mapv :root-lib (get-in status [:prior-bindings ns-sym]))))
+          (is (:clean? status)))
+        (let [result (runtime/sync! rt)]
+          (is (nil? (:pending-generation result)))
+          (is (nil? (:pending-generation (runtime/syncs rt)))))))))
+
+(deftest loaded-namespace-ledger-cross-root-duplicate-is-hard-conflict
+  (with-runtime
+    (fn [rt config-dir]
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
+            ns-sym (symbol (str "demo.duplicate-provider-" suffix))
+            lib-a (symbol (str "demo/duplicate-provider-a-" suffix))
+            lib-b (symbol (str "demo/duplicate-provider-b-" suffix))
+            root-b (write-empty-lib! config-dir (str "duplicate-provider-b-" suffix))]
+        (write-local-lib! config-dir (str "duplicate-provider-a-" suffix) ns-sym)
+        (write-spools! config-dir
+                       (pr-str {:spools {lib-a {:local/root (str "spools/duplicate-provider-a-" suffix)}
+                                         lib-b {:local/root (str "spools/duplicate-provider-b-" suffix)}}}))
+        (runtime/sync! rt)
+        (runtime/use! rt :ledger/duplicate {:ns ns-sym :spools [lib-a]})
+        (write-spool-ns! root-b ns-sym (str "(ns " ns-sym ")\n(defn marker [] :other)\n"))
+        (let [ex (is (thrown? clojure.lang.ExceptionInfo (runtime/sync! rt)))
+              conflict (first (:hard-conflicts (spool-sync/loaded-namespace-status rt)))]
+          (is (= :non-additive-sync-diff (:reason (ex-data ex))))
+          (is (= :duplicate-provider (:reason conflict)))
+          (is (= #{lib-a lib-b} (set (map :root-lib (:providers conflict)))))
+          (is (= :pending (get-in (runtime/syncs rt) [:pending-generation :status]))))))))
+
+(deftest loaded-namespace-status-separates-classpath-ownership
+  (with-runtime
+    (fn [rt _config-dir]
+      (require 'skein.spools.batteries)
+      (let [bindings (:classpath-bindings (spool-sync/loaded-namespace-status rt))]
+        (is (some #(= {:ownership :classpath
+                       :classpath-owner :skein-api
+                       :namespace 'skein.api.runtime.alpha}
+                      %)
+                  bindings))
+        (is (some #(= {:ownership :classpath
+                       :classpath-owner :batteries
+                       :namespace 'skein.spools.batteries}
+                      %)
+                  bindings))))))
+
 (deftest reload-synced-spool-makes-single-namespace-source-live
   (with-runtime
     (fn [rt config-dir]
@@ -2613,6 +2763,13 @@
         (spit file-a (str "(ns " ns-a ")\n(defn version [] :v2)\n"))
         (spit file-b (str "(ns " ns-b " (:require [" ns-a "]))\n(defn version [] :v2\n"))
         (is (thrown? Throwable (spool-sync/reload-synced-spool! rt lib)))
+        (let [ledger (spool-sync/namespace-load-ledger rt)
+              latest-a (last (filter #(= ns-a (:namespace %)) ledger))
+              latest-b (last (filter #(= ns-b (:namespace %)) ledger))]
+          (is (< (:order latest-b) (:order latest-a))
+              "the successful first load remains after the later source fails")
+          (is (= :v2 ((requiring-resolve (symbol (str ns-a "/version"))))))
+          (is (= :changed-bytes (:reason (namespace-residual rt ns-b)))))
         (testing "no fingerprint recorded: the half-reloaded root keeps refusing"
           (let [ex (is (thrown? clojure.lang.ExceptionInfo (runtime/sync! rt)))]
             (is (= :non-additive-sync-diff (:reason (ex-data ex))))))))))
@@ -2633,6 +2790,10 @@
         (let [result (runtime/sync! rt)]
           (is (= :loaded (get-in result [:spools lib-x :status])))
           (is (= :loaded (get-in result [:spools lib-y :status]))))
+        (is (= :loaded (:status (runtime/use! rt :ledger/failed-x
+                                              {:ns ns-x :spools [lib-x]}))))
+        (is (= :loaded (:status (runtime/use! rt :ledger/failed-y
+                                              {:ns ns-y :spools [lib-y]}))))
         ;; Record a pending generation by removing the loaded lib-y.
         (write-spools! config-dir (pr-str {:spools {lib-x entry-x}}))
         (is (thrown? clojure.lang.ExceptionInfo (runtime/sync! rt)))
@@ -2644,7 +2805,9 @@
         (spit (io/file root-x "deps.edn") "{:paths [\"src\"")
         (let [result (runtime/sync! rt)]
           (is (= :failed (get-in result [:spools lib-x :status])))
-          (is (= :pending (get-in result [:pending-generation :status]))))
+          (is (= :pending (get-in result [:pending-generation :status])))
+          (is (= :unclassified-root (:reason (namespace-residual rt ns-x))))
+          (is (false? (:complete? (spool-sync/loaded-namespace-status rt)))))
         (is (= :pending (get-in (runtime/syncs rt) [:pending-generation :status])))
         ;; Fix lib-x: a zero-failure pass classifies every loaded root and
         ;; retires the stale record.

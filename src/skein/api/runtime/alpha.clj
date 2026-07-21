@@ -181,10 +181,10 @@
   including Maven version changes for already-loaded coordinates, by throwing
   ExceptionInfo with `:reason :non-additive-sync-diff`, `:diff`,
   `:pending-generation`, and `:remedy`. The recorded pending generation stays
-  visible through `syncs` and later sync results until a call succeeds with
-  zero per-root failures — only then has every loaded root been classified, so
-  the clean pass proves no refused class remains and clears the record — or
-  the weaver process is replaced."
+  visible through `syncs` and later sync results until a call has zero per-root
+  failures and the cumulative namespace ledger classifies every latest loaded
+  binding as an exact current provider. Only that clean proof clears the record;
+  otherwise it remains until the weaver process is replaced."
   [runtime]
   (try
     (validate-sync-result!
@@ -315,7 +315,7 @@
         (let [load-result (access/with-spool-classloader
                             runtime
                             #(if-let [ns-sym (:ns opts)]
-                               (spool-sync/load-synced-namespace! runtime ns-sym)
+                               (spool-sync/load-synced-namespace! runtime ns-sym key)
                                (let [file (spool-sync/module-file runtime (:file opts))]
                                  (load-file file)
                                  {:file file})))

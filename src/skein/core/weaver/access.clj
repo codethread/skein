@@ -74,6 +74,11 @@
   [runtime]
   (:approved-spool-sync-state runtime))
 
+(defn namespace-load-ledger
+  "Return the runtime's append-only namespace-load ledger atom."
+  [runtime]
+  (:namespace-load-ledger runtime))
+
 (defn module-use-state
   "Return the runtime's module-use registry atom."
   [runtime]

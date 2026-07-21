@@ -189,10 +189,10 @@ Load approved spool roots and Maven jars into `runtime`.
   including Maven version changes for already-loaded coordinates, by throwing
   ExceptionInfo with `:reason :non-additive-sync-diff`, `:diff`,
   `:pending-generation`, and `:remedy`. The recorded pending generation stays
-  visible through `syncs` and later sync results until a call succeeds with
-  zero per-root failures — only then has every loaded root been classified, so
-  the clean pass proves no refused class remains and clears the record — or
-  the weaver process is replaced.
+  visible through `syncs` and later sync results until a call has zero per-root
+  failures and the cumulative namespace ledger classifies every latest loaded
+  binding as an exact current provider. Only that clean proof clears the record;
+  otherwise it remains until the weaver process is replaced.
 <p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L176-L194">Source</a></sub></p>
 
 ## <a name="skein.api.runtime.alpha/syncs">`syncs`</a>

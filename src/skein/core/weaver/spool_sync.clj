@@ -1170,7 +1170,9 @@
 (defn- file-url-string [path]
   (str (.toURL (.toURI (io/file path)))))
 
-(declare clojure-source? parse-source-ns source-file->ns-sym)
+(declare clojure-source? parse-source-ns source-file->ns-sym namespace-sources-in-paths
+         classify-namespace-loads phase1-namespace-observations latest-bindings
+         load-synced-target!)
 
 (def ^:private pending-generation-remedy
   "Operator-facing remedy for a non-additive spool sync diff."
@@ -1228,6 +1230,65 @@
     (.update digest bs)
     (format "%064x" (BigInteger. 1 (.digest digest)))))
 
+(def ^:private sha256-pattern #"[0-9a-f]{64}")
+
+(s/def ::order pos-int?)
+(s/def ::ownership #{:spool})
+(s/def ::root-lib symbol?)
+(s/def ::owner keyword?)
+(s/def ::namespace symbol?)
+(s/def ::file non-blank-string?)
+(s/def ::sha256 #(and (string? %) (boolean (re-matches sha256-pattern %))))
+(s/def ::namespace-load-record
+  (s/and #(exact-keys? #{:order :ownership :root-lib :owner :namespace
+                         :file :root :sha256} %)
+         #(= :spool (:ownership %))
+         #(s/valid? ::order (:order %))
+         #(s/valid? ::root-lib (:root-lib %))
+         #(or (nil? (:owner %)) (s/valid? ::owner (:owner %)))
+         #(s/valid? ::namespace (:namespace %))
+         #(s/valid? ::file (:file %))
+         #(s/valid? ::root (:root %))
+         #(s/valid? ::sha256 (:sha256 %))))
+(s/def ::records (s/coll-of ::namespace-load-record :kind vector?))
+(s/def ::last-order nat-int?)
+(s/def ::namespace-load-ledger
+  (s/and #(exact-keys? #{:last-order :records} %)
+         #(s/valid? ::last-order (:last-order %))
+         #(s/valid? ::records (:records %))
+         #(= (:last-order %) (count (:records %)))
+         #(= (range 1 (inc (:last-order %))) (map :order (:records %)))))
+
+(defn- record-namespace-load!
+  "Append one successful spool namespace load to this generation's ledger."
+  [runtime {:keys [root-lib owner namespace file root sha256]}]
+  (let [recorded (volatile! nil)]
+    (swap! (:namespace-load-ledger runtime)
+           (fn [{:keys [last-order records]}]
+             (let [record {:order (inc last-order)
+                           :ownership :spool
+                           :root-lib root-lib
+                           :owner owner
+                           :namespace namespace
+                           :file (.getCanonicalPath (io/file file))
+                           :root (.getCanonicalPath (io/file root))
+                           :sha256 sha256}
+                   next-state {:last-order (:order record)
+                               :records (conj records record)}]
+               (require-spec! ::namespace-load-ledger next-state
+                              "Namespace load ledger has an invalid shape" {})
+               (vreset! recorded record)
+               next-state)))
+    @recorded))
+
+(defn namespace-load-ledger
+  "Return this runtime generation's append-only spool namespace load records."
+  [runtime]
+  (let [state @(:namespace-load-ledger runtime)]
+    (require-spec! ::namespace-load-ledger state
+                   "Namespace load ledger has an invalid shape" {})
+    (:records state)))
+
 (defn- load-source-bytes!
   "Load one source file from bytes read exactly once; return their sha256.
 
@@ -1250,18 +1311,13 @@
        sort
        vec))
 
-(defn- root-namespace-set [source-paths]
-  (set (keep (fn [^java.io.File file]
-               (:ns (parse-source-ns {:file (.getCanonicalPath file)})))
-             (for [^java.io.File dir source-paths
-                   ^java.io.File file (file-seq dir)
-                   :when (clojure-source? file)]
-               file))))
-
-(defn- non-additive-diff [previous previous-fingerprints previous-maven approved survivors resolved-maven]
+(defn- non-additive-diff
+  [previous previous-fingerprints previous-maven approved survivors resolved-maven namespace-status]
   (let [previous-loaded (into {} (filter successful-sync?) previous)
         approved-libs (set (keys (:spools approved)))
         current-by-lib (into {} (map (juxt :lib identity)) survivors)
+        loaded-by-root (group-by :root-lib
+                                 (vals (latest-bindings (:ledger namespace-status))))
         removals (vec (for [[lib result] previous-loaded
                             :when (not (contains? approved-libs lib))]
                         (select-keys result [:lib :kind :root :source])))
@@ -1276,23 +1332,28 @@
                                        fingerprint (when survivor (root-fingerprint (:source-paths survivor)))]
                                  :when (and survivor
                                             (= (:root result) (get-in survivor [:entry :root]))
-                                            (some find-ns (root-namespace-set (:source-paths survivor)))
+                                            (seq (get loaded-by-root lib))
                                             (or (nil? (get previous-fingerprints lib))
                                                 (not= (get previous-fingerprints lib) fingerprint)))]
                              {:lib lib
                               :root (:root result)
-                              :loaded-namespaces (filterv find-ns (root-namespace-set (:source-paths survivor)))}))
+                              :loaded-namespaces (mapv :namespace (get loaded-by-root lib))}))
         version-bumps (vec (for [[coord previous-version] previous-maven
                                  :let [new-version (get resolved-maven coord)]
                                  :when (and new-version (not= previous-version new-version))]
                              {:coordinate coord
                               :previous-version previous-version
-                              :new-version new-version}))]
+                              :new-version new-version}))
+        residuals (filterv #(not= :unclassified-root (:reason %))
+                           (:residuals namespace-status))
+        hard-conflicts (:hard-conflicts namespace-status)]
     (cond-> {}
       (seq removals) (assoc :removed-roots removals)
       (seq changed-roots) (assoc :changed-roots changed-roots)
       (seq redefinitions) (assoc :redefinitions redefinitions)
-      (seq version-bumps) (assoc :maven-version-bumps version-bumps))))
+      (seq version-bumps) (assoc :maven-version-bumps version-bumps)
+      (seq residuals) (assoc :namespace-residuals residuals)
+      (seq hard-conflicts) (assoc :hard-conflicts hard-conflicts))))
 
 (defn- stale-spool-state-report [runtime]
   (let [current (:generation-id runtime)]
@@ -1354,13 +1415,17 @@
                          lib entry (get materializations (::family (meta entry)))))
                       (:spools approved))
          survivors (into [] (keep :survivor) phase1)
-         structural-diff (non-additive-diff previous previous-fingerprints {} approved survivors {})]
+         namespace-status (classify-namespace-loads
+                           runtime approved (phase1-namespace-observations phase1))
+         structural-diff (non-additive-diff previous previous-fingerprints {} approved survivors {}
+                                            namespace-status)]
      (when (seq structural-diff)
        (fail-non-additive-diff! runtime structural-diff approved))
      (let [universe (merge-maven-universe survivors (:mvn-overrides approved))
            added (resolve-spool-maven-libs universe)
            resolved-maven (into {} (map (fn [[lib coord]] [lib (resolved-maven-version lib coord)])) added)
-           diff (non-additive-diff previous previous-fingerprints previous-maven approved survivors resolved-maven)]
+           diff (non-additive-diff previous previous-fingerprints previous-maven approved survivors resolved-maven
+                                   namespace-status)]
        (when (seq diff)
          (fail-non-additive-diff! runtime diff approved)))
      nil)))
@@ -1398,14 +1463,18 @@
                         (:spools approved))
            failed (into {} (keep :failed) phase1)
            survivors (into [] (keep :survivor) phase1)
-           structural-diff (non-additive-diff previous previous-fingerprints {} approved survivors {})
+           namespace-status (classify-namespace-loads
+                             runtime approved (phase1-namespace-observations phase1))
+           structural-diff (non-additive-diff previous previous-fingerprints {} approved survivors {}
+                                              namespace-status)
            _ (when (seq structural-diff)
                (reset! (approved-spool-sync-state runtime) public-previous)
                (fail-non-additive-diff! runtime structural-diff approved))
            universe (merge-maven-universe survivors (:mvn-overrides approved))
            added (resolve-spool-maven-libs universe)
            resolved-maven (into {} (map (fn [[lib coord]] [lib (resolved-maven-version lib coord)])) added)
-           diff (non-additive-diff previous previous-fingerprints previous-maven approved survivors resolved-maven)
+           diff (non-additive-diff previous previous-fingerprints previous-maven approved survivors resolved-maven
+                                   namespace-status)
            _ (when (seq diff)
                (reset! (approved-spool-sync-state runtime) public-previous)
                (fail-non-additive-diff! runtime diff approved))
@@ -1428,13 +1497,11 @@
                       (into (sorted-map) (filter successful-sync?) results)))
        (reset! (:approved-spool-generation-fingerprints runtime) (merge previous-fingerprints fingerprints))
        (reset! (:approved-spool-generation-maven runtime) (merge previous-maven resolved-maven))
-       ;; A sync with zero per-root failures classified every previously loaded
-       ;; root as a survivor, so a clean pass proves no refused class remains on
-       ;; disk and any recorded pending generation is stale (C44d). A sync that
-       ;; succeeded around per-root :failed roots proves nothing about them — a
-       ;; broken root can temporarily hide a repoint, redefinition, or Maven
-       ;; bump — so the record stands.
-       (when (empty? failed)
+       ;; A clean ledger classification, not merely zero per-root failures,
+       ;; proves that every latest loaded namespace still has one exact current
+       ;; provider. Failed/unclassified roots and residual bindings therefore
+       ;; preserve an earlier pending generation (DELTA-OlrDrt-001.CC13/D3).
+       (when (and (empty? failed) (:clean? namespace-status))
          (reset! (:pending-spool-generation runtime) nil))
        (let [result (cond-> {:spools results}
                       (seq (:pending-validations approved))
@@ -1482,41 +1549,58 @@
        ".clj"))
 
 (defn- synced-root-paths [runtime]
-  (mapcat (fn [[_ {:keys [root status]}]]
+  (mapcat (fn [[root-lib {:keys [root status]}]]
             (when (#{:loaded :already-available} status)
-              (root-paths root)))
+              (map (fn [source-path] {:root-lib root-lib
+                                      :root root
+                                      :source-path source-path})
+                   (root-paths root))))
           @(approved-spool-sync-state runtime)))
 
 (defn- locate-synced-namespace-file [runtime ns-sym]
   (let [relative (ns-relative-path ns-sym)
         roots (vec (synced-root-paths runtime))
-        file (some (fn [root]
-                     (let [candidate (io/file root relative)]
-                       (when (.isFile candidate)
-                         (.getCanonicalPath candidate))))
-                   roots)]
-    {:file file
-     :relative-path relative
-     :searched-roots (mapv #(.getCanonicalPath ^java.io.File %) roots)}))
+        providers (vec (keep (fn [{:keys [source-path] :as source}]
+                               (let [candidate (io/file source-path relative)]
+                                 (when (.isFile candidate)
+                                   (assoc source :file (.getCanonicalPath candidate)))))
+                             roots))]
+    (when (< 1 (count providers))
+      (throw (ex-info "Synced namespace has multiple approved source providers"
+                      {:status :failed
+                       :reason :duplicate-provider
+                       :namespace ns-sym
+                       :providers (mapv #(select-keys % [:root-lib :root :file]) providers)})))
+    (merge {:relative-path relative
+            :searched-roots (mapv #(.getCanonicalPath ^java.io.File (:source-path %)) roots)}
+           (first providers))))
+
+(defn- latest-namespace-load [runtime ns-sym]
+  (->> (namespace-load-ledger runtime)
+       (filter #(= ns-sym (:namespace %)))
+       (sort-by :order)
+       last))
 
 (defn load-synced-namespace!
   "Load `ns-sym` from `runtime`'s synced spool roots.
 
-  An already-loaded namespace is a no-op. Otherwise the source is located under
-  the synced approved roots and `load-file`d; a namespace whose source is in no
-  root fails loudly with the roots that were searched."
-  [runtime ns-sym]
-  (if (find-ns ns-sym)
-    {:ns ns-sym}
-    (let [{:keys [file relative-path searched-roots]} (locate-synced-namespace-file runtime ns-sym)]
-      (if file
-        (do
-          (load-file file)
-          {:ns ns-sym :file file})
-        (throw (ex-info "Could not locate namespace source in synced spool roots"
-                        {:ns ns-sym
-                         :relative-path relative-path
-                         :searched-roots searched-roots}))))))
+  An already-loaded namespace with the same attributed root, file, and bytes is
+  a no-op. Otherwise the source is loaded from its single synced approved
+  provider and appended to the generation ledger; a namespace whose source is
+  missing or ambiguous fails loudly. The optional owner is the stable runtime
+  module key responsible for this explicit load."
+  ([runtime ns-sym]
+   (load-synced-namespace! runtime ns-sym nil))
+  ([runtime ns-sym owner]
+   (let [{:keys [root-lib root file relative-path searched-roots]}
+         (locate-synced-namespace-file runtime ns-sym)]
+     (if file
+       (load-synced-target! runtime {:root-lib root-lib :root root :file file}
+                            ns-sym owner)
+       (throw (ex-info "Could not locate namespace source in synced spool roots"
+                       {:ns ns-sym
+                        :relative-path relative-path
+                        :searched-roots searched-roots}))))))
 
 (defn- clojure-source? [^java.io.File file]
   (let [n (.getName file)]
@@ -1548,8 +1632,13 @@
   "Discover `{:ns sym :file path}` for every `.clj`/`.cljc` under `root`'s consented
   `root-paths` classpath dirs. The reload file set is exactly that classpath, no wider."
   [root]
+  (namespace-sources-in-paths (root-paths root)))
+
+(defn- namespace-sources-in-paths
+  "Discover namespace source candidates beneath vetted classpath `dirs`."
+  [dirs]
   (vec
-   (for [^java.io.File dir (root-paths root)
+   (for [^java.io.File dir dirs
          ^java.io.File file (file-seq dir)
          :when (clojure-source? file)]
      {:ns (source-file->ns-sym dir file)
@@ -1637,6 +1726,279 @@
         remaining (remove (set sorted) (map :ns parsed))]
     (mapv by-ns (concat sorted remaining))))
 
+(defn- intra-root-closure [by-ns target]
+  (loop [pending [target]
+         closure #{}]
+    (if-let [ns-sym (peek pending)]
+      (if (contains? closure ns-sym)
+        (recur (pop pending) closure)
+        (let [deps (filter by-ns (:deps (get by-ns ns-sym)))]
+          (recur (into (pop pending) deps) (conj closure ns-sym))))
+      closure)))
+
+(defn- load-one-synced-source! [runtime root-lib root owner {ns-sym :ns file :file}]
+  (let [latest (latest-namespace-load runtime ns-sym)
+        disk-sha (sha256-file (io/file file))]
+    (when-not (and (find-ns ns-sym)
+                   (or (nil? latest)
+                       (= [root-lib file disk-sha]
+                          [(:root-lib latest) (:file latest) (:sha256 latest)])))
+      (let [loaded-sha (load-source-bytes! file)]
+        (record-namespace-load! runtime {:root-lib root-lib
+                                         :owner owner
+                                         :namespace ns-sym
+                                         :file file
+                                         :root root
+                                         :sha256 loaded-sha})
+        true))))
+
+(defn- load-synced-target!
+  "Load one target and its intra-root dependencies from exact source bytes."
+  [runtime {:keys [root-lib root file]} target owner]
+  (let [ordered (dependency-ordered-sources root-lib (spool-namespace-sources root))
+        by-ns (into {} (map (juxt :ns identity)) ordered)
+        target-source (get by-ns target)]
+    (when-not (= file (:file target-source))
+      (throw (ex-info "Synced namespace source declares a different namespace"
+                      {:status :failed
+                       :reason :namespace-mismatch
+                       :namespace target
+                       :declared-namespace (:ns (parse-source-ns {:ns target :file file}))
+                       :file file})))
+    (let [closure (intra-root-closure by-ns target)
+          loaded (with-spool-classloader
+                   runtime
+                   #(into #{}
+                          (keep (fn [source]
+                                  (when (and (contains? closure (:ns source))
+                                             (load-one-synced-source!
+                                              runtime root-lib root owner source))
+                                    (:ns source))))
+                          ordered))]
+      (cond-> {:ns target}
+        (contains? loaded target) (assoc :file file)))))
+
+(s/def ::provider
+  (s/and #(exact-keys? #{:root-lib :root :namespace :file :sha256} %)
+         #(s/valid? ::root-lib (:root-lib %))
+         #(s/valid? ::root (:root %))
+         #(s/valid? ::namespace (:namespace %))
+         #(s/valid? ::file (:file %))
+         #(s/valid? ::sha256 (:sha256 %))))
+(s/def ::providers (s/coll-of ::provider :kind vector?))
+(s/def ::residual map?)
+(s/def ::residuals (s/coll-of ::residual :kind vector?))
+(s/def ::hard-conflict map?)
+(s/def ::hard-conflicts (s/coll-of ::hard-conflict :kind vector?))
+(s/def ::namespace-load-status
+  (s/and #(exact-keys? #{:ledger :current-bindings :prior-bindings
+                         :classpath-bindings :provisions :residuals
+                         :hard-conflicts :complete? :clean?} %)
+         #(s/valid? ::records (:ledger %))
+         #(map? (:current-bindings %))
+         #(map? (:prior-bindings %))
+         #(vector? (:classpath-bindings %))
+         #(map? (:provisions %))
+         #(every? (fn [[_ providers]] (s/valid? ::providers providers))
+                  (:provisions %))
+         #(s/valid? ::residuals (:residuals %))
+         #(s/valid? ::hard-conflicts (:hard-conflicts %))
+         #(boolean? (:complete? %))
+         #(boolean? (:clean? %))
+         #(= (:clean? %)
+             (and (:complete? %)
+                  (empty? (:residuals %))
+                  (empty? (:hard-conflicts %))))))
+
+(defn- classpath-owner [ns-sym]
+  (let [ns-name (str ns-sym)]
+    (cond
+      (str/starts-with? ns-name "skein.api.") :skein-api
+      (= ns-sym 'skein.spools.batteries) :batteries
+      :else nil)))
+
+(defn- classpath-bindings []
+  (->> (all-ns)
+       (keep (fn [ns-obj]
+               (let [ns-sym (ns-name ns-obj)]
+                 (when-let [owner (classpath-owner ns-sym)]
+                   {:ownership :classpath
+                    :classpath-owner owner
+                    :namespace ns-sym}))))
+       (sort-by (comp str :namespace))
+       vec))
+
+(defn- latest-bindings [records]
+  (into (sorted-map)
+        (map (fn [[ns-sym loads]] [ns-sym (apply max-key :order loads)]))
+        (group-by :namespace records)))
+
+(defn- prior-bindings [records latest]
+  (into (sorted-map)
+        (keep (fn [[ns-sym loads]]
+                (let [current-order (:order (get latest ns-sym))
+                      prior (filterv #(< (:order %) current-order) loads)]
+                  (when (seq prior) [ns-sym prior]))))
+        (group-by :namespace records)))
+
+(defn- sources->providers [root-lib root source-paths]
+  (->> (namespace-sources-in-paths source-paths)
+       (map parse-source-ns)
+       (map (fn [{ns-sym :ns file :file}]
+              {:root-lib root-lib
+               :root (.getCanonicalPath (io/file root))
+               :namespace ns-sym
+               :file file
+               :sha256 (sha256-file (io/file file))}))
+       distinct
+       vec))
+
+(defn- classified-observation [root-lib root source-paths]
+  (try
+    {:root-lib root-lib
+     :status :classified
+     :providers (sources->providers root-lib root source-paths)}
+    (catch Throwable t
+      {:root-lib root-lib
+       :status :unclassified
+       :reason (or (:reason (ex-data t)) :source-discovery-failed)
+       :message (ex-message t)})))
+
+(defn- current-namespace-observations [runtime approved]
+  (let [syncs (merge @(:approved-spool-generation-state runtime)
+                     @(approved-spool-sync-state runtime))]
+    (mapv (fn [[root-lib entry]]
+            (let [sync-entry (get syncs root-lib)]
+              (if (= :failed (:status sync-entry))
+                {:root-lib root-lib
+                 :status :unclassified
+                 :reason (:reason sync-entry)
+                 :message (:message sync-entry)}
+                (try
+                  (classified-observation root-lib (:root entry) (root-paths (:root entry)))
+                  (catch Throwable t
+                    {:root-lib root-lib
+                     :status :unclassified
+                     :reason (or (:reason (ex-data t)) :source-discovery-failed)
+                     :message (ex-message t)})))))
+          (:spools approved))))
+
+(defn- phase1-namespace-observations
+  "Return source-classification observations from one sync phase-1 result."
+  [phase1]
+  (mapv (fn [{:keys [failed survivor]}]
+          (if failed
+            (let [[root-lib result] failed]
+              {:root-lib root-lib
+               :status :unclassified
+               :reason (:reason result)
+               :message (:message result)})
+            (classified-observation (:lib survivor)
+                                    (get-in survivor [:entry :root])
+                                    (:source-paths survivor))))
+        phase1))
+
+(defn- residual-reason [load-record same-root providers approved-libs]
+  (cond
+    (not (contains? approved-libs (:root-lib load-record))) :root-unapproved
+    (seq same-root)
+    (if (not= (:root load-record) (:root (first same-root)))
+      :root-repointed
+      :namespace-renamed)
+    (seq providers) :transfer-pending
+    (.isFile (io/file (:file load-record))) :path-shrunk
+    :else :deleted-file))
+
+(defn classify-namespace-loads
+  "Classify cumulative load evidence against current approved source observations.
+
+  Only the latest successful load for a namespace is its current binding.
+  Earlier records remain visible as prior retained-code evidence and never drive
+  current-source attribution. Unclassified roots are residual, incomplete
+  observations; they can never prove a pending generation clean."
+  [runtime approved observations]
+  (let [records (namespace-load-ledger runtime)
+        latest (latest-bindings records)
+        prior (prior-bindings records latest)
+        unclassified (into {} (keep (fn [{:keys [root-lib status] :as observation}]
+                                      (when (= :unclassified status)
+                                        [root-lib observation])))
+                           observations)
+        provisions (->> observations
+                        (filter #(= :classified (:status %)))
+                        (mapcat :providers)
+                        (group-by :namespace)
+                        (into (sorted-map)
+                              (map (fn [[ns-sym providers]]
+                                     [ns-sym (vec (sort-by (juxt (comp str :root-lib) :file)
+                                                           providers))]))))
+        hard-conflicts (->> provisions
+                            (keep (fn [[ns-sym providers]]
+                                    (when (< 1 (count (set (map :root-lib providers))))
+                                      {:reason :duplicate-provider
+                                       :namespace ns-sym
+                                       :providers providers})))
+                            vec)
+        conflicted (set (map :namespace hard-conflicts))
+        approved-libs (set (keys (:spools approved)))
+        classification
+        (reduce-kv
+         (fn [result ns-sym load-record]
+           (let [providers (get provisions ns-sym [])
+                 same-root (filterv #(= (:root-lib load-record) (:root-lib %)) providers)
+                 exact (some #(when (= (:file load-record) (:file %)) %) same-root)
+                 failed-root (get unclassified (:root-lib load-record))]
+             (cond
+               (contains? conflicted ns-sym)
+               result
+
+               failed-root
+               (-> result
+                   (update :residuals conj {:reason :unclassified-root
+                                            :namespace ns-sym
+                                            :binding load-record
+                                            :root-failure (dissoc failed-root :providers)})
+                   (assoc :incomplete? true))
+
+               (and exact (= (:sha256 load-record) (:sha256 exact)))
+               (assoc-in result [:current ns-sym] load-record)
+
+               exact
+               (update result :residuals conj {:reason :changed-bytes
+                                               :namespace ns-sym
+                                               :binding load-record
+                                               :providers [exact]})
+
+               :else
+               (update result :residuals conj
+                       {:reason (residual-reason load-record same-root providers approved-libs)
+                        :namespace ns-sym
+                        :binding load-record
+                        :providers providers}))))
+         {:current (sorted-map) :residuals [] :incomplete? false}
+         latest)
+        result {:ledger records
+                :current-bindings (:current classification)
+                :prior-bindings prior
+                :classpath-bindings (classpath-bindings)
+                :provisions provisions
+                :residuals (:residuals classification)
+                :hard-conflicts hard-conflicts
+                :complete? (not (:incomplete? classification))
+                :clean? (and (not (:incomplete? classification))
+                             (empty? (:residuals classification))
+                             (empty? hard-conflicts))}]
+    (require-spec! ::namespace-load-status result
+                   "Namespace load status has an invalid shape" {})
+    result))
+
+(defn loaded-namespace-status
+  "Return current source classification over this generation's load ledger."
+  [runtime]
+  (let [approved (approved-spools runtime)]
+    (classify-namespace-loads runtime approved
+                              (current-namespace-observations runtime approved))))
+
 (defn reload-synced-spool!
   "Make `root-lib`'s latest synced source live under the spool classloader.
 
@@ -1671,9 +2033,10 @@
   redefinition and later `sync!`/`reload!` calls pass. Loaded-namespace entries
   hash the exact bytes compiled (`load-source-bytes!`), so a file racing the
   reload can only make the baseline conservative — a later sync refuses, never
-  silently accepts code that differs from what loaded. A load failure records
-  nothing: a half-reloaded root genuinely diverges from disk, and the
-  outstanding refusal is the truthful signal.
+  silently accepts code that differs from what loaded. Each successful namespace
+  load appends its own record immediately. If a later namespace fails, those
+  earlier records remain truthful partial-load evidence, while the all-root
+  fingerprint stays unchanged so the outstanding refusal is preserved.
 
   Returns a data-first map naming the root lib, its resolved canonical root, and
   the namespaces reloaded with their source files."
@@ -1727,10 +2090,20 @@
               ;; failure leaves the baseline (and the refusal) in place.
               loaded-hashes (with-spool-classloader
                               runtime
-                              (fn [] (into {}
-                                           (map (fn [{:keys [file]}]
-                                                  [file (load-source-bytes! file)]))
-                                           ordered)))
+                              (fn []
+                                (into {}
+                                      (map (fn [{ns-sym :ns file :file}]
+                                             (let [loaded-sha (load-source-bytes! file)
+                                                   owner (:owner (latest-namespace-load runtime ns-sym))]
+                                               (record-namespace-load! runtime
+                                                                       {:root-lib root-lib
+                                                                        :owner owner
+                                                                        :namespace ns-sym
+                                                                        :file file
+                                                                        :root canonical-root
+                                                                        :sha256 loaded-sha})
+                                               [file loaded-sha])))
+                                      ordered)))
               fingerprint (vec (sort (map vec (concat disk-hashes loaded-hashes))))]
           (swap! (:approved-spool-generation-fingerprints runtime) assoc root-lib fingerprint)
           {:root-lib root-lib

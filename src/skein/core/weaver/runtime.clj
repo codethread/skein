@@ -588,6 +588,9 @@
                         :approved-spool-generation-fingerprints (atom {})
                         :approved-spool-generation-maven (atom {})
                         :pending-spool-generation (atom nil)
+                        ;; Append-only for this process generation. Config reload
+                        ;; deliberately leaves loaded-code evidence intact.
+                        :namespace-load-ledger (atom {:last-order 0 :records []})
                         :module-use-state (atom {})
                         :spool-state (atom {})
                         :spool-classloader (clojure.lang.DynamicClassLoader.

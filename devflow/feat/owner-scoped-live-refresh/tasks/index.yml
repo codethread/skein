@@ -12,7 +12,7 @@ tasks:
   - id: 3
     description: Add loaded namespace ledger and resolve uxc5f
     task_file: tasks/003-loaded-namespace-ledger.md
-    status: pending
+    status: complete
     blocked_by: [25]
   - id: 4
     description: Build module graph and live refresh coordinator
