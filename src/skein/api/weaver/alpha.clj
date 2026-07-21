@@ -610,7 +610,7 @@
       (op-entry/validate-op-doc! (:doc opts)))
     (when (some? (:arg-spec opts))
       (validate-op-arg-spec! op-name (:arg-spec opts)))
-    (when (some? (:annotations opts))
+    (when (contains? opts :annotations)
       (validate-op-annotations! op-name (:annotations opts)))
     (when (contains? opts :returns)
       (validate-op-returns! op-name (:arg-spec opts) stream? (:returns opts)))
@@ -623,8 +623,17 @@
   The reach into `skein.api.cli.alpha` happens here for the same reason
   `validate-op-arg-spec!` does: an internal namespace never requires an alpha one
   (SPEC-003.C19a). The glossary-ref existence check for its `failure-modes` names
-  runs separately in `check-op-glossary-refs!`."
+  runs separately in `check-op-glossary-refs!`.
+
+  A SUPPLIED `:annotations` value must be a map (MI1a): the CLI validator treats
+  a nil sub-map as \"absent\" (optional on an arg-spec node), so an explicit nil or
+  any non-map at the op-metadata root is an author error rejected here."
   [op-name annotations]
+  (when-not (map? annotations)
+    (throw (ex-info "Operation :annotations metadata is invalid"
+                    {:operation (op-entry/canonical-op-name op-name)
+                     :reason :invalid-annotations
+                     :annotations annotations})))
   (try
     (cli/validate-annotations! (op-entry/canonical-op-name op-name) annotations)
     (catch clojure.lang.ExceptionInfo e

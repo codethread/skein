@@ -1925,6 +1925,13 @@
                               (weaver/register-op! rt 'bad-annotated
                                                    {:annotations {:bogus ["x"]}}
                                                    'skein.weaver-test/test-op))))
+      (testing "a SUPPLIED :annotations value must be a map — explicit nil or non-map fails loudly (MI1a)"
+        (doseq [bad [nil 42 ["use-when"]]]
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                                #":annotations metadata is invalid"
+                                (weaver/register-op! rt 'nil-annotated
+                                                     {:annotations bad}
+                                                     'skein.weaver-test/test-op)))))
       (testing "root :annotations and an arg-spec cannot coexist (single root-annotation source)"
         (is (thrown-with-msg? clojure.lang.ExceptionInfo
                               #"only for raw-envelope ops"
