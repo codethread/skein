@@ -519,7 +519,7 @@
                [[:and [:= [:attr :owner] "agent"] [:= [:attr :kind] "impl"]] ["Agent"]]]]
         (is (= titles (sort (mapv :title (db/all-strands ds query)))) (pr-str query))))))
 
-(deftest row-backed-attr-query-plans-use-shape-appropriate-indexes
+(deftest row-backed-attr-query-plans-use-correlated-exists-probes
   (with-db
     (fn [ds]
       (db/add-strand! ds {:title "Agent" :attributes {:owner "agent"}})
@@ -529,9 +529,9 @@
             eq-plan (db/execute! ds (into [(str "EXPLAIN QUERY PLAN SELECT t.id FROM strands t WHERE " eq-sql)] eq-params))
             {exists-sql :sql exists-params :params} (query/compile-query [:exists [:attr :owner]] {})
             exists-plan (db/execute! ds (into [(str "EXPLAIN QUERY PLAN SELECT t.id FROM strands t WHERE " exists-sql)] exists-params))]
-        (is (= "t.id IN (SELECT a.strand_id FROM attributes AS a WHERE a.archived = 0 AND a.key = ? AND json_extract(a.value, ?) = ?)" eq-sql))
+        (is (= "EXISTS (SELECT 1 FROM attributes AS a WHERE a.strand_id = t.id AND a.archived = 0 AND a.key = ? AND json_extract(a.value, ?) = ?)" eq-sql))
         (is (= ["owner" "$" "agent"] eq-params))
-        (is (some #(str/includes? (:detail %) "idx_attributes_key_value_hot") eq-plan))
+        (is (some #(str/includes? (:detail %) "sqlite_autoindex_attributes_1") eq-plan))
         (is (= "EXISTS (SELECT 1 FROM attributes AS a WHERE a.strand_id = t.id AND a.archived = 0 AND a.key = ? AND json_extract(a.value, ?) IS NOT NULL)" exists-sql))
         (is (= ["owner" "$"] exists-params))
         (is (some #(str/includes? (:detail %) "sqlite_autoindex_attributes_1") exists-plan))))))
