@@ -13,8 +13,8 @@
   in nvd_scan.clj, and reviewer rosters in reviewers.clj."
   (:require [clojure.data.json :as json]
             [clojure.string :as str]
-            [skein.macros.ops :refer [defop forget-ops! install-ops!]]
-            [skein.macros.queries :refer [defquery forget-queries! install-queries! remembered-queries]]
+            [skein.macros.ops :refer [defop]]
+            [skein.macros.queries :refer [defquery]]
             [ct.spools.devflow :as devflow]
             [ct.spools.agent-run :as shuttle]
             [skein.spools.workflow :as workflow]
@@ -23,13 +23,6 @@
             [skein.api.graph.alpha :as graph]
             [skein.api.spool.alpha :refer [attr-get entity-projection]]
             [skein.api.weaver.alpha :as weaver]))
-
-;; Reload correctness: clear this namespace's remembered ops/queries before the
-;; def forms below re-register them, so a targeted reload (load-file + reload!)
-;; installs exactly what this file's current source defines rather than also
-;; re-registering ops/queries since renamed or removed (TEN-003).
-(forget-queries! 'config)
-(forget-ops! 'config)
 
 (def ^:private stamped-op-return
   {:type :map :required {:operation :string} :extra :json})
@@ -570,12 +563,15 @@
                :purpose "Create a feature strand plus task/review children for agent work; shipped by ct.spools.delegation."}
               {:name "delegate-pipeline"
                :purpose "Sequential chain-loop workflow of subagent gates with optional acceptance checkpoint. Registered by .skein/workflows.clj."}]
-   :queries (into [{:name "kanban-cards"
-                    :usage "strand list --query kanban-cards"}
-                   {:name "kanban-pending"
-                    :usage "strand ready --query kanban-pending"}]
-                  (map #(update % :name str))
-                  (remembered-queries 'config))})
+   :queries [{:name "kanban-cards" :usage "strand list --query kanban-cards"}
+             {:name "kanban-pending" :usage "strand ready --query kanban-pending"}
+             {:name "feature-active" :usage "strand list --query feature-active --param feature=<feature>"}
+             {:name "feature-work" :usage "strand ready --query feature-work --param feature=<feature>"}
+             {:name "feature-owner-work" :usage "strand ready --query feature-owner-work --param feature=<feature> --param owner=<owner>"}
+             {:name "feature-run" :usage "strand list --query feature-run --param feature=<feature>"}
+             {:name "workflow-runs" :usage "strand list --query workflow-runs"}
+             {:name "devflow-runs" :usage "strand list --query devflow-runs"}
+             {:name "work" :usage "strand ready --query work"}]})
 
 (defop flow-await
   "Block until a workflow run is done or needs coordinator attention.
@@ -683,15 +679,3 @@
          :parent parent-id
          :run (shuttle/run-summary run)
          :next "strand agent ps shows the attach command once the session is live; the session ends when the tracking strand closes."}))))
-
-;; ---------------------------------------------------------------------------
-;; install!
-;; ---------------------------------------------------------------------------
-
-(defn install!
-  "Install the repo-local named queries and CLI op surface."
-  []
-  {:installed true
-   :namespace 'config
-   :queries (install-queries! 'config)
-   :ops (install-ops! 'config)})

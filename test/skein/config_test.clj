@@ -17,6 +17,8 @@
             [skein.api.patterns.alpha :as patterns]
             [skein.api.weaver.alpha :as weaver]
             [skein.core.weaver.config :as weaver-config]
+            [skein.core.weaver.module-graph :as module-graph]
+            [skein.core.weaver.module-publication :as publication]
             [skein.core.weaver.runtime :as weaver-runtime]
             [skein.spools.test-support :as test-support]))
 
@@ -50,6 +52,20 @@
       (runtime/sync! rt)
       (f))))
 
+(defn- load-module-source!
+  "Load one workspace authoring file and publish its complete contribution."
+  [rt module-key file]
+  (let [path (.getCanonicalPath (io/file file))
+        ns-sym (symbol (str/replace (str/replace file #"^\.skein/" "") #"\.clj$" ""))
+        contribution (:contribution
+                      (module-graph/with-contribution-collection
+                        {:module/key module-key :source/file path :source/namespace ns-sym}
+                        #(load-file file)))
+        backends (publication/backends rt)
+        candidates (publication/stage-owner backends (publication/candidates backends)
+                                            module-key contribution)]
+    (publication/publish! backends candidates)))
+
 (defn- with-config-runtime
   "Run f with an isolated runtime and the repo-local .skein config loaded.
 
@@ -73,14 +89,12 @@
             ;; which shuttle/install! registers in real startups; this fixture
             ;; loads the config files alone, so register the defaults here.
             ((requiring-resolve 'ct.spools.agent-run/register-default-harnesses!))
-            (load-file ".skein/config.clj")
+            (load-module-source! rt :config ".skein/config.clj")
             (load-file ".skein/harnesses.clj")
             (load-file ".skein/workflows.clj")
-            (load-file ".skein/analytics.clj")
-            ((requiring-resolve 'config/install!))
+            (load-module-source! rt :analytics ".skein/analytics.clj")
             ((requiring-resolve 'harnesses/install!))
             ((requiring-resolve 'workflows/install!))
-            ((requiring-resolve 'analytics/install!))
             ;; devflow's stage workflows register from its install! (init.clj
             ;; wires this via runtime/use!); the runtime-owned registry needs a
             ;; scoped runtime, so requiring the ns no longer registers them.
@@ -170,8 +184,7 @@
         (with-runtime-loader
           rt
           (fn []
-            (load-file config-path)
-            ((requiring-resolve 'config/install!))
+            (load-module-source! rt :config config-path)
             {:op-help (into {} (map (fn [op] [op (op! "help" [op])])) config-op-names)
              :queries (into {} (map (fn [q] [q (get (graph/queries rt) q)])) named-query-names)}))
         (finally

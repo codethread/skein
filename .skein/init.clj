@@ -61,12 +61,11 @@
               {:ns 'skein.macros.patterns
                :spools ['skein.macros/macros]
                :required? true})
-(runtime/use! runtime :macros/demo
-              {:ns 'skein.macros.demo
-               :spools ['skein.macros/macros]
-               :after [:macros/patterns]
-               :call 'skein.macros.demo/install!
-               :required? true})
+(runtime/module! runtime :macros/demo
+                 {:ns 'skein.macros.demo
+                  :spools ['skein.macros/macros]
+                  :after [:macros/patterns]
+                  :required? true})
 (runtime/use! runtime :skein/spools-shuttle
               {:ns 'ct.spools.agent-run
                :spools ['ct.spools/agent-run]
@@ -145,23 +144,21 @@
                :spools ['skein.spools/cron]
                :call 'skein.spools.cron/install!
                :required? true})
-(runtime/use! runtime :config
-              {:file "config.clj"
-               :spools ['skein.spools/workflow 'ct.spools/agent-run
-                        'codethread/devflow 'skein.macros/macros]
-               :after [:skein/spools-workflow :skein/spools-devflow
-                       :skein/spools-shuttle :macros/patterns]
-               :call 'config/install!
-               :required? true})
+(runtime/module! runtime :config
+                 {:file "config.clj"
+                  :spools ['skein.spools/workflow 'ct.spools/agent-run
+                           'codethread/devflow 'skein.macros/macros]
+                  :after [:skein/spools-workflow :skein/spools-devflow
+                          :skein/spools-shuttle :macros/patterns]
+                  :required? true})
 ;; Analytics is a read-only rollup surface over agent-run usage stamps; it
 ;; only needs the defop macro (macros spool) and the shuttle vocabulary the
 ;; runs were stamped with.
-(runtime/use! runtime :analytics
-              {:file "analytics.clj"
-               :spools ['skein.macros/macros]
-               :after [:skein/spools-shuttle :macros/patterns]
-               :call 'analytics/install!
-               :required? true})
+(runtime/module! runtime :analytics
+                 {:file "analytics.clj"
+                  :spools ['skein.macros/macros]
+                  :after [:skein/spools-shuttle :macros/patterns]
+                  :required? true})
 ;; workflows.clj reuses config.clj's public CLI-tail helpers, so it loads after
 ;; the :config module.
 (runtime/use! runtime :workflows
