@@ -6,7 +6,7 @@
   op, and the read-only `query`/`pattern` registry-introspection ops — as
   `register-op!` ops whose
   `:arg-spec` is parsed by `skein.api.cli.alpha`. Each op delegates to the same
-  `skein.api.*.alpha` calls the JSON socket dispatch uses today and returns
+  `skein.api.*.alpha` calls the JSON socket dispatch uses and returns
   the same JSON shapes, so the ops are reachable through `strand <name>` at the
   CLI root. The namespace owns no module-level state:
   op handlers read the runtime from their invocation context (`:op/runtime`).
@@ -696,42 +696,26 @@
   [query-name]
   (symbol (query/query-lookup-name query-name)))
 
-(defn- validate-query-params
-  "Restrict provided string params to a query's declared keyword names, failing
-  loudly on unknown params (mirrors the JSON socket dispatch contract)."
-  [query-def params]
-  (let [declared (set (:params query-def))
-        declared-names (set (map name declared))]
-    (when-let [unknown (seq (remove declared-names (keys params)))]
-      (throw (ex-info "Unknown query parameters"
-                      {:params (vec unknown) :declared (vec declared)})))
-    (into {} (keep (fn [k]
-                     (when (contains? params (name k))
-                       [k (get params (name k))]))
-                   declared))))
-
 (defn- run-named-query
   "Resolve a named query, validate params, overlay an optional state filter, and
   invoke the runtime list/ready fn exactly as the socket dispatch does."
   [rt query-fn query-name raw-params state limit]
   (let [query-def (graph/resolve-query rt (handle-name query-name))
-        params (validate-query-params query-def raw-params)
-        query-def (if state
-                    [:and (query/query-expr query-def params) [:= :state state]]
-                    query-def)]
+        params (graph/coerce-declared-params query-def raw-params)
+        query-def (graph/conjoin-where query-def
+                                       (when state [:= :state state])
+                                       params)]
     (query-fn rt lean-attribute-byte-floor query-def params limit)))
 
 (defn- run-named-ready-lean [rt query-name raw-params limit]
   (let [query-def (graph/resolve-query rt (handle-name query-name))
-        params (validate-query-params query-def raw-params)]
+        params (graph/coerce-declared-params query-def raw-params)]
     (weaver/ready-lean rt lean-attribute-byte-floor query-def params limit)))
 
 (defn- query-list-entry [[name query-def]]
   {:name name
    :params (if (map? query-def) (vec (:params query-def)) [])
-   :referenced-params (query/referenced-params (if (map? query-def)
-                                                 (:where query-def)
-                                                 query-def))})
+   :referenced-params (graph/referenced-params query-def)})
 
 (defn- query-list-entries [rt]
   (mapv query-list-entry (graph/queries rt)))
