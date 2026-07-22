@@ -97,7 +97,7 @@ tasks:
   - id: 20
     description: "[HITL] Publish peer breaking successor markers"
     task_file: tasks/020-publish-peer-releases.md
-    status: blocked
+    status: complete
     blocked_by: [19]
   - id: 21
     description: Update pins and rehearse disposable cutover

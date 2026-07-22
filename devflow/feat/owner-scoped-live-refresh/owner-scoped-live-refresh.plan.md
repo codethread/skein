@@ -112,6 +112,13 @@ No open question blocks task generation.
 
 ## PLAN-Olr-001.P9 Developer Notes
 
+### PLAN-Olr-001.DN28 Peer successor markers published (Task 20, HITL): 2026-07-22
+
+- User approval recorded on card `tsofs` (note `nqiog`): publication delegated to the coordinator acting on the user's behalf, alongside standing authorization for the Task 23 weaver/mill rebuild-and-restart window.
+- Annotated tags created on the reviewed Task 19 candidates and pushed: agent-harness `v10` peels to `ef6a92359749a9b9d11fb49938006512f60a6c51`; kanban `v6` peels to `b13d256f0ad7f145dd73f070ec5efc9bcbcd1d48`; devflow `v3` peels to `b966e540624a19c547093b6f2468fa3bb5d71103`. Each peeled SHA was re-resolved from the remote with `git ls-remote` and matches its reviewed candidate exactly (TASK-Olr-020.MI3).
+- Old markers remain available and immutable at their published SHAs: agent-harness `v9^{}` = `befad44de36509cf3636242d14fc39bab35d85c2`; kanban `v5^{}` = `e4bb7b64d600052cd32c3e3728231f7bba9ad67e`; devflow `v2` = `1e65e1bc5ce43cbea462a33f51b24b669928ef4b` (lightweight). The DN27 command packet's bare `git push origin <sha>` lines were dropped as invalid; the annotated-tag pushes carried the objects.
+- `.skein/spools.edn` is unchanged; consumer pin updates are Task 21's. Any defect discovered after this point ships as a new marker — these tags never move.
+
 ### PLAN-Olr-001.DN27 Peer release-preparation packet (Task 19): 2026-07-22
 
 - Candidate set: Skein `91bec8ac0caf1cb21bf1119d4b253d4601159ecb`; agent-harness `ef6a92359749a9b9d11fb49938006512f60a6c51` (proposed annotated `v10`); kanban `b13d256f0ad7f145dd73f070ec5efc9bcbcd1d48` (proposed annotated `v6`); devflow `b966e540624a19c547093b6f2468fa3bb5d71103` (proposed annotated `v3`). Each candidate is clean and locally publishable; no tag or push has occurred.
