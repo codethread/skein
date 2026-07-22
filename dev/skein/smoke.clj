@@ -356,8 +356,8 @@
       (assert (.isFile config-file) "clean bootstrap preserves/creates config.json")
       (assert-file-contents (java.io.File. workspace "spools.edn") "{:spools {}}\n" "clean bootstrap creates empty spools.edn")
       (let [init-contents (slurp init-file)]
-        (doseq [needle ["(runtime/sync! runtime)" "(require 'skein.spools.batteries)" ":skein/spools-batteries" "skein.spools.batteries/install!"]]
-          (assert-contains init-contents needle "clean bootstrap creates runtime sync + batteries init.clj template")))
+        (doseq [needle ["(require 'skein.spools.batteries)" "(runtime/module! runtime :skein/spools-batteries" ":ns 'skein.spools.batteries" "skein.spools.batteries/contribute" "skein.spools.batteries/reconcile"]]
+          (assert-contains init-contents needle "clean bootstrap creates the batteries module init.clj template")))
       (assert (.isDirectory (java.io.File. workspace "spools")) "clean bootstrap creates spools directory")
       (assert (not (.exists (java.io.File. workspace ".git"))) "clean bootstrap does not run git init")
       (let [strand-id (cli-add-config! workspace "Bootstrap clean strand" "--attr" "owner=ct")]
@@ -381,9 +381,10 @@
                                   '[skein.api.graph.alpha :as graph])
                         '(def runtime (current/runtime))
                         '(require 'skein.spools.batteries)
-                        '(runtime/use! runtime :skein/spools-batteries
-                                       {:ns 'skein.spools.batteries
-                                        :call 'skein.spools.batteries/install!})
+                        '(runtime/module! runtime :skein/spools-batteries
+                                          {:ns 'skein.spools.batteries
+                                           :contribute 'skein.spools.batteries/contribute
+                                           :reconcile 'skein.spools.batteries/reconcile})
                         '(graph/register-query! runtime 'dirty [:= [:attr :owner] "dirty"])])]
     (delete-tree! (smoke-workspace (str db-file ".bootstrap-dirty")))
     (.mkdirs (java.io.File. workspace))
@@ -420,11 +421,11 @@
                 [skein.api.hooks.alpha :as hooks]
                 [skein.api.patterns.alpha :as patterns]))
    '(def runtime (current/runtime))
-   '(runtime/sync! runtime)
    '(require 'skein.spools.batteries)
-   '(runtime/use! runtime :skein/spools-batteries
-                  {:ns 'skein.spools.batteries
-                   :call 'skein.spools.batteries/install!})
+   '(runtime/module! runtime :skein/spools-batteries
+                     {:ns 'skein.spools.batteries
+                      :contribute 'skein.spools.batteries/contribute
+                      :reconcile 'skein.spools.batteries/reconcile})
    '(graph/register-query! runtime 'smoke-owned [:= [:attr :owner] "smoke"])
    '(graph/register-query! runtime 'smoke-owner {:params [:owner] :where [:= [:attr :owner] [:param :owner]]})
    '(s/def :smoke.startup/title string?)
@@ -536,16 +537,20 @@
                                 ['(do
                                     (require '[skein.api.current.alpha :as current]
                                              '[skein.api.runtime.alpha :as runtime])
-                                    (runtime/reload! (current/runtime))
+                                    (runtime/refresh! (current/runtime))
                                     {:patterns (patterns)
                                      :woven (weave! 'reload-review {:title "Reload patterned smoke"})})])
                                "weaver" "repl" "--stdin"))]
-          (assert= ["reload-review" "review-task"]
+          ;; refresh! adds the new config-defined reload-review and re-collects
+          ;; the startup review-task, while the live REPL-registered runtime-review
+          ;; survives — refresh! does not globally clear the registry the way the
+          ;; old destructive reload did (DELTA-OlrDrt-001.CC9).
+          (assert= ["reload-review" "review-task" "runtime-review"]
                    (mapv :name (:patterns reload-payload))
-                   "config reload refreshes pattern registry with new config-defined pattern")
+                   "config refresh! adds the new config pattern and preserves live registrations")
           (assert= ["Reload patterned smoke" "Review: Reload patterned smoke"]
                    (titles (get-in reload-payload [:woven :created]))
-                   "weave applies pattern added by config reload")))
+                   "weave applies pattern added by config refresh!")))
       (finally
         (stop-weaver-config! workspace)
         (delete-tree! (smoke-workspace (str db-file ".startup-transform")))))))

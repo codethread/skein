@@ -269,6 +269,33 @@
   (some #(when (= ns-sym (:namespace %)) %)
         (:classpath-bindings (spool-sync/loaded-namespace-status runtime))))
 
+(defn- classpath-source-file
+  "Return the on-disk source path a classpath-owned namespace loaded from, or nil
+  when its source is not a reachable file (a packaged jar resource, or an
+  inherited-JVM binding with no recorded source URL). A classpath spool such as
+  batteries lives on `deps.edn :paths`, not a synced root, so its source is
+  resolved from the classpath binding's recorded resource URL rather than from
+  `synced-namespace-file`, which searches only synced roots."
+  [classpath-binding]
+  (when-let [source (:source classpath-binding)]
+    (try
+      (let [uri (java.net.URI. source)]
+        (when (= "file" (.getScheme uri))
+          (.getCanonicalPath (java.io.File. uri))))
+      (catch Exception _ nil))))
+
+(defn- ns-source-file
+  "Resolve the on-disk source path for a module `:ns` target.
+
+  A synced provider wins; a classpath spool (no synced provider, e.g. batteries)
+  falls back to its classpath binding's source file. Returns nil when neither is
+  reachable, so callers stay non-throwing over classpath-only namespaces."
+  [runtime ns-sym]
+  (or (when-let [synced (try (spool-sync/synced-namespace-file runtime ns-sym)
+                             (catch Exception _ nil))]
+        synced)
+      (classpath-source-file (classpath-binding runtime ns-sym))))
+
 (defn- declared-file-namespace [file]
   (with-open [reader (java.io.PushbackReader. (io/reader (io/file file)))]
     (some-> (ns-parse/read-ns-decl reader)
@@ -277,7 +304,7 @@
 (defn- collection-context [runtime key declaration]
   (if-let [ns-sym (:ns declaration)]
     {:module/key key
-     :source/file (spool-sync/synced-namespace-file runtime ns-sym)
+     :source/file (ns-source-file runtime ns-sym)
      :source/namespace ns-sym}
     (let [file (spool-sync/module-file runtime (:file declaration))]
       {:module/key key
@@ -300,13 +327,18 @@
                 :namespace ns-sym}))
       (cond
         (and (find-ns ns-sym) (nil? source-binding) classpath-binding)
-        (let [file (spool-sync/synced-namespace-file runtime ns-sym)]
+        (if-let [file (classpath-source-file classpath-binding)]
           (with-loader #(load-module-file!
                          runtime file
                          {:ns ns-sym
                           :file file
                           :collection/reload? true
-                          :classpath-binding classpath-binding})))
+                          :classpath-binding classpath-binding}))
+          ;; No reachable on-disk source: the namespace is already live in the
+          ;; image, so its Vars come from the inherited/classpath image and any
+          ;; declaration contribution from an explicit :contribute. Report an
+          ;; unchanged source rather than reloading.
+          {:ns ns-sym :classpath-binding classpath-binding})
 
         (and source-binding
              (not= previous-source (source-stamp source-binding)))

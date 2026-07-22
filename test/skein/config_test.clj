@@ -111,7 +111,7 @@
   (.mkdirs (io/file target))
   (doseq [name ["init.clj" "config.clj" "workflows.clj" "harnesses.clj"
                 "attention.clj" "nvd_scan.clj" "reviewers.clj" "analytics.clj"
-                "kanban_tracker.clj" "spools.edn"]]
+                "kanban_tracker.clj" "module_adapters.clj" "spools.edn"]]
     (io/copy (io/file ".skein" name) (io/file target name)))
   ;; The copied config dir would reinterpret repo-relative local roots. Git
   ;; families remain byte-for-byte sourced from the checked-in approvals.
@@ -1058,37 +1058,40 @@
                             (op! "land" ["status" "never-landed"]))))))
 
 (defn- assert-treadle-installed-after-runtime-dependencies
-  "Assert the subagent executor loads after the legacy modules it consumes."
+  "Assert the subagent executor module orders after the modules it consumes.
+
+  A green startup fixture already proves every required module applied (start!
+  throws otherwise), so the load-order guarantee lives in the declared `:after`
+  edges, read from the module graph."
   [rt]
-  (let [use (get (runtime/uses rt) :skein/spools-treadle)]
-    (is (= :loaded (:status use)))
-    (is (every? (set (get-in use [:opts :after])) [:harnesses :workflows]))))
+  (let [decl (get-in (runtime/status rt) [:modules :skein/spools-treadle])]
+    (is (some? decl) ":skein/spools-treadle is a declared module")
+    (is (every? (set (:after decl)) [:harnesses :workflows])
+        "treadle depends on :harnesses and :workflows")))
 
 (defn- assert-workflow-spool-consent-edges
-  "Assert repo startup guards every module that now relies on the workflow coordinate."
+  "Assert repo startup guards every module that relies on the workflow coordinate."
   [rt]
-  (let [uses (runtime/uses rt)
-        config-module (get-in (runtime/status rt) [:modules :config])]
-    (doseq [use-id [:skein/spools-workflow :skein/spools-shell]]
-      (is (= ['skein.spools/workflow] (get-in uses [use-id :opts :spools]))
-          (str use-id " must opt into skein.spools/workflow")))
+  (let [modules (:modules (runtime/status rt))]
+    (doseq [id [:skein/spools-workflow :skein/spools-shell]]
+      (is (= ['skein.spools/workflow] (:spools (get modules id)))
+          (str id " must opt into skein.spools/workflow")))
     (is (= ['skein.spools/workflow 'ct.spools/agent-run
             'codethread/devflow 'skein.macros/macros]
-           (:spools config-module))
+           (:spools (get modules :config)))
         ":config must guard every spool coordinate its config.clj ns requires")
-    (is (true? (:required? config-module))
+    (is (true? (:required? (get modules :config)))
         ":config is required — a guarded but non-required module skips silently, dropping the op/query surface")
-    (doseq [use-id [:workflows]]
-      (is (= ['skein.spools/workflow 'ct.spools/delegation]
-             (get-in uses [use-id :opts :spools]))
-          (str use-id " must opt into skein.spools/workflow and ct.spools/delegation")))))
+    (is (= ['skein.spools/workflow 'ct.spools/delegation]
+           (:spools (get modules :workflows)))
+        ":workflows must opt into skein.spools/workflow and ct.spools/delegation")))
 
 (defn- assert-kanban-tracker-installed
-  "Assert startup loaded the required devflow tracker binding."
+  "Assert startup declared the required devflow tracker binding and it is live."
   [rt]
-  (let [tracker-use (get (runtime/uses rt) :kanban/tracker)]
-    (is (= :loaded (:status tracker-use)))
-    (is (true? (get-in tracker-use [:opts :required?])))
+  (let [decl (get-in (runtime/status rt) [:modules :kanban/tracker])]
+    (is (some? decl) ":kanban/tracker is a declared module")
+    (is (true? (:required? decl)))
     (is (re-find #"Bound tracker: devflow" (:tracker (op! "kanban" ["about"]))))))
 
 (deftest kanban-tracker-devflow-projection-contract
@@ -1164,13 +1167,13 @@
   [form]
   (if (and (seq? form) (= 'quote (first form))) (second form) form))
 
-(defn- use-form?
-  "True when form is a `runtime/use!` module registration call."
+(defn- module-form?
+  "True when form is a `runtime/module!` declaration call."
   [form]
-  (and (seq? form) (= 'runtime/use! (first form))))
+  (and (seq? form) (= 'runtime/module! (first form))))
 
-(defn- parse-use-form
-  "Project a `(runtime/use! runtime <key> <opts>)` form into its guard-relevant data."
+(defn- parse-module-form
+  "Project a `(runtime/module! runtime <key> <opts>)` form into its guard-relevant data."
   [form]
   (let [opts (nth form 3)]
     {:key (nth form 2)
@@ -1224,23 +1227,23 @@
 
 (deftest init-use-guards-declare-required-spool-coordinates
   ;; PROP-usc-001.R1/.V, PLAN-usc-001.V4/.TC2: the guard-wiring acceptance gate.
-  ;; A synced root resolves through the add-libs classloader whether or not a
-  ;; use! declares :spools, so a green world load never proves consent is wired.
-  ;; This asserts it directly: every init.clj use! that pulls a skein.spools.*/
-  ;; skein.macros.* namespace onto the classpath — a :ns activation (its own
-  ;; coordinate) or a :file module's ns :require (each required coordinate) —
-  ;; must declare that coordinate in :spools, batteries (the classpath exception
-  ;; with no coordinate) excepted. Coordinates resolve through the synced root
-  ;; manifests, never a name heuristic: ct.spools.devflow lives in the
-  ;; codethread/devflow root and skein.spools.executors.shell in the
+  ;; A synced root resolves through the spool classloader whether or not a
+  ;; module! declares :spools, so a green world load never proves consent is
+  ;; wired. This asserts it directly: every init.clj module! that pulls a
+  ;; skein.spools.*/skein.macros.* namespace onto the classpath — a :ns module
+  ;; (its own coordinate) or a :file module's ns :require (each required
+  ;; coordinate) — must declare that coordinate in :spools, batteries (the
+  ;; classpath exception with no coordinate) excepted. Coordinates resolve
+  ;; through the synced root manifests, never a name heuristic: ct.spools.devflow
+  ;; lives in the codethread/devflow root and skein.spools.executors.shell in the
   ;; skein.spools/workflow root, so a prefix rule would both false-fail devflow
   ;; and false-pass a real miss.
   (with-startup-config-runtime
     (fn [rt]
       (let [coordinate-roots (coordinate-source-roots rt)
-            uses (map parse-use-form (filter use-form? (read-all-forms ".skein/init.clj")))]
-        (is (seq uses) "parsed at least one init.clj use! form")
-        (doseq [{:keys [key file spools] use-ns :ns} uses
+            modules (map parse-module-form (filter module-form? (read-all-forms ".skein/init.clj")))]
+        (is (seq modules) "parsed at least one init.clj module! form")
+        (doseq [{:keys [key file spools] use-ns :ns} modules
                 :when (not= use-ns 'skein.spools.batteries)]
           (let [required-nss (if file
                                (->> (ns-require-libs (read-first-form (io/file ".skein" file)))

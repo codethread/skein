@@ -52,7 +52,7 @@ tasks:
   - id: 11
     description: Cut bootstrap and workspace config to modules
     task_file: tasks/011-bootstrap-workspace-module-graph.md
-    status: pending
+    status: complete
     blocked_by: [6, 7, 8, 9, 10]
   - id: 12
     description: Convert agent-run live registries and bindings

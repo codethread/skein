@@ -46,7 +46,14 @@
   a nil executor (docs/spools/writing-shared-spools.md 'Versioned spool state',
   SPEC-004.C95). The `state-shape-matches-declared-version` test fails loudly if
   `new-state` and this version drift apart."
-  3)
+  4)
+
+(def ^:private kinds-version
+  "Shape version for cron's runtime-owned job-kind registry handle. Held in its
+  own spool-state slot (not nested in `::state`) so the module publication kernel
+  discovers `:skein.spools.cron/jobs` when a dependent module contributes cron
+  jobs (module_publication.clj domain-backends scans spool-state one level deep)."
+  1)
 
 (def ^:private job-kind :skein.spools.cron/jobs)
 (def ^:private repl-owner :skein.owner/repl)
@@ -78,7 +85,6 @@
      ;; id -> {:id :interval-ms :jitter-ms :handler sym
      ;;        :last-result :last-fired-at :last-error}
      :jobs (atom {})
-     :job-kinds (new-job-kinds)
      :failure-log (atom [])
      :rng (Random.)
      ;; In-flight offloaded-job latch: a count incremented on the event lane in
@@ -95,7 +101,8 @@
 
 (defn- ^ExecutorService executor [runtime] (:executor (state runtime)))
 (defn- jobs-atom [runtime] (:jobs (state runtime)))
-(defn- job-kinds [runtime] (:job-kinds (state runtime)))
+(defn- job-kinds [runtime]
+  (runtime/spool-state runtime ::job-kinds {:version kinds-version} new-job-kinds))
 (defn- failure-log [runtime] (:failure-log (state runtime)))
 (defn- ^Random rng [runtime] (:rng (state runtime)))
 
@@ -353,9 +360,14 @@
   `(module-refresh/collect-entry! ~job-kind ~id (assoc ~job :id ~id)))
 
 (defn contribute
-  "Materialize cron's job kind for dependent module contributions."
+  "Materialize cron's job-kind registry handle for dependent module contributions.
+
+  The handle lives in its own spool-state slot so the publication kernel
+  discovers `:skein.spools.cron/jobs` before a dependent module (e.g. the NVD
+  scan job) stages its cron contribution."
   [{:keys [runtime]}]
   (state runtime)
+  (job-kinds runtime)
   {})
 
 (defn reconcile

@@ -51,7 +51,8 @@
   :codex-ro in harnesses.clj) - read-only stays prompt-discipline. Two
   sign-off invariants: the synthesizer is never a seat that reviewed, and at
   least one reviewing seat comes from outside the authoring model family."
-  (:require [ct.spools.delegation :as agents]
+  (:require [skein.api.current.alpha :as current]
+            [ct.spools.delegation :as agents]
             [skein.api.format.alpha :as fmt]))
 
 (def change-review
@@ -298,3 +299,13 @@
   {:rosters [(agents/defroster! :change-review change-review)
              (agents/defroster! :complex-patch-review complex-patch-review)
              (agents/defroster! :docs-review docs-review)]})
+
+;; BRANCH-ONLY module adapter (PLAN-Olr-001 Task 11, DELTA-OlrRepl-001.CC6). The
+;; roster registrations ride the peer delegation `install!` until that spool
+;; exposes an owner-partitioned roster kind (Tasks 12-15); Task 16 replaces this
+;; with a declarative contribution.
+(defn reconcile
+  "Register this repository's reviewer rosters with the delegation spool."
+  [{:keys [runtime]}]
+  (current/with-runtime runtime (install!))
+  {:reconciled :reviewers :adapter :branch-only})

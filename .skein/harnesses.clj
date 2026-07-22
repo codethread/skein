@@ -58,7 +58,8 @@
   bench (codex currently wins on RAM/CPU under concurrent load); :flash is
   the benched exception for cheap recon sweeps, and the pi harness itself
   stays registered via its spool."
-  (:require [skein.api.format.alpha :as format-alpha]
+  (:require [skein.api.current.alpha :as current]
+            [skein.api.format.alpha :as format-alpha]
             [ct.spools.delegation :as agents]
             [ct.spools.agent-run :as shuttle]))
 
@@ -352,3 +353,15 @@
    ;; serving runs into delegation's exported fragment; the engine's own worker
    ;; contract rides every run regardless
    :task-contract (shuttle/set-default-task-contract! agents/worker-contract)})
+
+;; BRANCH-ONLY module adapter (PLAN-Olr-001 Task 11, DELTA-OlrRepl-001.CC6).
+;; The harness seats and default contracts still register through the peer
+;; agent-run/delegation `install!` surface until those spools expose
+;; owner-partitioned kinds (Tasks 12-15); Task 16 replaces this reconcile with a
+;; declarative contribution. The runtime is scoped so install!'s `current/runtime`
+;; reads resolve to the refreshing runtime.
+(defn reconcile
+  "Register this repo's harness seats and default review/task contracts."
+  [{:keys [runtime]}]
+  (current/with-runtime runtime (install!))
+  {:reconciled :harnesses :adapter :branch-only})

@@ -50,9 +50,13 @@ Function.
 Return text-search's complete unsafe search-operation contribution.
 
   The operation retains its documented direct `skein.core.db` dependency; only
-  publication changes from eager registration to owner-complete declaration.
-  
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/text-search/src/skein/spools/text_search.clj#L229-L241">Source</a></sub></p>
+  publication changes from eager registration to owner-complete declaration. The
+  entry is assembled into the canonical `::op-entry` shape (string key, `:name`,
+  the handler `:fn`, provenance) exactly as `register-op!` would — mirrored here
+  because a blessed spool may not reach the weaver's internal op-entry plumbing
+  (SPEC-003.C19a) — so the effective op registry stays string-keyed across the
+  eager and module paths.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/text-search/src/skein/spools/text_search.clj#L229-L248">Source</a></sub></p>
 
 ## <a name="skein.spools.text-search/default-search-limit">`default-search-limit`</a>
 

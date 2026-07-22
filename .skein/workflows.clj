@@ -1280,3 +1280,14 @@
             'workflows/flow-op)]
      :land-workflows (register-land-workflows!)
      :story-workflows (register-story-workflows!)}))
+
+;; BRANCH-ONLY module adapter (PLAN-Olr-001 Task 11, DELTA-OlrRepl-001.CC6). The
+;; land/flow ops, delegate-pipeline pattern, and land/story workflow
+;; constructors still register through the imperative `install!` because they
+;; span the workflow-constructor and core op/pattern kinds; Task 16 splits this
+;; into a declarative contribution once the surface is owner-partitioned.
+(defn reconcile
+  "Install this repo's hand-authored workflows, ops, and delegate-pipeline pattern."
+  [{:keys [runtime]}]
+  (current/with-runtime runtime (install!))
+  {:reconciled :workflows :adapter :branch-only})

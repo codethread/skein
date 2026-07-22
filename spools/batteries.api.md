@@ -63,10 +63,14 @@ Function.
 Return batteries' complete stable-owner CLI operation contribution.
 
   The classpath spool remains explicitly required by workspace startup; this
-  function only supplies its declarative operation partition. Built-in help is
-  still replaced by the batteries `help` declaration through normal ownership.
-  
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/batteries/src/skein/spools/batteries.clj#L1450-L1466">Source</a></sub></p>
+  function only supplies its declarative operation partition. Each entry is
+  assembled into the canonical `::op-entry` shape (string key, `:name`, `:fn`,
+  provenance, deadline/hook class) exactly as `register-op!` would, so the module
+  publication path is equivalent to the eager `install!` path. Batteries ships no
+  `help` op of its own — the built-in help op stays effective and batteries
+  elects only the reference help transform (DELTA-Dtf-002.D1) — so the partition
+  declares no overrides over the lower defaults layer.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/batteries/src/skein/spools/batteries.clj#L1478-L1495">Source</a></sub></p>
 
 ## <a name="skein.spools.batteries/default-help-transform">`default-help-transform`</a>
 ``` clojure
@@ -177,6 +181,23 @@ Function.
 
 List lean-projected ready strands, optionally from the result set of a named query.
 <p><sub><a href="https://github.com/codethread/skein/blob/main/spools/batteries/src/skein/spools/batteries.clj#L795-L808">Source</a></sub></p>
+
+## <a name="skein.spools.batteries/reconcile">`reconcile`</a>
+``` clojure
+(reconcile {:keys [runtime]})
+```
+Function.
+
+Seed batteries' owned glossary outcomes as a runtime resource.
+
+  The declarative operation partition publishes through `contribute`; the
+  glossary outcomes its ops' `failure-modes` reference are batteries-owned
+  runtime resources (not declaration data), so the module lifecycle seeds them
+  here rather than in an eager `install!` (DELTA-OlrRepl-001.CC6). Module
+  publication does not run the direct-registration glossary-ref check, so
+  publishing before this reconcile is safe; help resolves the referenced-term
+  closure against the seeded outcomes.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/batteries/src/skein/spools/batteries.clj#L1497-L1510">Source</a></sub></p>
 
 ## <a name="skein.spools.batteries/set-read-limit!">`set-read-limit!`</a>
 ``` clojure

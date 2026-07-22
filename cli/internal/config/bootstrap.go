@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	DefaultInitCLJ        = "(require '[skein.api.current.alpha :as current]\n         '[skein.api.runtime.alpha :as runtime])\n\n(def runtime (current/runtime))\n\n(runtime/sync! runtime)\n;; batteries ships on the classpath (:paths), so require it before its use!.\n(require 'skein.spools.batteries)\n(runtime/use! runtime :skein/spools-batteries\n  {:ns 'skein.spools.batteries\n   :call 'skein.spools.batteries/install!})\n"
+	DefaultInitCLJ        = "(require '[skein.api.current.alpha :as current]\n         '[skein.api.runtime.alpha :as runtime])\n\n(def runtime (current/runtime))\n\n;; batteries ships on the classpath (:paths), not a synced spool root, so it\n;; declares no :spools and a fresh world needs zero sync approval. Require it so\n;; the module source load classifies it as classpath-owned; contribute publishes\n;; its CLI ops and reconcile seeds the glossary outcomes they reference.\n(require 'skein.spools.batteries)\n(runtime/module! runtime :skein/spools-batteries\n                 {:ns 'skein.spools.batteries\n                  :contribute 'skein.spools.batteries/contribute\n                  :reconcile 'skein.spools.batteries/reconcile})\n"
 	DefaultSkeinGitignore = "config.local.json\ninit.local.clj\nspools.local.edn\nstate/\ndata/\nweaver.*\n*.sqlite\n*.sqlite-*\n"
 )
 

@@ -1447,20 +1447,64 @@
                                       handler))
                op-registrations)}))
 
+(defn- op-contribution-entry
+  "Assemble one op registry entry in `register-op!`'s canonical shape.
+
+  A blessed spool may not reach the weaver's internal op-entry plumbing
+  (SPEC-003.C19a), so this mirrors the assembly the eager `register-op!` path
+  performs (a peer of `skein.macros.ops/declaration-entry`): a string `:name`,
+  the handler `:fn`, provenance, and stream/deadline/hook defaults, keyed by the
+  canonical string op name so the effective registry stays string-keyed."
+  [op-name arg-spec hook-class handler op-meta]
+  (let [opts (merge {:doc (:doc arg-spec)
+                     :arg-spec arg-spec
+                     :returns (get op-returns op-name)
+                     :hook-class hook-class}
+                    op-meta)
+        stream? (boolean (:stream? opts))]
+    (cond-> {:name (name op-name)
+             :fn handler
+             :stream? stream?
+             :deadline-class (or (:deadline-class opts) (if stream? :unbounded :standard))
+             :hook-class (or (:hook-class opts) :mutating)
+             :provenance (symbol (namespace handler))}
+      (:doc opts) (assoc :doc (:doc opts))
+      (some? (:arg-spec opts)) (assoc :arg-spec (:arg-spec opts))
+      (contains? opts :returns) (assoc :returns (:returns opts))
+      (:about opts) (assoc :about (:about opts))
+      (:prime opts) (assoc :prime (:prime opts))
+      (some? (:annotations opts)) (assoc :annotations (:annotations opts)))))
+
 (defn contribute
   "Return batteries' complete stable-owner CLI operation contribution.
 
   The classpath spool remains explicitly required by workspace startup; this
-  function only supplies its declarative operation partition. Built-in help is
-  still replaced by the batteries `help` declaration through normal ownership.
-  "
+  function only supplies its declarative operation partition. Each entry is
+  assembled into the canonical `::op-entry` shape (string key, `:name`, `:fn`,
+  provenance, deadline/hook class) exactly as `register-op!` would, so the module
+  publication path is equivalent to the eager `install!` path. Batteries ships no
+  `help` op of its own — the built-in help op stays effective and batteries
+  elects only the reference help transform (DELTA-Dtf-002.D1) — so the partition
+  declares no overrides over the lower defaults layer."
   [_ctx]
   {:ops {:entries (into {}
-                        (map (fn [[op-name arg-spec hook-class handler]]
-                               [op-name {:doc (:doc arg-spec)
-                                         :arg-spec arg-spec
-                                         :returns (get op-returns op-name)
-                                         :hook-class hook-class
-                                         :handler handler}])
-                             op-registrations))
-         :overrides #{'help}}})
+                        (map (fn [[op-name arg-spec hook-class handler op-meta]]
+                               [(name op-name)
+                                (op-contribution-entry op-name arg-spec hook-class
+                                                       handler op-meta)]))
+                        op-registrations)}})
+
+(defn reconcile
+  "Seed batteries' owned glossary outcomes as a runtime resource.
+
+  The declarative operation partition publishes through `contribute`; the
+  glossary outcomes its ops' `failure-modes` reference are batteries-owned
+  runtime resources (not declaration data), so the module lifecycle seeds them
+  here rather than in an eager `install!` (DELTA-OlrRepl-001.CC6). Module
+  publication does not run the direct-registration glossary-ref check, so
+  publishing before this reconcile is safe; help resolves the referenced-term
+  closure against the seeded outcomes."
+  [{:keys [runtime]}]
+  (doseq [outcome batteries-glossary]
+    (glossary/register-glossary-outcome! runtime (assoc outcome :owner 'skein.spools.batteries)))
+  {:reconciled :batteries-glossary})
