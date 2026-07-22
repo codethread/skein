@@ -15,39 +15,40 @@ referenced document. Prefix every nested point ID with the full document ID so r
 ## PLAN-Sss-001.P1 Goal and scope
 
 Implement the persistence-evolution contract decided in `PROP-Sss-001` and staged in `DELTA-Sss-001`/`DELTA-Sss-002`: stamp schema
-generation 1 in `PRAGMA user_version`, gate storage initialization on the stamp in both skew directions, adopt unstamped current-shape
-databases via a canonical structural validator, and scaffold the migration-ladder home so the first real generation bump has a place to
-land. Generation 1 ships with an empty ladder; the deliverable is the contract, the guard, and the stamp — kept as small as the decision
-allows (TEN-004).
+generation 1 in `PRAGMA user_version`, gate storage initialization on the stamp in both skew directions, and adopt unstamped
+current-shape databases via a canonical structural validator. Generation 1 ships no executable ladder machinery (`DELTA-Sss-002.Q1`);
+the deliverable is the contract, the guard, and the stamp — kept as small as the decision allows (TEN-004).
 
 ## PLAN-Sss-001.P2 Approach
 
-- **PLAN-Sss-001.A1:** All work lands in `skein.core.db` (per the repo persistence boundary) plus one new dedicated migration namespace.
-  No API-surface, CLI, or spool changes: the stamp and gate sit entirely behind `init!`, which every storage entry point already funnels
-  through.
+- **PLAN-Sss-001.A1:** All work lands in `skein.core.db` (per the repo persistence boundary). No API-surface, CLI, or spool changes:
+  the stamp and gate sit entirely behind `init!`, which every storage entry point already funnels through. No migration namespace or
+  step registry is created — the executable ladder home is deferred with `DELTA-Sss-002.Q1`, and the first generation bump owes the
+  freeze of the generation-1 reference into the migration space it creates (`DELTA-Sss-002.CC3`).
 - **PLAN-Sss-001.A2 (canonical validator):** Rather than hand-maintaining introspection predicates per table (today's
-  `ensure-current-schema!` approach, which only rejects known-past shapes), construct a fresh generation-1 reference database in memory
-  from `schema-sql` (the `:sqlite-memory` seam, `SPEC-004.C93`, already runs identical schema code), introspect both databases —
+  `ensure-current-schema!` approach, which only rejects known-past shapes), construct a fresh reference database in memory from
+  `schema-sql` (the `:sqlite-memory` seam, `SPEC-004.C93`, already runs identical schema code), introspect both databases —
   `sqlite_master` plus `PRAGMA table_info`/`index_list`/`index_info`/`foreign_key_list` — into normalized shape maps, and compare.
   Comparison covers exact columns, order, declared types, nullability, defaults, primary keys, foreign keys, CHECK constraints, index
-  columns/order/uniqueness, and partial-index predicates, for every Skein-owned table and index, rejecting extra columns on managed
-  tables (`DELTA-Sss-002.CC2`). The reference-db construction makes the validator self-maintaining: schema drift can never diverge from
-  the check.
-- **PLAN-Sss-001.A3 (generation gate):** `init!` reads `user_version` before any DDL. Newer than the binary's `current-generation` →
-  refuse untouched; older stamped generation → refuse naming the migration path; unstamped and canonically matching → stamp 1
-  (idempotent, metadata-only); unstamped and mismatched → refuse without stamping. The existing legacy-shape throws
-  (`ensure-current-schema!`) fold into the validator's mismatch reporting rather than surviving as a parallel mechanism.
-- **PLAN-Sss-001.A4 (ladder home):** A dedicated migration namespace owns `current-generation` and an ordered (initially empty) step
-  registry, with the composition loop and the one-transaction-per-step discipline documented at the definition site. This is
-  deliberately a scaffold: invocation surface and mill-vs-JVM home are deferred (`DELTA-Sss-002.Q1`) until the first real step exists,
-  so nothing here commits to an execution path beyond "steps live in one place and compose in order".
+  columns/order/uniqueness, and partial-index predicates, for Skein-owned tables and indexes, rejecting extra columns on managed tables
+  (`DELTA-Sss-002.CC2`). The validator takes two comparison modes: present-objects-only (pre-DDL adoption screening, where absent
+  auxiliary objects are legal) and full (post-DDL acceptance). While `current-generation` is 1, the live `schema-sql` *is* the
+  generation-1 reference; the reference-db construction makes the validator self-maintaining within a generation, and the first bump
+  snapshots the outgoing reference per `DELTA-Sss-002.CC3`.
+- **PLAN-Sss-001.A3 (generation gate):** Classification is a pure decision function over `(found-generation, binary-generation,
+  empty?)` returning bootstrap / adopt / proceed / refuse-newer / refuse-older, unit-testable across every branch including generations
+  that cannot yet occur on disk. `init!` reads `user_version` before any DDL and routes: empty unstamped db → DDL, full validation,
+  stamp; non-empty unstamped → present-objects validation, refuse untouched on mismatch, else DDL, full validation, stamp 1; at
+  generation → DDL (fills additive objects), full validation; newer/older stamped → refuse untouched with found/expected in the error
+  data, older naming the migration path. `current-generation` is a `skein.core.db` constant beside `schema-sql`. The existing
+  legacy-shape throws (`ensure-current-schema!`) fold into the validator's mismatch reporting rather than surviving as a parallel
+  mechanism.
 
 ## PLAN-Sss-001.P3 Affected areas
 
 | ID                  | Area                                | Expected change                                                              |
 | ------------------- | ----------------------------------- | ---------------------------------------------------------------------------- |
-| PLAN-Sss-001.AA1    | `src/skein/core/db.clj`             | Generation gate in `init!`; canonical validator replaces shape predicates     |
-| PLAN-Sss-001.AA2    | new migration namespace under `skein.core` | `current-generation`, empty ordered step registry, step discipline     |
+| PLAN-Sss-001.AA1    | `src/skein/core/db.clj`             | Generation gate + `current-generation` in `init!`; canonical validator replaces shape predicates |
 | PLAN-Sss-001.AA3    | `test/skein/core/`                  | Generation/adoption/skew coverage beside existing `db_test.clj` schema tests  |
 | PLAN-Sss-001.AA4    | `devflow/specs/`                    | Promote `DELTA-Sss-001`/`DELTA-Sss-002` into SPEC-001/SPEC-004 at finish      |
 
@@ -61,19 +62,16 @@ allows (TEN-004).
 
 ### PLAN-Sss-001.PH1 Canonical validator + generation gate + stamp
 
-Outcome: `init!` enforces the full `DELTA-Sss-002.CC1/CC2/CC4` contract with the reference-db validator, gen-1 stamping and adoption,
-both skew refusals with found/expected generations in the error data, and legacy-shape rejection folded in. Cold-run test coverage for:
-fresh db stamped 1; unstamped matching db adopted idempotently; unstamped mismatched db (missing column, extra column, wrong index,
-legacy document/edge-constraint shapes) refused without a stamp write; newer-generation db refused untouched; older-generation refusal
-names the migration path.
+Outcome: `init!` enforces the full `DELTA-Sss-002.CC1/CC2/CC4` contract with the reference-db validator, bootstrap and adoption
+stamping, both skew refusals with found/expected generations in the error data, and legacy-shape rejection folded in. Test coverage:
+unit tests on the pure classification function across every branch (including older/newer stamped generations, simulated by
+parameterizing the binary generation); integration tests for fresh empty db bootstrapped and stamped; unstamped matching db adopted
+idempotently; unstamped mismatched db (missing column, extra column, wrong index, legacy document/edge-constraint shapes) refused
+without a stamp write; stamped current-generation db lacking an additive auxiliary table opened and back-filled; newer-generation db
+refused untouched; older-generation refusal (via a hand-stamped `user_version` against a parameterized binary generation) naming the
+migration path.
 
-### PLAN-Sss-001.PH2 Migration-ladder scaffold
-
-Outcome: the migration namespace exists as the single home for `current-generation` and ordered steps, `init!` consumes
-`current-generation` from it, and the composition/transaction discipline of `DELTA-Sss-002.CC3` is stated at the definition site. A
-test proves the registry is empty at generation 1 and that the gate and registry agree on the current generation.
-
-### PLAN-Sss-001.PH3 Spec promotion and index
+### PLAN-Sss-001.PH2 Spec promotion and index
 
 Outcome: deltas merged into SPEC-001/SPEC-004 (marked Merged), `devflow/README.md` index updated, `rapv5` unblocked with a citable
 contract. Runs with the devflow finish stage.
@@ -81,8 +79,9 @@ contract. Runs with the devflow finish stage.
 ## PLAN-Sss-001.P6 Validation strategy
 
 - **PLAN-Sss-001.V1:** Per-slice gate: cold `clojure -M:test` on the touched `skein.core` test namespaces (db + new generation tests).
-- **PLAN-Sss-001.V2:** Adoption safety is proven by tests that assert `user_version` remains 0 after every refused adoption and that row
-  data is byte-identical across a successful adoption.
+- **PLAN-Sss-001.V2:** Adoption safety is proven by tests that assert `user_version` remains 0 after every refused adoption and that the
+  logical contents of every Skein-owned table (all `strands`/`attributes`/`strand_edges`/`acyclic_relations`/scheduler rows) are equal
+  before and after a successful adoption.
 - **PLAN-Sss-001.V3:** Queue acceptance: full locked suite, `clojure -M:smoke` (exercises real weaver boot on a fresh world → stamps
   gen 1), `(cd cli && go test ./...)`, and the `make fmt-check lint reflect-check docs-check` gates.
 - **PLAN-Sss-001.V4:** Manual skew check in a disposable workspace: open a world, bump `user_version` by hand via `sqlite3`, confirm the

@@ -18,27 +18,34 @@ migration path" stance is superseded by the migration-ladder contract for the st
 
 ## DELTA-Sss-002.P2 Contract changes
 
-- **DELTA-Sss-002.CC1 (generation check, amends `SPEC-004.C91b`):** Storage initialization reads `PRAGMA user_version` before any DDL.
-  A database stamped with a newer generation than the binary understands is refused without modification. A database stamped with an
-  older generation is refused with a pointer to the maintained forward-migration path. Only a database at the binary's generation (or an
-  adoptable unstamped one, CC2) proceeds to structural validation and `IF NOT EXISTS` DDL.
-- **DELTA-Sss-002.CC2 (adoption):** A database with no stamp (`user_version` 0) that structurally matches generation 1 is adopted by
-  stamping `user_version = 1` in place at initialization; no row data is touched and adoption is idempotent. Before adoption, a canonical
-  validator compares every Skein-owned table and index against a freshly constructed generation-1 schema: exact columns, order, declared
-  types, nullability, defaults, primary keys, foreign keys, CHECK constraints, index columns and order, uniqueness, and partial-index
-  predicates, covering core and auxiliary objects and rejecting extra columns on managed tables. Any mismatch refuses initialization
-  without writing the stamp.
-- **DELTA-Sss-002.CC3 (migration ladder):** Every generation bump adds a maintained, versioned migration step. Steps remain available in
-  later releases and compose in order, so a user can migrate from any released generation to the current one. Each step applies its DDL,
-  data changes, and `user_version` update in one SQLite transaction so failure rolls the whole step back; a step that cannot be
-  transactional must define durable resume or rollback semantics with failure-injection tests proving recovery from every persisted
-  checkpoint before it can ship. The dedicated migration space is also the readable history of physical schema changes.
+- **DELTA-Sss-002.CC1 (generation check, amends `SPEC-004.C91b`):** Storage initialization reads `PRAGMA user_version` before any DDL
+  and classifies the database: **newer** than the binary's generation → refused without modification; **older** stamped generation
+  (`>= 1`) → refused with a pointer to the maintained forward-migration path; **at the binary's generation** → proceeds through the
+  `IF NOT EXISTS` DDL (which fills in any additive auxiliary objects) and is then canonically validated; **unstamped and empty** (no
+  Skein-owned objects) → bootstrapped with the full schema, validated, and stamped with the binary's generation; **unstamped and
+  non-empty** → the adoption path (CC2).
+- **DELTA-Sss-002.CC2 (adoption):** A non-empty database with no stamp (`user_version` 0) whose present objects structurally match
+  generation 1 is adopted by stamping `user_version = 1` in place at initialization; no row data is touched and adoption is idempotent.
+  The canonical validator compares Skein-owned tables and indexes against the generation-1 reference schema: exact columns, order,
+  declared types, nullability, defaults, primary keys, foreign keys, CHECK constraints, index columns and order, uniqueness, and
+  partial-index predicates, rejecting extra columns on managed tables. Before any DDL, every *present* Skein-owned object must match the
+  reference exactly — a mismatch refuses initialization without writing anything; *absent* auxiliary objects are permitted, since the
+  same `IF NOT EXISTS` DDL that carries additive evolution creates them next. The stamp is written only after the post-DDL full
+  validation passes.
+- **DELTA-Sss-002.CC3 (migration ladder):** Every generation bump adds a maintained, versioned migration step and freezes the outgoing
+  generation's reference schema into the dedicated migration space — while the current generation is 1, the generation-1 reference is
+  the live schema DDL itself, so the first bump must snapshot it before the live DDL evolves. Steps remain available in later releases
+  and compose in order, so a user can migrate from any released generation to the current one. Each step applies its DDL, data changes,
+  and `user_version` update in one SQLite transaction so failure rolls the whole step back; a step that cannot be transactional must
+  define durable resume or rollback semantics with failure-injection tests proving recovery from every persisted checkpoint before it
+  can ship. The migration space is also the readable history of physical schema changes.
 - **DELTA-Sss-002.CC4 (error contract):** Incompatible-generation failures report both the found and the expected generation. The
   newer-generation refusal names the binary as too old for the database; the older-generation refusal names the maintained migration
   path, replacing today's bare "use a new database or migrate it explicitly".
 - **DELTA-Sss-002.CC5 (scope of guarantee):** The two-sided skew guarantee holds between generation-aware binaries and stamped
   databases. Binaries released before schema stamps cannot retroactively inspect `user_version` and stay outside it; `SPEC-004.C16b`'s
-  pre-EAV worlds remain historical (reinitialize or use the archived migrate op) and are not folded into the ladder.
+  pre-EAV worlds remain historical (reinitialize, or check out merge `c77332a` whose tree carries the verified migrate op) and are not
+  folded into the ladder.
 
 ## DELTA-Sss-002.P3 Design decisions
 
@@ -52,6 +59,8 @@ migration path" stance is superseded by the migration-ladder contract for the st
 
 ## DELTA-Sss-002.P4 Open questions
 
-- **DELTA-Sss-002.Q1:** Migration-code home and invocation surface (mill-side Go `mill weaver migrate` vs JVM-side; automatic vs
-  explicit) are deliberately deferred until the first real migration makes the runtime constraints concrete (`PROP-Sss-001.Q3`/`NG1`).
-  Not blocking: generation 1 ships with an empty ladder.
+- **DELTA-Sss-002.Q1:** Migration-code home and invocation surface (automatic vs explicit) are deliberately deferred until the first
+  real migration makes the runtime constraints concrete (`PROP-Sss-001.Q3`/`NG1`). The leading candidate is mill-side Go: it can migrate
+  a stopped weaver's database with no running JVM and supports a clean `mill weaver migrate` surface that can migrate everything in one
+  pass, explicitly or automatically; JVM-side code remains an option. Not blocking: generation 1 ships no executable ladder machinery —
+  only the generation constant, the gate, and the stamp.
