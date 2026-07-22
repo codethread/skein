@@ -143,31 +143,31 @@
 
 (s/def ::spool-about-args
   (s/and #(exact-spool-args? #{:subcommand} #{} %)
-         #(= "about" (:subcommand %))))
+         #(= ["about"] (:subcommand %))))
 (s/def ::spool-add-args
   (s/and #(exact-spool-args? #{:subcommand :git-url} #{:tag :lib} %)
-         #(= "add" (:subcommand %))
+         #(= ["add"] (:subcommand %))
          #(s/valid? ::non-blank-string (:git-url %))
          #(or (nil? (:tag %)) (s/valid? ::non-blank-string (:tag %)))
          #(or (nil? (:lib %)) (s/valid? ::non-blank-string (:lib %)))))
 (s/def ::spool-bump-args
   (s/and #(exact-spool-args? #{:subcommand :family} #{:to} %)
-         #(= "bump" (:subcommand %))
+         #(= ["bump"] (:subcommand %))
          #(s/valid? ::non-blank-string (:family %))
          #(or (nil? (:to %)) (s/valid? ::non-blank-string (:to %)))))
+(s/def ::spool-status-args
+  (s/and #(exact-spool-args? #{:subcommand} #{} %)
+         #(= ["status"] (:subcommand %))))
 (s/def ::spool-args
   (s/or :about ::spool-about-args
         :add ::spool-add-args
-        :bump ::spool-bump-args))
+        :bump ::spool-bump-args
+        :status ::spool-status-args))
 (s/def ::spool-op-context
   (s/and map?
          #(s/valid? ::spool-args (:op/args %))
-         #(or (= "about" (get-in % [:op/args :subcommand]))
+         #(or (= ["about"] (get-in % [:op/args :subcommand]))
               (some? (:op/runtime %)))))
-(s/def ::spool-status-op-context
-  (s/and map?
-         #(= {} (:op/args %))
-         #(some? (:op/runtime %))))
 
 (defn- require-valid! [spec value message]
   (when-not (s/valid? spec value)
@@ -587,7 +587,7 @@
                 "|Queries remote annotated tags, selects a requested, floor-driven,
                  |or latest release, then atomically rewrites its tag and peeled
                  |commit pin together.")}
-    {:form "strand spool-status"
+    {:form "strand spool status"
      :behavior (format-alpha/reflow
                 "|Reads runtime and workspace state only. It performs no network,
                  |file write, sync, reload, or other adoption action.")}]
@@ -604,34 +604,27 @@
       |declared and adopted state without attempting sync or reload.")]})
 
 (defn spool-op
-  "Dispatch validated `strand spool about|add|bump` inputs and results.
+  "Dispatch validated `strand spool about|add|bump|status` inputs and results.
 
   Input uses `::spool-op-context`; results use `::spool-about-result`,
-  `::spool-add-result`, or `::spool-bump-result`. Producer manifests use
-  `::advisory-manifest`. Each closed result/manifest map also uses the named
-  `exact-keys?` predicate because `clojure.spec.alpha/keys` accepts extra keys."
+  `::spool-add-result`, `::spool-bump-result`, or `::spool-status-result`.
+  Producer manifests use `::advisory-manifest`. Each closed result/manifest map
+  also uses the named `exact-keys?` predicate because `clojure.spec.alpha/keys`
+  accepts extra keys. The `status` read leaf keeps the retired `spool-status`
+  op's offline, no-network, closed-result contract verbatim
+  (DELTA-Lhc-001.CC8)."
   [ctx]
   (require-valid! ::spool-op-context ctx "spool received an invalid operation context")
-  (case (:subcommand (:op/args ctx))
+  (case (first (:subcommand (:op/args ctx)))
     "about" (require-valid! ::spool-about-result (spool-about)
                             "spool about returned an invalid result")
     "add" (require-valid! ::spool-add-result (assoc (add-spool-op ctx) :operation "spool add")
                           "spool add returned an invalid result")
     "bump" (require-valid! ::spool-bump-result (assoc (bump-spool-op ctx) :operation "spool bump")
-                           "spool bump returned an invalid result")))
-
-(defn spool-status-op
-  "Return validated offline spool declaration and adoption status.
-
-  Input uses `::spool-status-op-context`; the result uses
-  `::spool-status-result`. Its closed result maps also use the named
-  `exact-keys?` predicate because `clojure.spec.alpha/keys` accepts extra keys."
-  [ctx]
-  (require-valid! ::spool-status-op-context ctx
-                  "spool-status received an invalid operation context")
-  (require-valid! ::spool-status-result
-                  (assoc (spool-status (:op/runtime ctx)) :operation "spool-status")
-                  "spool-status returned an invalid result"))
+                           "spool bump returned an invalid result")
+    "status" (require-valid! ::spool-status-result
+                             (assoc (spool-status (:op/runtime ctx)) :operation "spool status")
+                             "spool status returned an invalid result")))
 
 ;; The blessed parser's :parse :json uses clojure.data.json/read-str, which
 ;; silently returns the first value and ignores trailing input, so it cannot
@@ -833,7 +826,7 @@
   [ctx]
   (let [rt (:op/runtime ctx)
         {:keys [subcommand] nm :name} (:op/args ctx)]
-    (case subcommand
+    (case (first subcommand)
       "list" (json-safe-value (query-list-entries rt))
       "explain" (do (when (str/blank? nm)
                       (throw (ex-info "query explain requires a query name" {})))
@@ -844,7 +837,7 @@
   [ctx]
   (let [rt (:op/runtime ctx)
         {:keys [subcommand] nm :name} (:op/args ctx)]
-    (case subcommand
+    (case (first subcommand)
       "list" (patterns/patterns rt)
       "explain" (do (when (str/blank? nm)
                       (throw (ex-info "pattern explain requires a pattern name" {})))
@@ -1034,12 +1027,20 @@
                   :doc "Narrow to one declaration kind: attr-namespace or edge."}}})
 
 (def ^:private spool-arg-spec
+  "The spool op's fractal node tree: every leaf declares both classes in the
+  arg-spec (DELTA-Lhc-001.CC2 single-source authoring; no registration-opts
+  classes). `status` is the folded-in read leaf that keeps the retired
+  `spool-status` op's offline contract verbatim (DELTA-Lhc-001.CC8)."
   {:op "spool"
    :doc "Add and bump validated spool family coordinates. Run `strand spool about` for conventions."
    :annotations {:use-when ["Pinning or advancing an annotated Git spool release in the workspace spools.edn."]}
    :subcommands
-   {"about" {:doc "Return spool helper conventions and status semantics."}
+   {"about" {:doc "Return spool helper conventions and status semantics."
+             :hook-class :read
+             :deadline-class :standard}
     "add" {:doc "Add one annotated Git spool release to spools.edn."
+           :hook-class :mutating
+           :deadline-class :standard
            :flags {:tag {:type :string
                          :doc "Annotated release tag vN; defaults to the highest release."}
                    :lib {:type :string
@@ -1050,17 +1051,18 @@
                           :doc "Git repository URL."}]
            :annotations {:failure-modes ["batteries/spool-release-unresolved"]}}
     "bump" {:doc "Bump one Git spool family atomically to an annotated release."
+            :hook-class :mutating
+            :deadline-class :standard
             :flags {:to {:type :string
                          :doc "Target annotated release tag vN; defaults from floors or latest."}}
             :positionals [{:name :family
                            :type :string
                            :required? true
                            :doc "Declared spool family symbol."}]
-            :annotations {:failure-modes ["batteries/spool-release-unresolved"]}}}})
-
-(def ^:private spool-status-arg-spec
-  {:op "spool-status"
-   :doc "Join declared, overlay, sync, use, pending, and running release state without network access."})
+            :annotations {:failure-modes ["batteries/spool-release-unresolved"]}}
+    "status" {:doc "Join declared, overlay, sync, use, pending, and running release state without network access."
+              :hook-class :read
+              :deadline-class :standard}}})
 
 (def ^:private attributes-return
   {:type :map :extra :json})
@@ -1169,10 +1171,10 @@
                               :entry :json :requirements :json}}
             "bump" {:type :map
                     :required {:operation :string :status :string :family :string :old :json :new :json
-                               :compare-url [:nullable :string] :requirements :json}}}}
-   'spool-status {:type :map
-                  :required {:operation :string :families :json :requirements :json
-                             :pending-generation :json :release-marker :json}}})
+                               :compare-url [:nullable :string] :requirements :json}}
+            "status" {:type :map
+                      :required {:operation :string :families :json :requirements :json
+                                 :pending-generation :json :release-marker :json}}}}})
 
 ;; --- op-level about/prime prose ---------------------------------------------
 
@@ -1309,12 +1311,17 @@
   over `:children`. No branch keys off the node's depth or kind — that uniformity
   is the schema's forcing function (DELTA-Dtf-003.D1). If a level ever needed its
   own case, the schema would be wrong, not this renderer."
-  [depth {:keys [name doc invocation returns use-when notes failure-modes children]}]
+  [depth {:keys [name doc invocation returns hook-class deadline-class
+                 use-when notes failure-modes children]}]
   (let [field (inc depth)
         entry (inc field)]
     (concat
      [(str (indent depth) name (when (seq doc) (str " — " doc)))
       (str (indent field) "invocation: " (:mode invocation))]
+     ;; classes render only where they exist: invocable leaf nodes
+     ;; (DELTA-Lhc-003.CC1); interior nodes carry null and stay silent.
+     (when hook-class
+       [(str (indent field) "hook-class: " hook-class "   deadline: " deadline-class)])
      (when (seq (:flags invocation))
        (cons (str (indent field) "flags:")
              (map #(flag-line entry %) (:flags invocation))))
@@ -1330,14 +1337,14 @@
      (mapcat #(render-node field %) children))))
 
 (defn- operation-lines
-  "Render the op-wide envelope facts (DELTA-Dtf-001.CC1) that stay off the node."
+  "Render the op-wide envelope facts (DELTA-Dtf-001.CC1) that stay off the node;
+  hook/deadline classes are per-leaf node facts, not op-wide ones
+  (DELTA-Lhc-003.CC1)."
   [operation source]
   [(str "operation: " (:name operation) "  [" (:provenance operation) "]")
-   (str (indent 1) "hook-class:   " (:hook-class operation)
-        "   deadline: " (:deadline-class operation)
-        "   streaming: " (:stream? operation)
+   (str (indent 1) "streaming: " (:stream? operation)
         "   raw-envelope: " (:raw-envelope operation))
-   (str (indent 1) "source:       " (source-label source))])
+   (str (indent 1) "source:    " (source-label source))])
 
 (defn- glossary-lines
   "Render the referenced-term glossary closure (DELTA-Dtf-002.CC5), or nil when
@@ -1402,7 +1409,10 @@
 
   The optional trailing `op-meta` map carries extra registration metadata merged
   over the derived defaults — today the `:about`/`:prime` prose (DELTA-Dtf-002.CC4)
-  a few ops declare."
+  a few ops declare. A nil `hook-class` registers no op-level class: `spool`
+  authors classes single-source on its arg-spec leaves (DELTA-Lhc-002.CC1);
+  the remaining rows keep the tolerated op-level class until the in-repo sweep
+  moves them onto their leaves."
   [['add add-arg-spec :mutating 'skein.spools.batteries/add-op add-meta]
    ['update update-arg-spec :mutating 'skein.spools.batteries/update-op]
    ['show show-arg-spec :read 'skein.spools.batteries/show-op]
@@ -1417,8 +1427,7 @@
    ['note note-arg-spec :mutating 'skein.spools.batteries/note-op]
    ['notes notes-arg-spec :read 'skein.spools.batteries/notes-op]
    ['vocab vocab-arg-spec :read 'skein.spools.batteries/vocab-op]
-   ['spool spool-arg-spec :mutating 'skein.spools.batteries/spool-op]
-   ['spool-status spool-status-arg-spec :read 'skein.spools.batteries/spool-status-op]])
+   ['spool spool-arg-spec nil 'skein.spools.batteries/spool-op]])
 
 (defn install!
   "Register the batteries core strand ops into a weaver runtime.
@@ -1440,10 +1449,10 @@
     :namespace 'skein.spools.batteries
     :ops (mapv (fn [[op-name arg-spec hook-class handler op-meta]]
                  (weaver/register-op! rt op-name
-                                      (merge {:doc (:doc arg-spec)
-                                              :arg-spec arg-spec
-                                              :returns (get op-returns op-name)
-                                              :hook-class hook-class}
+                                      (merge (cond-> {:doc (:doc arg-spec)
+                                                      :arg-spec arg-spec
+                                                      :returns (get op-returns op-name)}
+                                               hook-class (assoc :hook-class hook-class))
                                              op-meta)
                                       handler))
                op-registrations)}))
@@ -1457,10 +1466,10 @@
   the handler `:fn`, provenance, and stream/deadline/hook defaults, keyed by the
   canonical string op name so the effective registry stays string-keyed."
   [op-name arg-spec hook-class handler op-meta]
-  (let [opts (merge {:doc (:doc arg-spec)
-                     :arg-spec arg-spec
-                     :returns (get op-returns op-name)
-                     :hook-class hook-class}
+  (let [opts (merge (cond-> {:doc (:doc arg-spec)
+                             :arg-spec arg-spec
+                             :returns (get op-returns op-name)}
+                      hook-class (assoc :hook-class hook-class))
                     op-meta)
         stream? (boolean (:stream? opts))]
     (cond-> {:name (name op-name)
