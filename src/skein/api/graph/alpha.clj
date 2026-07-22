@@ -139,6 +139,15 @@
 ;; CLI/JSON callers supply params string-keyed; declared names are keywords.
 (s/def ::string-params (s/nilable (s/map-of string? any?)))
 
+(defn- validate-conjoin-params!
+  "Fail when keyword-keyed `params` exceed `query-def`'s declared parameters."
+  [query-def params]
+  (let [declared (vec (:params query-def))
+        declared-set (set declared)]
+    (when-let [unknown (seq (remove declared-set (keys params)))]
+      (throw (ex-info "Unknown query parameters"
+                      {:params (vec unknown) :declared declared})))))
+
 (defn conjoin-where
   "Return a query definition that conjoins `extra-where` onto `query-def`.
 
@@ -151,9 +160,11 @@
   `[:param name]` references at compile time, not here."
   ([query-def extra-where] (conjoin-where query-def extra-where nil))
   ([query-def extra-where params]
-   (if (nil? extra-where)
-     query-def
-     [:and (query/query-expr query-def params) extra-where])))
+   (let [params (or params {})]
+     (validate-conjoin-params! query-def params)
+     (if (nil? extra-where)
+       query-def
+       [:and (query/query-expr query-def params) extra-where]))))
 
 (s/fdef conjoin-where
   :args (s/or :bare (s/cat :query-def ::query-def :extra-where (s/nilable ::where))
@@ -173,7 +184,8 @@
   the built-in path does. A definition with no declared `:params` accepts an
   empty map and rejects every name."
   [query-def params]
-  (let [declared (vec (:params query-def))
+  (let [params (or params {})
+        declared (vec (:params query-def))
         declared-names (set (map name declared))]
     (when-let [unknown (seq (remove declared-names (keys params)))]
       (throw (ex-info "Unknown query parameters"
@@ -201,21 +213,6 @@
 (s/fdef referenced-params
   :args (s/cat :query-def ::query-def)
   :ret ::referenced-params)
-
-(defn lookup-name
-  "Return the canonical registry lookup key for a query name from CLI input.
-
-  Trims a string name and drops a leading `:`, and canonicalizes a simple
-  symbol or keyword; namespaced, blank, or non-name inputs fail loudly. This is
-  the blessed coercion for a raw `--query` argument. `resolve-query` accepts the
-  same raw forms directly, so a caller that only needs the definition skips this
-  and looks up the name in one step."
-  [query-name]
-  (query/query-lookup-name query-name))
-
-(s/fdef lookup-name
-  :args (s/cat :query-name ::query-lookup)
-  :ret string?)
 
 ;; --- strand hydration -------------------------------------------------------
 

@@ -43,6 +43,7 @@
             [skein.api.runtime.glossary.alpha :as glossary]
             [skein.api.vocab.alpha :as vocab]
             [skein.api.weaver.alpha :as weaver]
+            [skein.core.query :as query]
             [skein.core.specs :as specs])
   (:import [java.io PushbackReader StringReader]
            [java.nio.file FileVisitResult Files LinkOption SimpleFileVisitor]
@@ -693,7 +694,7 @@
 (defn- handle-name
   "Coerce a query name string from op args into a registry lookup symbol."
   [query-name]
-  (symbol (graph/lookup-name query-name)))
+  (symbol (query/query-lookup-name query-name)))
 
 (defn- validate-query-params
   "Restrict provided string params to a query's declared keyword names, failing

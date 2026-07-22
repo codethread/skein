@@ -27,7 +27,7 @@ Explicit-runtime API for the named-query registry, query selection, strand
 Function.
 
 Return ancestor root ids reachable from `seed-ids`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/graph/alpha.clj#L233-L238">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/graph/alpha.clj#L230-L235">Source</a></sub></p>
 
 ## <a name="skein.api.graph.alpha/burn-by-ids!">`burn-by-ids!`</a>
 ``` clojure
@@ -45,7 +45,7 @@ Delete strands by id and enqueue burn events for removed rows.
   threads an explicit request-context map (the same shape
   `skein.api.batch.alpha/apply!` accepts) into the gate; the two-argument
   form derives its own burn context.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/graph/alpha.clj#L297-L326">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/graph/alpha.clj#L294-L323">Source</a></sub></p>
 
 ## <a name="skein.api.graph.alpha/coerce-declared-params">`coerce-declared-params`</a>
 ``` clojure
@@ -62,7 +62,7 @@ Coerce string-keyed CLI `params` to a definition's declared keyword names.
   the JSON dispatch) so a spool's `--query` support rejects exactly the params
   the built-in path does. A definition with no declared `:params` accepts an
   empty map and rejects every name.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/graph/alpha.clj#L165-L184">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/graph/alpha.clj#L176-L196">Source</a></sub></p>
 
 ## <a name="skein.api.graph.alpha/conjoin-where">`conjoin-where`</a>
 ``` clojure
@@ -80,7 +80,7 @@ Return a query definition that conjoins `extra-where` onto `query-def`.
   thread an optional overlay (a state filter, say) without a surrounding
   conditional. `skein.core.query` owns the where grammar and resolves
   `[:param name]` references at compile time, not here.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/graph/alpha.clj#L142-L156">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/graph/alpha.clj#L151-L167">Source</a></sub></p>
 
 ## <a name="skein.api.graph.alpha/incoming-edges">`incoming-edges`</a>
 ``` clojure
@@ -93,22 +93,7 @@ Return normalized `edge-type` edges whose target is one of `to-ids`.
   One indexed lookup for a strand's parents/annotators; no graph traversal.
   Adjacency is lenient: an id absent from storage yields no rows rather than
   a missing-id error (unlike subgraph/ancestor-root-ids seeds).
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/graph/alpha.clj#L266-L273">Source</a></sub></p>
-
-## <a name="skein.api.graph.alpha/lookup-name">`lookup-name`</a>
-``` clojure
-(lookup-name query-name)
-```
-Function.
-
-Return the canonical registry lookup key for a query name from CLI input.
-
-  Trims a string name and drops a leading `:`, and canonicalizes a simple
-  symbol or keyword; namespaced, blank, or non-name inputs fail loudly. This is
-  the blessed coercion for a raw `--query` argument. `resolve-query` accepts the
-  same raw forms directly, so a caller that only needs the definition skips this
-  and looks up the name in one step.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/graph/alpha.clj#L205-L214">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/graph/alpha.clj#L263-L270">Source</a></sub></p>
 
 ## <a name="skein.api.graph.alpha/outgoing-edges">`outgoing-edges`</a>
 ``` clojure
@@ -120,7 +105,7 @@ Return normalized `edge-type` edges whose source is one of `from-ids`.
 
   One indexed lookup for a strand's children; no graph traversal. Lenient
   adjacency: an absent id yields no rows rather than a missing-id error.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/graph/alpha.clj#L279-L285">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/graph/alpha.clj#L276-L282">Source</a></sub></p>
 
 ## <a name="skein.api.graph.alpha/queries">`queries`</a>
 ``` clojure
@@ -162,7 +147,7 @@ Return ordered distinct `[:param name]` keyword references in `query-def`.
   compiling SQL. This is the composable read a spool uses to describe a query's
   runtime params; `query-explain` is the by-name descriptive projection that
   carries this same list beside the definition's declared `:params`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/graph/alpha.clj#L190-L199">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/graph/alpha.clj#L202-L211">Source</a></sub></p>
 
 ## <a name="skein.api.graph.alpha/register-query!">`register-query!`</a>
 ``` clojure
@@ -197,7 +182,7 @@ Return the registered query definition for a simple symbol or keyword name.
 Function.
 
 Return normalized strands for ids, preserving first-seen input order.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/graph/alpha.clj#L222-L225">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/graph/alpha.clj#L219-L222">Source</a></sub></p>
 
 ## <a name="skein.api.graph.alpha/subgraph">`subgraph`</a>
 ``` clojure
@@ -207,4 +192,4 @@ Return normalized strands for ids, preserving first-seen input order.
 Function.
 
 Return a normalized strand subgraph rooted at `root-ids`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/graph/alpha.clj#L249-L257">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/graph/alpha.clj#L246-L254">Source</a></sub></p>

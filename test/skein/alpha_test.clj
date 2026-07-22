@@ -134,9 +134,10 @@
         "a nil overlay returns the definition unchanged")
     (is (= detailed (graph/conjoin-where detailed nil {:owner "agent"}))
         "a nil overlay preserves a map definition and its declared :params")
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unknown query parameters"
-                          (graph/conjoin-where detailed [:= :state "closed"] {:nope "x"}))
-        "composition validates params against the declared set")))
+    (let [ex (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unknown query parameters"
+                                   (graph/conjoin-where detailed nil {:nope "x"})))]
+      (is (= {:params [:nope] :declared [:owner]} (ex-data ex))
+          "a nil overlay validates params against the declared set"))))
 
 (deftest coerce-declared-params-restricts-and-rejects-unknown
   (let [detailed {:where [:= [:attr :owner] [:param :owner]] :params [:owner]}
@@ -145,6 +146,8 @@
         "a declared string param round-trips to its keyword name")
     (is (= {} (graph/coerce-declared-params detailed {}))
         "no supplied params yields an empty map")
+    (is (= {} (graph/coerce-declared-params detailed nil))
+        "nil supplied params normalizes to an empty map")
     (is (= {} (graph/coerce-declared-params bare {}))
         "a definition with no declared :params accepts an empty map")
     (let [ex (is (thrown-with-msg? clojure.lang.ExceptionInfo
@@ -164,14 +167,6 @@
       "a bare vector reports references in first-seen order")
   (is (= [] (graph/referenced-params [:= [:attr :owner] "agent"]))
       "a definition with no references reports none"))
-
-(deftest lookup-name-coerces-cli-query-names
-  (is (= "owner" (graph/lookup-name ":owner")) "a leading colon is dropped")
-  (is (= "owner" (graph/lookup-name "  owner  ")) "surrounding whitespace is trimmed")
-  (is (= "agent-owned" (graph/lookup-name 'agent-owned)) "a simple symbol canonicalizes")
-  (is (= "ready" (graph/lookup-name :ready)) "a simple keyword canonicalizes")
-  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"blank" (graph/lookup-name "   "))
-      "a blank name fails loudly"))
 
 (deftest current-runtime-fails-loudly-without-ambient-runtime
   ;; This namespace runs in the parallel batch, whose tests start unpublished
