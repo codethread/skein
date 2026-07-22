@@ -749,6 +749,7 @@
                                             removed)
                     staged (stage-publications backends base-candidates graph order raw
                                                previous-contributions previous-sources)
+                    _ (publication/validate-op-candidates! backends (:candidates staged))
                     provisional (provisional-result mode (:roots sync-result)
                                                     (:conflicts sync-result)
                                                     (:remedies sync-result)
@@ -760,13 +761,20 @@
                 ;; and records no coordinator state (DELTA-OlrRepl-001.CC14).
                 (if (:dry-run? opts)
                   (plan-result runtime sync-result staged provisional backends graph)
-                  (let [changed-kinds (publication/publish! backends (:candidates staged))
+                  (let [live-candidates (publication/candidates backends)
+                        changed-kinds (publication/publish! backends (:candidates staged))
                         removal-order (->> (module-graph/dependency-order old-graph)
                                            reverse
                                            (filter removed))
                         reconcile-order (vec (concat removal-order order))
                         reconciled (reconcile-modules runtime with-loader state graph
                                                       provisional reconcile-order)
+                        _ (try
+                            (publication/validate-op-glossary-refs!
+                             runtime backends (:candidates staged))
+                            (catch Throwable throwable
+                              (publication/publish! backends live-candidates)
+                              (throw throwable)))
                         contributions (apply dissoc (:contributions staged) removed)
                         contribution-sources (apply dissoc (:source-stamps staged) removed)
                         loaded-status (safe-loaded-status runtime)

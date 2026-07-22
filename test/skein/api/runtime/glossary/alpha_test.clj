@@ -88,6 +88,8 @@
 
 (defn- demo-spec [failure-modes]
   {:op "demo"
+   :hook-class :read
+   :deadline-class :standard
    :flags {:x {:type :string :doc "x"}}
    :annotations {:failure-modes failure-modes}})
 
@@ -112,6 +114,8 @@
     (fn [rt _]
       (let [spec {:op "demo2"
                   :subcommands {"go" {:doc "go"
+                                      :hook-class :read
+                                      :deadline-class :standard
                                       :annotations {:failure-modes ["lifecycle/timeout"]}}}}]
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"unregistered glossary outcome"
                               (weaver/register-op! rt 'demo2 {:arg-spec spec} `demo-handler)))

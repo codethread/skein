@@ -184,17 +184,16 @@
   (DELTA-Lhc-002.CC3/CC4).
 
   Walks the envelope argv's routing tokens through the op's arg-spec to the
-  invoked leaf: the leaf's declared classes win, and an undeclared class falls
-  back to the op-entry class (accretive, this slice). A missing or unknown
+  invoked leaf. A missing or unknown
   verb token at any depth throws loudly here — before any hook runs, the same
   pre-hook policy as an unknown op name — carrying the canonical
   `:op`/`:path`/`:token`/`:available` context. Flat ops resolve their own root
   leaf; raw-envelope ops (no arg-spec) gate on the entry classes."
   [entry argv]
-  (let [leaf (when-let [arg-spec (:arg-spec entry)]
-               (:node (cli/resolve-leaf arg-spec argv)))]
-    {:hook-class (or (:hook-class leaf) (:hook-class entry))
-     :deadline-class (or (:deadline-class leaf) (:deadline-class entry))}))
+  (if-let [arg-spec (:arg-spec entry)]
+    (select-keys (:node (cli/resolve-leaf arg-spec argv))
+                 [:hook-class :deadline-class])
+    (select-keys entry [:hook-class :deadline-class])))
 
 (defn- run-payload-hooks-if-mutating!
   "Gate a mutating invoke behind `:payload/received` hooks (SPEC-004-D003.C4).

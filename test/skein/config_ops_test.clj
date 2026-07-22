@@ -98,7 +98,7 @@
   (if (and (map? returns) (contains? returns :subcommands))
     (into #{}
           (mapcat (fn [[subcommand return-case]]
-                    (return-case-leaves name {:subcommand subcommand} return-case)))
+                    (return-case-leaves name {:subcommand [subcommand]} return-case)))
           (:subcommands returns))
     (return-case-leaves name {} returns)))
 

@@ -80,16 +80,20 @@
                           {"watch" {:stream {:emits :string
                                              :result [:nullable :boolean]}}}}]
       (weaver/register-op! rt 'flat
-                           {:returns flat-shape}
+                           {:hook-class :mutating
+                            :deadline-class :standard
+                            :returns flat-shape}
                            'skein.test.alpha-test/unused-op)
       (weaver/register-op! rt 'subcommand
                            {:arg-spec {:op "subcommand"
-                                       :subcommands {"show" {}}}
+                                       :subcommands {"show" {:hook-class :mutating
+                                                             :deadline-class :standard}}}
                             :returns {:subcommands {"show" :integer}}}
                            'skein.test.alpha-test/unused-op)
       (weaver/register-op! rt 'stream
                            {:arg-spec {:op "stream"
-                                       :subcommands {"watch" {}}}
+                                       :subcommands {"watch" {:hook-class :mutating
+                                                              :deadline-class :unbounded}}}
                             :stream? true
                             :returns stream-returns}
                            'skein.test.alpha-test/unused-op)
@@ -97,8 +101,9 @@
         (is (identical? flat-value (t/check-op-return! rt 'flat flat-value))))
       (testing "subcommand result selects by path vector"
         (is (= 42 (t/check-op-return! rt 'subcommand {:subcommand ["show"]} 42))))
-      (testing "a legacy scalar subcommand coerces to a one-segment path"
-        (is (= 42 (t/check-op-return! rt 'subcommand {:subcommand "show"} 42))))
+      (testing "a scalar subcommand context fails loudly"
+        (is (thrown? clojure.lang.ExceptionInfo
+                     (t/check-op-return! rt 'subcommand {:subcommand "show"} 42))))
       (testing "stream emitted item and terminal result"
         (is (= "line" (t/check-op-return! rt 'stream
                                           {:subcommand ["watch"] :channel :emits}
@@ -110,7 +115,11 @@
         (weaver/register-op! rt 'deep
                              {:arg-spec {:op "deep"
                                          :subcommands
-                                         {"a" {:subcommands {"b" {} "c" {}}}}}
+                                         {"a" {:subcommands
+                                               {"b" {:hook-class :mutating
+                                                     :deadline-class :standard}
+                                                "c" {:hook-class :mutating
+                                                     :deadline-class :standard}}}}}
                               :returns {:subcommands
                                         {"a" {:subcommands {"b" :integer
                                                             "c" :string}}}}}
@@ -136,12 +145,18 @@
 (deftest check-op-return-fails-loudly-on-absent-or-misaligned-declarations
   (t/with-weaver-world [ctx {:storage :sqlite-memory}]
     (let [rt (:runtime ctx)]
-      (weaver/register-op! rt 'undeclared 'skein.test.alpha-test/unused-op)
+      (weaver/register-op! rt 'undeclared
+                           {:hook-class :mutating :deadline-class :standard}
+                           'skein.test.alpha-test/unused-op)
       (weaver/register-op! rt 'flat
-                           {:returns :string}
+                           {:hook-class :mutating
+                            :deadline-class :standard
+                            :returns :string}
                            'skein.test.alpha-test/unused-op)
       (weaver/register-op! rt 'stream
                            {:stream? true
+                            :hook-class :mutating
+                            :deadline-class :unbounded
                             :returns {:stream {:emits :string :result :boolean}}}
                            'skein.test.alpha-test/unused-op)
       (doseq [[operation context value reason]

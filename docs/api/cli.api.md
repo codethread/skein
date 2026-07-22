@@ -19,8 +19,8 @@ Blessed declarative argv parser for weaver ops (SPEC-003-D003.C1/C2).
 
     {:op <keyword-or-string> ; optional, echoed into errors and help
      :doc <string>           ; optional summary
-     :hook-class :read | :mutating          ; optional leaf metadata
-     :deadline-class :standard | :unbounded ; optional leaf metadata
+     :hook-class :read | :mutating          ; optional parser metadata
+     :deadline-class :standard | :unbounded ; optional parser metadata
      :flags {<name-kw> <flag-spec>}
      :positionals [<positional-spec> ...]} ; trailing may be variadic
 

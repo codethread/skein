@@ -15,8 +15,8 @@
 
     {:op <keyword-or-string> ; optional, echoed into errors and help
      :doc <string>           ; optional summary
-     :hook-class :read | :mutating          ; optional leaf metadata
-     :deadline-class :standard | :unbounded ; optional leaf metadata
+     :hook-class :read | :mutating          ; optional parser metadata
+     :deadline-class :standard | :unbounded ; optional parser metadata
      :flags {<name-kw> <flag-spec>}
      :positionals [<positional-spec> ...]} ; trailing may be variadic
 

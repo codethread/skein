@@ -75,15 +75,6 @@
                           :reason reason}
                          data))))
 
-(defn- selection-path
-  "Coerce a context `:subcommand` into the full path vector.
-
-  The contract value is the parse result's path vector (DELTA-Lhc-001.CC7); a
-  legacy scalar string coerces to a one-segment path as intra-branch
-  scaffolding until the enforcement flip retires the tolerance."
-  [raw]
-  (if (string? raw) [raw] (vec raw)))
-
 (defn- select-return-shape!
   [entry context]
   (when-not (map? context)
@@ -117,16 +108,22 @@
                                                {:subcommand (:subcommand context)})
 
                       routed?
-                      (try
-                        (return-shape/select-case declaration
-                                                  (selection-path (:subcommand context)))
-                        (catch clojure.lang.ExceptionInfo e
-                          (let [data (ex-data e)]
-                            (return-selection-error!
-                             entry declaration context
-                             (:reason data)
-                             (ex-message e)
-                             (dissoc data :skein.api.return-shape.alpha/error :reason)))))
+                      (do
+                        (when-not (vector? (:subcommand context))
+                          (return-selection-error!
+                           entry declaration context
+                           :invalid-return-subcommand
+                           "Subcommand return context must be a path vector"
+                           {:subcommand (:subcommand context)}))
+                        (try
+                          (return-shape/select-case declaration (:subcommand context))
+                          (catch clojure.lang.ExceptionInfo e
+                            (let [data (ex-data e)]
+                              (return-selection-error!
+                               entry declaration context
+                               (:reason data)
+                               (ex-message e)
+                               (dissoc data :skein.api.return-shape.alpha/error :reason))))))
 
                       :else declaration)
         stream (when (and (map? return-case) (contains? return-case :stream))

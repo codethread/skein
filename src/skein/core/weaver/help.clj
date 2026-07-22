@@ -177,14 +177,9 @@
    :children children})
 
 (defn- leaf-class
-  "The projected class string or nil for an invocable leaf node.
-
-  The leaf's declared node metadata when present, else the op-entry class —
-  the accretive fallback this slice tolerates (DELTA-Lhc-001.CC2). Entries
-  published before either declaration existed project nil; the enforcement
-  flip makes the node declaration the only source."
-  [raw-node entry key]
-  (some-> (or (get raw-node key) (get entry key)) name))
+  "Return the projected class string from one invocable leaf's metadata."
+  [raw-node key]
+  (some-> (get raw-node key) name))
 
 (defn- node-doc
   "The declared doc for an op's root node.
@@ -212,8 +207,8 @@
           (when (and (not interior?) (some? returns) (not routed-returns?))
             (return-shape/explain returns))
           (:annotations raw)
-          (when-not interior? (leaf-class raw entry :hook-class))
-          (when-not interior? (leaf-class raw entry :deadline-class))
+          (when-not interior? (leaf-class raw :hook-class))
+          (when-not interior? (leaf-class raw :deadline-class))
           (mapv (fn [{child-name :name :as child-explained}]
                   (arg-node entry child-name (:doc child-explained)
                             (get-in raw [:subcommands child-name])
@@ -241,8 +236,8 @@
             ;; come from the op's `:annotations` metadata (MI1a); an arg-spec op
             ;; sources them from its arg-spec nodes.
             (:annotations entry)
-            (leaf-class nil entry :hook-class)
-            (leaf-class nil entry :deadline-class)
+            (leaf-class entry :hook-class)
+            (leaf-class entry :deadline-class)
             [])
       (let [explained (cli/explain arg-spec)]
         (arg-node entry (:name entry) (node-doc entry explained)
@@ -265,8 +260,8 @@
            :flags [] :positionals []}
           nil
           nil
-          (when leaf? (leaf-class arg-spec entry :hook-class))
-          (when leaf? (leaf-class arg-spec entry :deadline-class))
+          (when leaf? (leaf-class (or arg-spec entry) :hook-class))
+          (when leaf? (leaf-class (or arg-spec entry) :deadline-class))
           [])))
 
 (defn- referenced-outcomes

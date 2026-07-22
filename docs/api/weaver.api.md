@@ -155,12 +155,12 @@ Invoke a registered CLI operation with raw string argv from a root-level
   `<op> help`/`about`/`prime` sugar and malformed `--help` shapes redirect loudly
   (DELTA-Dtf-002.CC3). Subcommand map results receive a
   canonical `:operation` label containing the registered op name and full
-  resolved path, including a nested `:action`. A handler-supplied `:operation`
+  resolved subcommand path. A handler-supplied `:operation`
   equal to the derived label is preserved; any other value, including explicit
   nil, fails loudly with the expected and actual labels. Raw-envelope ops (no
   `:arg-spec`) receive the context unchanged, still carrying the raw
   `:op/payloads` map.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L486-L545">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L523-L582">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/op-provenance">`op-provenance`</a>
 ``` clojure
@@ -177,7 +177,7 @@ Return owner/provenance diagnostics for `runtime`'s CLI op registry as data.
   system owner, a workspace op under the direct owner — and which lower-layer
   entries an override shadows. Op entries carry the handler symbol as data, not a
   resolved function value (DELTA-OlrDrt-001.CC9).
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L469-L480">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L506-L517">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/ops">`ops`</a>
 ``` clojure
@@ -186,7 +186,7 @@ Return owner/provenance diagnostics for `runtime`'s CLI op registry as data.
 Function.
 
 Return registered CLI operation entries for the current weaver runtime.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L440-L443">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L442-L445">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/ready">`ready`</a>
 ``` clojure
@@ -228,10 +228,12 @@ Register a trusted weaver-side CLI operation.
   The third positional argument is either a doc string or an op metadata map
   with keys `:doc`, `:arg-spec` (parser spec, structurally validated at
   registration), `:returns` (validated return-shape declaration), `:stream?`
-  (default false), `:deadline-class` (`:standard`/`:unbounded`, defaulting to
-  `:unbounded` for stream ops), and `:hook-class` (`:read`/`:mutating`, default
-  `:mutating`); unknown keys fail loudly. Provenance (the registering namespace)
-  is recorded from the handler symbol and must never be caller-supplied.
+  (default false), `:deadline-class` (`:standard`/`:unbounded`), and
+  `:hook-class` (`:read`/`:mutating`); unknown keys fail loudly. Arg-spec ops
+  declare both classes on every leaf and may not declare them in this metadata
+  map. Raw-envelope ops declare both classes here. Provenance (the registering
+  namespace) is recorded from the handler symbol and must never be
+  caller-supplied.
 
   Registering an already-registered name fails loudly, naming both the existing
   entry's provenance and the attempted registrant; use `replace-op!` to override
@@ -239,7 +241,7 @@ Register a trusted weaver-side CLI operation.
   are normally published by owner-complete modules from init.clj or registered
   directly from a live REPL. Module refresh replaces its owner's partition;
   direct registrations remain until explicitly replaced or removed.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L370-L403">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L370-L405">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/replace-op!">`replace-op!`</a>
 ``` clojure
@@ -253,7 +255,7 @@ Replace an already-registered op, failing loudly when the name is absent.
 
   Same signature as `register-op!`. This is the deliberate override for a name
   that already exists; unlike `register-op!` it requires the name to be present.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L413-L430">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L415-L432">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/resolve-op">`resolve-op`</a>
 ``` clojure
@@ -267,7 +269,7 @@ Return the registered CLI operation entry for `op-name`, or fail loudly.
   concurrent registry replacement takes effect only for a later resolve — the
   in-flight lookup and its not-found diagnostic share one immutable view
   (DELTA-OlrDrt-001.CC9/CC10, op symbols resolve at invocation).
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L449-L463">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L486-L500">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/show">`show`</a>
 ``` clojure

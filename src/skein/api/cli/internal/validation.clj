@@ -39,7 +39,7 @@
 (defn- node-context
   "Assemble the canonical path-carrying error context for the node at `path`."
   [op path extra]
-  (merge {:op (op-label op) :path path} extra))
+  (merge {:op (op-label op) :path path :token nil :available []} extra))
 
 (defn validate-declared-parse!
   "Validate a flag or positional declared :parse when one is present."
@@ -168,10 +168,7 @@
       (validate-declared-parse! op path :positionals (:name spec) spec))))
 
 (defn- validate-leaf-classes!
-  "Validate a leaf node's declared `:hook-class`/`:deadline-class` metadata.
-
-  Accretive (DELTA-Lhc-001.CC2, this slice): absence is tolerated, but a
-  declared value must be a member of its class enum."
+  "Validate a leaf node's declared `:hook-class`/`:deadline-class` metadata."
   [op path node]
   (doseq [[key allowed] node-class-values
           :when (contains? node key)

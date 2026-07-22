@@ -73,7 +73,7 @@
             required (set (map (juxt :name (constantly {})) entries))
             listing (weaver/op! rt 'guild ["list"])
             closed (weaver/op! rt 'gate.close.v1 [(json-arg {:task "T-1"})])
-            _ (t/check-op-return! rt 'guild {:subcommand "list"} listing)
+            _ (t/check-op-return! rt 'guild {:subcommand ["list"]} listing)
             _ (t/check-op-return! rt 'gate.close.v1 closed)
             checked #{["guild" {}] ["gate.close.v1" {}]}]
         (is (= [] missing))
