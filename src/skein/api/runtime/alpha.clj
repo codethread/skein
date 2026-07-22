@@ -298,14 +298,13 @@
 (defn plan
   "Return the dry-run intentions of `refresh!` without publishing or reconciling.
 
-  `plan` and `(plan runtime {:only keys})` collect and diff exactly as their
-  `refresh!` counterparts but stop before registry publication and resource
-  reconcile, returning a `::refresh-result`-shaped map flagged `:dry-run? true`
-  with a `:caveat`. The one honest caveat, stated in the result and here:
-  collection may load module source code and any such load is recorded in the
-  namespace load ledger; no publication or reconcile effect runs. Malformed
-  options fail loudly. The result conforms to `::plan-result`
-  (DELTA-OlrRepl-001.CC14)."
+  `plan` and `(plan runtime {:only keys})` collect and diff against the current
+  synchronized roots without fetching, synchronizing, publishing, reconciling,
+  or recording coordinator state. They return a `::refresh-result`-shaped map
+  flagged `:dry-run? true` with a `:caveat`. The one honest caveat, stated in
+  the result and here: collection may load module source code and record that
+  load in the namespace ledger. Malformed options fail loudly. The result
+  conforms to `::plan-result` (DELTA-OlrRepl-001.CC14)."
   ([runtime] (plan runtime {}))
   ([runtime opts]
    (validate-refresh-opts! opts)

@@ -12,14 +12,18 @@
 (def ^:private registry-state-key
   :skein.api.registry.alpha/state)
 
+(defn- core-backend [kind store]
+  {:kind kind :type :core :store store :storage (:kernel store)})
+
 (defn- core-backends [runtime]
-  {:ops {:kind :ops :type :core :store (:op-store runtime)}
-   :queries {:kind :queries :type :core :store (:query-store runtime)}
-   :patterns {:kind :patterns :type :core :store (:pattern-store runtime)}
-   :hooks {:kind :hooks :type :core :store (:hook-store runtime)}
+  {:ops (core-backend :ops (:op-store runtime))
+   :queries (core-backend :queries (:query-store runtime))
+   :patterns (core-backend :patterns (:pattern-store runtime))
+   :hooks (core-backend :hooks (:hook-store runtime))
    :events {:kind :events
             :type :core
-            :store (get-in runtime [:event-system :handler-store])}})
+            :store (get-in runtime [:event-system :handler-store])
+            :storage (get-in runtime [:event-system :handler-store :kernel])}})
 
 (defn- domain-backends [runtime]
   (reduce-kv
@@ -35,6 +39,7 @@
           (assoc m kind-id {:kind kind-id
                             :type :domain
                             :handle value
+                            :storage (get value registry-state-key)
                             :spool-state/key state-key}))
         result
         (:kinds (registry/snapshot value)))
@@ -63,9 +68,14 @@
     :domain (registry/snapshot handle)))
 
 (defn candidates
-  "Return current immutable candidate snapshots for every publication backend."
+  "Return one current immutable candidate snapshot per backing store."
   [backends]
-  (update-vals backends backend-snapshot))
+  (reduce (fn [result {:keys [storage] :as backend}]
+            (if (contains? result storage)
+              result
+              (assoc result storage (backend-snapshot backend))))
+          {}
+          (vals backends)))
 
 (defn- without-owner [snapshot owner]
   (owner-registry/normalize
@@ -97,14 +107,15 @@
                        :kinds (vec (sort-by pr-str unknown))})))
     (reduce-kv
      (fn [result kind-id partition]
-       (let [snapshot (get result kind-id)
+       (let [storage (:storage (get backends kind-id))
+             snapshot (get result storage)
              candidate (-> snapshot
                            (assoc-in [:partitions kind-id owner]
                                      {:layer :workspace
                                       :entries (:entries partition)
                                       :overrides (:overrides partition)})
                            owner-registry/normalize)]
-         (assoc result kind-id candidate)))
+         (assoc result storage candidate)))
      (remove-owner candidate-map owner)
      contribution)))
 
@@ -126,13 +137,15 @@
   The effect-free counterpart of `publish!`, used by the dry-run plan path to
   diff intentions without swapping any registry snapshot."
   [backends candidate-map]
-  (reduce-kv
-   (fn [changed kind-id backend]
-     (if (= (backend-snapshot backend) (get candidate-map kind-id))
-       changed
-       (conj changed kind-id)))
-   []
-   backends))
+  (->> backends
+       (keep (fn [[kind-id {:keys [storage] :as backend}]]
+               (let [before (backend-snapshot backend)
+                     after (get candidate-map storage)]
+                 (when-not (= (get-in before [:partitions kind-id])
+                              (get-in after [:partitions kind-id]))
+                   kind-id))))
+       (sort-by pr-str)
+       vec))
 
 (defn publish!
   "Publish all changed candidate snapshots and return changed kind ids.
@@ -141,16 +154,20 @@
   which normalize before this function runs. Each kind's readers observe one
   immutable before-or-after snapshot; no event lane is stopped or cleared."
   [backends candidate-map]
-  (reduce-kv
-   (fn [changed kind-id backend]
-     (let [before (backend-snapshot backend)
-           after (get candidate-map kind-id)]
-       (if (= before after)
-         changed
-         (do
-           (case (:type backend)
-             :core (publish-core! backend after)
-             :domain (publish-domain! backend after))
-           (conj changed kind-id)))))
-   []
-   backends))
+  (let [changed (changed-kinds backends candidate-map)]
+    (reduce
+     (fn [published {:keys [storage] :as backend}]
+       (if (contains? published storage)
+         published
+         (let [before (backend-snapshot backend)
+               after (get candidate-map storage)]
+           (if (= before after)
+             (conj published storage)
+             (do
+               (case (:type backend)
+                 :core (publish-core! backend after)
+                 :domain (publish-domain! backend after))
+               (conj published storage))))))
+     #{}
+     (vals backends))
+    changed))

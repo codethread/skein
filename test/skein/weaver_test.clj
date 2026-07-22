@@ -2990,6 +2990,24 @@
   [workspace relative-path ns-sym]
   (write-runtime-module! workspace relative-path ns-sym "nil"))
 
+(defn- write-local-spool-module!
+  [workspace root-lib ns-sym body]
+  (let [relative-root "spools/module-root"
+        root (io/file workspace relative-root)
+        relative-source (-> (str ns-sym)
+                            (str/replace "." "/")
+                            (str/replace "-" "_"))
+        source (io/file root "src" (str relative-source ".clj"))]
+    (io/make-parents source)
+    (spit (io/file workspace "spools.edn")
+          (pr-str {:spools {root-lib {:local/root relative-root}}}))
+    (spit (io/file root "deps.edn") "{:paths [\"src\"]}\n")
+    (spit source
+          (str "(ns " ns-sym
+               "\n  (:require [skein.core.weaver.runtime :as runtime]))\n"
+               body "\n"))
+    source))
+
 (deftest startup-collects-layered-module-graph-and-full-refresh-removes-owners
   (let [world (temp-world)
         workspace (:config-dir world)
@@ -3175,6 +3193,153 @@
                              :contribute 'skein.weaver-test/module-contribute}))))
         (is (= {:one {:version 1}}
                (registry/effective reg :test/items)))))))
+
+(deftest f1-multi-kind-domain-handle-publishes-one-atomic-snapshot
+  (with-runtime
+    (fn [rt _db-file]
+      (let [workspace (get-in rt [:metadata :config-dir])
+            suffix (str/replace (str (random-uuid)) "-" "")
+            source "modules/multi-kind.clj"
+            reg (runtime/spool-state
+                 rt ::multi-kind-registry {:version 1}
+                 #(doto (registry/registry)
+                    (registry/declare-kind!
+                     {:id :test/kind-a
+                      :entry-spec ::module-item
+                      :binding-moment :test/use})
+                    (registry/declare-kind!
+                     {:id :test/kind-b
+                      :entry-spec ::module-item
+                      :binding-moment :test/use})))]
+        (explicit-module-source! workspace source
+                                 (symbol (str "test.module.multi-kind-" suffix)))
+        (reset! module-contributions
+                {:multi-kind {:test/kind-a {:a {:version 1}}
+                              :test/kind-b {:b {:version 2}}}})
+        (is (= :applied
+               (:status
+                (runtime/module!
+                 rt :multi-kind
+                 {:file source
+                  :contribute 'skein.weaver-test/module-contribute}))))
+        (is (= {:a {:version 1}} (registry/effective reg :test/kind-a)))
+        (is (= {:b {:version 2}} (registry/effective reg :test/kind-b)))))))
+
+(deftest f2-ns-default-collector-reloads-edits-and-retracts-deleted-forms
+  (with-runtime
+    (fn [rt _db-file]
+      (let [workspace (get-in rt [:metadata :config-dir])
+            suffix (str/replace (str (random-uuid)) "-" "")
+            ns-sym (symbol (str "test.module.ns-collector-" suffix))
+            root-lib 'test/module-root
+            source (write-local-spool-module!
+                    workspace root-lib ns-sym
+                    (str "(runtime/collect-module-entry! :queries \"kept\" "
+                         "[:= [:attr :version] 1])\n"
+                         "(runtime/collect-module-entry! :queries \"deleted\" "
+                         "[:= [:attr :deleted] true])"))]
+        (is (= :applied
+               (:status (runtime/module! rt :ns-module
+                                         {:ns ns-sym :spools [root-lib]}))))
+        (is (= #{"kept" "deleted"}
+               (set (keys (graph/queries rt)))))
+        (spit source
+              (str "(ns " ns-sym
+                   "\n  (:require [skein.core.weaver.runtime :as runtime]))\n"
+                   "(runtime/collect-module-entry! :queries \"kept\" "
+                   "[:= [:attr :version] 2])\n"))
+        (let [result (runtime/refresh! rt {:only [:ns-module]})]
+          (is (= :applied (:status result)))
+          (is (= [:= [:attr :version] 2]
+                 (get (graph/queries rt) "kept")))
+          (is (not (contains? (graph/queries rt) "deleted"))
+              "a deleted authoring form is omitted from the replacement"))))))
+
+(deftest f4-unledgered-loaded-ns-module-fails-with-structured-reason
+  (with-runtime
+    (fn [rt _db-file]
+      (let [workspace (get-in rt [:metadata :config-dir])
+            suffix (str/replace (str (random-uuid)) "-" "")
+            ns-sym (symbol (str "test.module.unledgered-" suffix))
+            root-lib 'test/module-root]
+        (write-local-spool-module!
+         workspace root-lib ns-sym
+         "(runtime/collect-module-entry! :queries \"unledgered\" [:= [:attr :v] 1])")
+        (runtime/sync! rt)
+        (weaver-runtime/with-runtime-and-spool-classloader
+          rt #(require ns-sym))
+        (is (empty? (filter #(= ns-sym (:namespace %))
+                            (spool-sync/namespace-load-ledger rt))))
+        (let [result (runtime/module! rt :unledgered
+                                      {:ns ns-sym :spools [root-lib]})]
+          (is (= :partial (:status result)))
+          (is (= :failed (get-in result [:modules :unledgered :status])))
+          (is (= :unledgered-loaded-namespace
+                 (get-in result [:modules :unledgered :error :data :reason])))
+          (is (not (contains? (graph/queries rt) "unledgered"))))))))
+
+(deftest f6-plan-never-syncs-or-records-refused-results
+  (with-runtime
+    (fn [rt _db-file]
+      (let [workspace (get-in rt [:metadata :config-dir])
+            suffix (str/replace (str (random-uuid)) "-" "")
+            source "modules/plan-effects.clj"]
+        (explicit-module-source! workspace source
+                                 (symbol (str "test.module.plan-effects-" suffix)))
+        (reset! module-contributions
+                {:planned {:queries {"planned" [:= [:attr :v] 1]}}})
+        (runtime/module! rt :planned
+                         {:file source
+                          :contribute 'skein.weaver-test/module-contribute})
+        (let [last-refresh (:last-refresh (runtime/status rt))
+              sync-calls (atom 0)]
+          (swap! module-contributions assoc
+                 :planned {:queries {"planned" [:= [:attr :v] 2]}})
+          (with-redefs [spool-sync/sync-approved-spools
+                        (fn [& _]
+                          (swap! sync-calls inc)
+                          (throw (ex-info "plan synchronized" {})))]
+            (is (= :applied
+                   (:status (runtime/plan rt {:only [:planned]}))))
+            (is (zero? @sync-calls)))
+          (spit (io/file workspace "init.clj")
+                (str "(skein.core.weaver.runtime/declare-module! "
+                     "skein.core.weaver.runtime/*runtime* :cycle-a "
+                     "{:file \"modules/plan-effects.clj\" :after [:cycle-b]})\n"
+                     "(skein.core.weaver.runtime/declare-module! "
+                     "skein.core.weaver.runtime/*runtime* :cycle-b "
+                     "{:file \"modules/plan-effects.clj\" :after [:cycle-a]})\n"))
+          (is (= :refused (:status (runtime/plan rt))))
+          (is (= last-refresh (:last-refresh (runtime/status rt)))
+              "neither an ordinary nor refused plan records coordinator state"))))))
+
+(deftest f7-startup-accepts-an-optional-only-root-failure
+  (let [world (temp-world)
+        workspace (:config-dir world)
+        suffix (str/replace (str (random-uuid)) "-" "")
+        source "modules/optional.clj"
+        rt (atom nil)]
+    (try
+      (explicit-module-source! workspace source
+                               (symbol (str "test.module.optional-" suffix)))
+      (spit (io/file workspace "spools.edn")
+            (pr-str {:spools {'test/missing
+                              {:local/root "spools/does-not-exist"}}}))
+      (spit (io/file workspace "init.clj")
+            (str "(skein.core.weaver.runtime/declare-module! "
+                 "skein.core.weaver.runtime/*runtime* :optional "
+                 "{:file \"modules/optional.clj\" "
+                 ":spools ['test/missing]})\n"))
+      (reset! rt (weaver-runtime/start! nil {:world world
+                                             :publish? false
+                                             :storage :sqlite-memory}))
+      (let [status (runtime/status @rt)]
+        (is (= :unchanged (get-in status [:last-refresh :status])))
+        (is (= :skipped (get-in status [:module/outcomes :optional :status])))
+        (is (= :failed (get-in status [:root/outcomes 'test/missing :status]))))
+      (finally
+        (when @rt (weaver-runtime/stop! @rt))
+        (delete-tree! (io/file workspace ".."))))))
 
 (deftest targeted-refresh-validates-keys-and-full-graph-refusal-preserves-state
   (with-runtime

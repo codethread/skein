@@ -14,8 +14,8 @@
 
 (def plan-caveat
   "The one honest side effect a dry-run plan still incurs (DELTA-OlrRepl-001.CC14)."
-  (str "Collection may load module source code; any such load is recorded in the "
-       "namespace load ledger. No registry publication or resource reconcile runs."))
+  (str "Collection may evaluate module source code; synced namespace loads may append "
+       "to the load ledger. No registry publication or resource reconcile runs."))
 
 (defn initial-state
   "Return the empty runtime-owned module coordinator state."
@@ -25,6 +25,7 @@
    :shadows (sorted-map)
    :startup/files []
    :contributions (sorted-map)
+   :contribution-sources (sorted-map)
    :resources (sorted-map)
    :outcomes (sorted-map)
    :root-outcomes (sorted-map)
@@ -238,19 +239,39 @@
           :contribution/status :retained}
          problem))
 
+(defn- latest-source-binding [runtime ns-sym]
+  (->> (spool-sync/namespace-load-ledger runtime)
+       (filter #(= ns-sym (:namespace %)))
+       last))
+
+(defn- source-stamp [source-binding]
+  (some-> source-binding (select-keys [:root-lib :file :sha256])))
+
 (defn- load-source!
-  [runtime with-loader key declaration]
+  [runtime with-loader key declaration previous-source]
   (if-let [ns-sym (:ns declaration)]
-    (with-loader #(spool-sync/load-synced-namespace! runtime ns-sym key))
+    (let [source-binding (latest-source-binding runtime ns-sym)]
+      (when (and (find-ns ns-sym) (nil? source-binding))
+        (fail! "Loaded module namespace has no source-ledger binding"
+               {:reason :unledgered-loaded-namespace
+                :module/key key
+                :namespace ns-sym}))
+      (if (and source-binding
+               (not= previous-source (source-stamp source-binding)))
+        (with-loader #(do (load-file (:file source-binding))
+                          {:ns ns-sym
+                           :file (:file source-binding)
+                           :collection/reload? true}))
+        (with-loader #(spool-sync/load-synced-namespace! runtime ns-sym key))))
     (let [file (spool-sync/module-file runtime (:file declaration))]
       (with-loader #(do (load-file file) {:file file})))))
 
 (defn- evaluate-module
-  [runtime with-loader key declaration previous-contribution]
+  [runtime with-loader key declaration previous-contribution previous-source]
   (try
     (let [{:keys [return contribution]}
           (module-graph/with-contribution-collection
-            #(load-source! runtime with-loader key declaration))
+            #(load-source! runtime with-loader key declaration previous-source))
           source-status (if (and (:ns declaration) (nil? (:file return)))
                           :unchanged
                           :loaded)
@@ -269,6 +290,8 @@
        :module/key key
        :source/status source-status
        :source/result return
+       :source/stamp (when-let [ns-sym (:ns declaration)]
+                       (source-stamp (latest-source-binding runtime ns-sym)))
        :contribution normalized})
     (catch Throwable throwable
       {:status :failed
@@ -278,7 +301,8 @@
        :error (exception-data throwable)})))
 
 (defn- evaluate-affected
-  [runtime with-loader graph order root-outcomes previous-contributions]
+  [runtime with-loader graph order root-outcomes previous-contributions
+   previous-sources]
   (let [unaffected (set/difference (set (keys graph)) (set order))
         seeded (into (sorted-map)
                      (map (fn [key] [key {:status :unchanged}]))
@@ -293,7 +317,8 @@
                  (if problem
                    (retained-outcome key declaration problem)
                    (evaluate-module runtime with-loader key declaration
-                                    (get previous-contributions key))))))
+                                    (get previous-contributions key)
+                                    (get previous-sources key))))))
       seeded
       order)
      order)))
@@ -304,8 +329,16 @@
    :module/outcome (get-in state [:outcomes key])
    :module/resource (get-in state [:resources key])})
 
+(defn- store-source-stamp [result key raw-outcome]
+  (if-let [stamp (:source/stamp raw-outcome)]
+    (assoc-in result [:source-stamps key] stamp)
+    (update result :source-stamps dissoc key)))
+
+(defn- publishable-outcome [raw-outcome]
+  (dissoc raw-outcome :contribution :source/stamp))
+
 (defn- stage-publications
-  [backends candidate-map graph order raw previous-contributions]
+  [backends candidate-map graph order raw previous-contributions previous-sources]
   (let [unaffected (set/difference (set (keys graph)) (set order))
         seeded (into (sorted-map)
                      (map (fn [key] [key {:status :unchanged}]))
@@ -325,11 +358,13 @@
                (assoc-in result [:outcomes key] raw-outcome)
 
                (= (get previous-contributions key) (:contribution raw-outcome))
-               (assoc-in result [:outcomes key]
-                         (-> raw-outcome
-                             (assoc :status :unchanged
-                                    :contribution/status :unchanged)
-                             (dissoc :contribution)))
+               (-> result
+                   (store-source-stamp key raw-outcome)
+                   (assoc-in [:outcomes key]
+                             (-> raw-outcome
+                                 publishable-outcome
+                                 (assoc :status :unchanged
+                                        :contribution/status :unchanged))))
 
                :else
                (try
@@ -338,22 +373,24 @@
                                         (:contribution raw-outcome))]
                    (-> result
                        (assoc :candidates next-candidates)
+                       (store-source-stamp key raw-outcome)
                        (assoc-in [:contributions key] (:contribution raw-outcome))
                        (assoc-in [:outcomes key]
                                  (-> raw-outcome
+                                     publishable-outcome
                                      (assoc :status :applied
-                                            :contribution/status :replaced)
-                                     (dissoc :contribution)))))
+                                            :contribution/status :replaced)))))
                  (catch Throwable throwable
                    (assoc-in result [:outcomes key]
                              (-> raw-outcome
+                                 publishable-outcome
                                  (assoc :status :failed
                                         :contribution/status :retained
-                                        :error (exception-data throwable))
-                                 (dissoc :contribution))))))))
+                                        :error (exception-data throwable)))))))))
          {:candidates candidate-map
           :outcomes seeded
-          :contributions previous-contributions}
+          :contributions previous-contributions
+          :source-stamps previous-sources}
          order)]
     (update staged :outcomes #(select-keys % order))))
 
@@ -419,15 +456,22 @@
     :resources (:resources state)}
    order))
 
-(defn- top-status [outcomes roots changed-kinds]
+(defn- top-status [graph outcomes roots changed-kinds]
   (let [module-values (vals outcomes)
         failures (filter #(#{:failed :degraded :refused} (:status %))
                          module-values)
-        root-failures (filter #(#{:failed :hard-conflict
-                                  :partial-source-reload
-                                  :source-reload-failed}
-                                (:status %))
-                              (vals roots))
+        required-roots (into #{}
+                             (comp (filter (comp :required? val))
+                                   (mapcat (comp :spools val)))
+                             graph)
+        root-failures (keep (fn [[root-lib outcome]]
+                              (when (and (contains? required-roots root-lib)
+                                         (#{:failed :hard-conflict
+                                            :partial-source-reload
+                                            :source-reload-failed}
+                                          (:status outcome)))
+                                outcome))
+                            roots)
         changed? (or (seq changed-kinds)
                      (some #(#{:applied :removed :degraded} (:status %))
                            module-values))]
@@ -454,11 +498,11 @@
   loaded code, and returns a refresh-result-shaped map flagged `:dry-run?` with
   the honest caveat. No registry publication, resource reconcile, or coordinator
   state write occurs; source loads during collection already happened."
-  [runtime sync-result staged provisional backends]
+  [runtime sync-result staged provisional backends graph]
   (let [changed-kinds (publication/changed-kinds backends (:candidates staged))
         loaded-status (safe-loaded-status runtime)
         outcomes (:modules provisional)
-        status (top-status outcomes (:roots sync-result) changed-kinds)]
+        status (top-status graph outcomes (:roots sync-result) changed-kinds)]
     (assoc provisional
            :status status
            :dry-run? true
@@ -469,7 +513,7 @@
            :publication/kinds (vec (sort-by pr-str changed-kinds)))))
 
 (defn- record-result!
-  [runtime collection contributions resources outcomes roots result]
+  [runtime collection contributions contribution-sources resources outcomes roots result]
   (swap! (:module-state runtime)
          (fn [state]
            (-> state
@@ -479,23 +523,29 @@
                       :startup/files (mapv #(dissoc % :return)
                                            (:files collection))
                       :contributions (into (sorted-map) contributions)
+                      :contribution-sources (into (sorted-map) contribution-sources)
                       :resources (into (sorted-map) resources)
                       :outcomes (into (sorted-map) outcomes)
                       :root-outcomes (into (sorted-map) roots)
                       :last-refresh result))))
   result)
 
-(defn- refused-result! [runtime mode error]
-  (let [result {:status :refused
-                :mode mode
-                :modules (sorted-map)
-                :roots (sorted-map)
-                :residuals []
-                :conflicts [error]
-                :remedies []
-                :declaration/shadows (sorted-map)}]
-    (swap! (:module-state runtime) assoc :last-refresh result)
-    result))
+(defn- refused-result [mode error]
+  {:status :refused
+   :mode mode
+   :modules (sorted-map)
+   :roots (sorted-map)
+   :residuals []
+   :conflicts [error]
+   :remedies []
+   :declaration/shadows (sorted-map)})
+
+(defn- record-refused-result! [runtime opts result]
+  (if (:dry-run? opts)
+    (assoc result :dry-run? true :caveat plan-caveat)
+    (do
+      (swap! (:module-state runtime) assoc :last-refresh result)
+      result)))
 
 (defn- select-refresh
   [runtime load-startup-files! opts]
@@ -539,9 +589,9 @@
   `context` supplies `:load-startup-files!` and `:with-loader` callbacks owned
   by the daemon runtime namespace. `opts` is empty for full refresh, carries
   `:only` for targeted refresh, or internal `:declare` for module declaration
-  outside startup collection. `:dry-run? true` runs the same collection,
-  classification, source-load, and staging phases but stops before publication
-  and reconcile, returning intentions for `plan` (DELTA-OlrRepl-001.CC14)."
+  outside startup collection. `:dry-run? true` uses the current synchronized
+  roots, then runs collection, source-load, and staging without synchronizing,
+  publishing, reconciling, or recording coordinator state (CC14)."
   [runtime {:keys [load-startup-files! with-loader]} opts]
   ;; The runtime slot is one dedicated Object monitor. Splint cannot see the
   ;; stable object behind the map lookup; refreshes serialize so two collectors
@@ -557,8 +607,9 @@
                 (if (or (contains? opts :only) (:declare opts))
                   (throw throwable)
                   {:refused
-                   (refused-result! runtime :full
-                                    (exception-data throwable))}))))]
+                   (record-refused-result!
+                    runtime opts
+                    (refused-result :full (exception-data throwable)))}))))]
       (if-let [refused (:refused selection)]
         refused
         (let [{:keys [mode collection selected]} selection
@@ -575,25 +626,28 @@
               ;; preserves their truthful first-load root outcomes until Task 16
               ;; removes the scaffolding. Any desired/current module graph owns
               ;; synchronization through the coordinator.
-              sync-result (if (or (seq graph) (seq old-graph))
-                            (sync-roots! runtime)
-                            (current-root-state runtime))]
+              sync-result (if (:dry-run? opts)
+                            (current-root-state runtime)
+                            (if (or (seq graph) (seq old-graph))
+                              (sync-roots! runtime)
+                              (current-root-state runtime)))]
           (if-let [fatal (:fatal sync-result)]
             (if (:startup? opts)
               (throw (ex-info "Initial module refresh could not synchronize approved roots"
                               fatal))
-              (refused-result! runtime mode fatal))
+              (record-refused-result! runtime opts (refused-result mode fatal)))
             (try
               (let [previous-contributions (:contributions state)
+                    previous-sources (:contribution-sources state)
                     raw (evaluate-affected runtime with-loader graph order
                                            (:roots sync-result)
-                                           previous-contributions)
+                                           previous-contributions previous-sources)
                     backends (publication/backends runtime)
                     base-candidates (reduce publication/remove-owner
                                             (publication/candidates backends)
                                             removed)
                     staged (stage-publications backends base-candidates graph order raw
-                                               previous-contributions)
+                                               previous-contributions previous-sources)
                     provisional (provisional-result mode (:roots sync-result)
                                                     (:conflicts sync-result)
                                                     (:remedies sync-result)
@@ -604,7 +658,7 @@
                 ;; validated candidates but publishes nothing, reconciles nothing,
                 ;; and records no coordinator state (DELTA-OlrRepl-001.CC14).
                 (if (:dry-run? opts)
-                  (plan-result runtime sync-result staged provisional backends)
+                  (plan-result runtime sync-result staged provisional backends graph)
                   (let [changed-kinds (publication/publish! backends (:candidates staged))
                         removal-order (->> (module-graph/dependency-order old-graph)
                                            reverse
@@ -613,12 +667,13 @@
                         reconciled (reconcile-modules runtime with-loader state graph
                                                       provisional reconcile-order)
                         contributions (apply dissoc (:contributions staged) removed)
+                        contribution-sources (apply dissoc (:source-stamps staged) removed)
                         loaded-status (safe-loaded-status runtime)
                         outcomes (:outcomes reconciled)
                         state-outcomes (-> (:outcomes state)
                                            (merge outcomes)
                                            (#(apply dissoc % removed)))
-                        status (top-status outcomes (:roots sync-result) changed-kinds)
+                        status (top-status graph outcomes (:roots sync-result) changed-kinds)
                         result (assoc provisional
                                       :status status
                                       :modules outcomes
@@ -626,7 +681,7 @@
                                       :conflicts (vec (concat (:conflicts provisional)
                                                               (:hard-conflicts loaded-status)))
                                       :publication/kinds (vec (sort-by pr-str changed-kinds)))]
-                    (record-result! runtime collection contributions
+                    (record-result! runtime collection contributions contribution-sources
                                     (:resources reconciled) state-outcomes
                                     (:roots sync-result) result))))
               (catch Throwable throwable
@@ -634,7 +689,9 @@
                 ;; follows a coordinator-wide validation failure.
                 (if (:startup? opts)
                   (throw throwable)
-                  (refused-result! runtime mode (exception-data throwable)))))))))))
+                  (record-refused-result!
+                   runtime opts
+                   (refused-result mode (exception-data throwable))))))))))))
 
 (defn module!
   "Stage a module during startup collection, otherwise declare and refresh it."

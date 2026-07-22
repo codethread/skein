@@ -228,13 +228,12 @@
   "Record one authoring-form registry entry in the active module contribution.
 
   Repeating the same kind/key in one source evaluation replaces the earlier
-  value deterministically. `:override? true` records explicit override intent."
+  value deterministically. `:override? true` records explicit override intent.
+  Outside contribution collection the form is passive, so code-only source
+  reloads can define Vars without publishing declarations."
   ([kind-id entry-key value]
    (collect-entry! kind-id entry-key value {}))
   ([kind-id entry-key value {:keys [override?] :as opts}]
-   (when-not *contribution-collector*
-     (fail! "No module contribution collector is active"
-            {:kind kind-id :key entry-key}))
    (when-not (keyword? kind-id)
      (fail! "Contribution kind id must be a keyword" {:kind kind-id}))
    (when-let [unknown (seq (remove #{:override?} (keys opts)))]
@@ -243,11 +242,13 @@
    (when-not (or (nil? override?) (boolean? override?))
      (fail! "Contribution :override? must be boolean"
             {:kind kind-id :key entry-key :override? override?}))
-   (swap! *contribution-collector*
-          (fn [contribution]
-            (cond-> (assoc-in contribution [kind-id :entries entry-key] value)
-              override? (update-in [kind-id :overrides] (fnil conj #{}) entry-key)
-              (false? override?) (update-in [kind-id :overrides] (fnil disj #{}) entry-key))))
+   (when *contribution-collector*
+     (swap! *contribution-collector*
+            (fn [contribution]
+              (cond-> (assoc-in contribution [kind-id :entries entry-key] value)
+                override? (update-in [kind-id :overrides] (fnil conj #{}) entry-key)
+                (false? override?)
+                (update-in [kind-id :overrides] (fnil disj #{}) entry-key)))))
    value))
 
 (defn with-contribution-collection
