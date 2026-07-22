@@ -61,9 +61,11 @@ in the sweep.
 ## PROP-Lhc-001.P4 Proposed scope
 
 - **PROP-Lhc-001.S1:** Arg-spec nodes gain `:hook-class`/`:deadline-class` as
-  leaf-only, mandatory metadata; interior nodes and subcommand-op registration opts
-  reject them loudly. Flat/raw-envelope registration requires both explicitly; the
-  `:mutating`/implicit defaults are deleted. An empty `:subcommands {}` map is
+  leaf-only, mandatory metadata — single-sourced: any op with an arg-spec authors
+  classes only in its leaf nodes (a flat root is its leaf), and registration opts
+  carrying class keys beside an arg-spec fail loudly; raw-envelope ops (no
+  arg-spec) declare both in registration opts. Interior-node declarations fail
+  loudly. The `:mutating`/implicit defaults are deleted. An empty `:subcommands {}` map is
   invalid (an op must have at least one invocable leaf). A streaming leaf must
   declare `:deadline-class :unbounded` — streams stay explicitly unbounded; no new
   streaming-timeout machinery is introduced.

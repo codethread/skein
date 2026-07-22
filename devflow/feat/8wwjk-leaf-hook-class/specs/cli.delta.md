@@ -22,8 +22,12 @@ unchanged.
   `hook-class` and `deadline-class` (retaining `name`, `provenance`, `stream?`,
   `raw-envelope`); `source` is unchanged. Catalog summary nodes follow the same
   node rule: populated only when the summary node is itself the leaf, `null`
-  otherwise — the catalog stays the same envelope/node contract, never a second
-  shape.
+  otherwise. The catalog reuses only the **node** contract as today — per-entry
+  catalog envelopes keep omitting `schema-version` and `glossary`
+  (SPEC-002.C39/C44 unchanged on that point); no second shape is introduced.
+- **DELTA-Lhc-003.CC1a (amends SPEC-002.C33):** "the op's registered deadline
+  class" reads as the **invoked leaf's** deadline class (DELTA-Lhc-002.CC4);
+  stream behavior is unchanged.
 - **DELTA-Lhc-003.CC2 (amends SPEC-002.C39):** `node` slicing is live to the
   declared depth (`strand help <op> <verb> [<verb> ...]`), superseding "one level
   deep today". `schema-version` bumps once for this feature's reshape (node keys

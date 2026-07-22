@@ -17,18 +17,24 @@ registration under TEN-003.
 
 - **DELTA-Lhc-001.CC1 (supersedes SPEC-003.C64 one-level cap):** An arg-spec node
   declaring `:subcommands` maps subcommand names to nested nodes of the **same
-  shape**, at any depth. A node declares either `:subcommands` (interior node) or
-  an invocation surface (`:flags`/`:positionals` — leaf node), never both; an
-  empty `:subcommands {}` is invalid (every op must reach at least one invocable
-  leaf). The shared structural validator enforces these rules recursively, and
-  reserved names (`help`, `-h`, `--help`, the `subcommand` arg name) are rejected
-  at **every** level.
-- **DELTA-Lhc-001.CC2 (leaf classes; amends SPEC-003.C64):** Every leaf node
-  declares `:hook-class` (`:read`|`:mutating`) and `:deadline-class`
-  (`:standard`|`:unbounded`) as mandatory node metadata, peers of `:doc`/`:flags`/
-  `:positionals`/`:annotations`. Interior nodes may not declare either (loud
-  structural failure): interior nodes are never invocable, so a class there is
-  dead metadata. A leaf of a stream-class op must declare
+  shape**, at any depth. A **leaf** is any node that does not declare
+  `:subcommands`; its `:flags`/`:positionals` are optional (a doc-only leaf is
+  valid — `query list`, `spool about`). A node declaring `:subcommands` is an
+  **interior** node and may not also declare `:flags`/`:positionals`; an empty
+  `:subcommands {}` is invalid (every op must reach at least one invocable leaf).
+  The shared structural validator enforces these rules recursively, and reserved
+  names (`help`, `-h`, `--help`, the `subcommand` arg name) are rejected at
+  **every** level.
+- **DELTA-Lhc-001.CC2 (leaf classes; amends SPEC-003.C64):** Every leaf node of
+  an op **that declares an arg-spec** carries mandatory `:hook-class`
+  (`:read`|`:mutating`) and `:deadline-class` (`:standard`|`:unbounded`) node
+  metadata, peers of `:doc`/`:flags`/`:positionals`/`:annotations` — a flat op's
+  arg-spec root **is** its leaf, so flat classes are authored there, never in
+  registration opts. A **raw-envelope** op (no arg-spec) is the one shape whose
+  classes live in registration metadata (DELTA-Lhc-002.CC1) — there is no other
+  place to put them. Interior nodes may not declare either (loud structural
+  failure): interior nodes are never invocable, so a class there is dead
+  metadata. A leaf of a stream-class op must declare
   `:deadline-class :unbounded` — streams stay explicitly unbounded and no
   streaming-timeout machinery is introduced.
 - **DELTA-Lhc-001.CC3 (amends SPEC-003.C65 routing):** Parsing a subcommand
@@ -40,8 +46,14 @@ registration under TEN-003.
   structured errors carrying the op name, the node path walked so far, the
   offending token (or its absence), and the available child names. Payload
   references and `:parse` declarations apply unchanged inside every nested level.
-- **DELTA-Lhc-001.CC4 (amends SPEC-003.C60b returns routing):** A subcommand op's
-  `:returns` mirrors the arg-spec tree: an interior return node is
+  Path-carrying errors across **all** seams (structural validation, parsing, the
+  socket pre-hook walk, help slicing, return selection) use one canonical
+  context shape: `:op` (string), `:path` (vector of tokens successfully walked,
+  `[]` at the root), `:token` (the offending token, or `nil` when a token is
+  missing), and `:available` (vector of child names at the failing node).
+- **DELTA-Lhc-001.CC4 (amends SPEC-003.C60b returns routing):** When a subcommand
+  op declares `:returns` (declaring returns stays optional, as today), it mirrors
+  the arg-spec tree: an interior return node is
   `{:subcommands {<name> <return-node> ...}}` and a leaf return node is a return
   case, with names matching the arg-spec **exactly at every level**. The
   return-shape validator, `explain`, and `check!` recurse accordingly; `check!`'s
@@ -54,14 +66,26 @@ registration under TEN-003.
   (populated only when the summary node is itself the leaf). Per-node closed
   `:annotations` sub-maps are honored at every depth, and the unconditional
   glossary-ref existence check walks **all** depths — a deep `failure-modes`
-  name must not evade registration validation.
+  name must not evade validation on **either** registration route: direct
+  `register-op!`/`replace-op!` checks against the live glossary as today, and
+  module publication checks each generation's entries after that generation's
+  glossary contributions merge, failing the reconcile loudly before the
+  generation becomes effective (the C67 load-order contract applied to
+  publication, atomic per generation).
 - **DELTA-Lhc-001.CC6 (rewrites SPEC-003.C68):** Help paths are live to the
   arg-spec's declared depth: `strand help <op> <verb> [<verb> ...]` slices the
-  envelope to that node, same fractal shape, failing loudly with the available
-  children on a bad path. Arbitrary-depth recursion is now proven by live ops,
-  not only the synthetic renderer test.
+  envelope to **any** node the token path names — interior nodes are valid help
+  targets and return their slice with `children` — failing loudly with the
+  canonical CC3 error context on a token that names no child. Arbitrary-depth
+  recursion is now proven by live ops, not only the synthetic renderer test.
 - **DELTA-Lhc-001.CC7 (amends SPEC-003.C28):** `check-op-return!`'s subcommand
   context is the full path (vector), aligned with CC3/CC4.
+- **DELTA-Lhc-001.CC8 (amends SPEC-003.C63a/C63b):** The batteries spool surface
+  folds `spool-status` into the `spool` op as its `status` read leaf: `spool
+  status` keeps the offline, no-network, closed-result contract verbatim, and
+  the separate `spool-status` op is retired (TEN-000@1, no alias). C63b's
+  `spool-status` validation sentence applies to `spool status`. The batteries
+  behavior contract (`spools/batteries.md`) and spool index sweep with it.
 
 ## DELTA-Lhc-001.P3 Design decisions
 

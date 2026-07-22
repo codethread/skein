@@ -25,11 +25,12 @@ registration per TEN-003 — runtime structural validation, **not** convention+l
 superseding the card's original framing. We own every consumer: in-repo surface
 plus sibling spools, all swept in the same queue.
 
-1. **`:hook-class` is a mandatory leaf-node fact.** Every subcommand leaf declares
-   it in its arg-spec node (peer of `:doc`/`:flags`/`:positionals`). Flat and
-   raw-envelope ops are their own leaf: `:hook-class` becomes required at
-   registration and the `:mutating` default is deleted. Missing declaration fails
-   loudly at `register-op!`/`replace-op!`.
+1. **`:hook-class` is a mandatory leaf-node fact.** Every leaf declares it in its
+   arg-spec node (peer of `:doc`/`:flags`/`:positionals`); a flat op's arg-spec
+   root is its leaf, so flat classes are authored there too. Raw-envelope ops
+   (no arg-spec) are the one shape declaring classes in registration opts. The
+   `:mutating` default is deleted everywhere. Missing declaration fails loudly
+   at `register-op!`/`replace-op!` and at module publication.
 2. **Forbidden anywhere non-leaf.** Interior nodes and the op root of a subcommand
    op may not declare it — interior nodes are never invocable. No op-wide
    hook-class exists at all: not declared, not derived, removed from the help

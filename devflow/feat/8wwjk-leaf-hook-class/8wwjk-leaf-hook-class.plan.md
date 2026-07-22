@@ -1,7 +1,7 @@
 # 8wwjk-leaf-hook-class plan
 
 **Document ID:** `PLAN-Lhc-001`
-**Status:** Draft
+**Status:** Reviewed
 **Last Updated:** 2026-07-22
 **Proposal:** [proposal.md](./proposal.md)
 **Spec deltas:** [repl-api](./specs/repl-api.delta.md), [daemon-runtime](./specs/daemon-runtime.delta.md), [cli](./specs/cli.delta.md)
@@ -26,11 +26,20 @@ amend the deltas only with evidence from the applied seam. Everything after it i
 mechanical and fans out to terra-med seats in file-disjoint slices, with sol-med
 as the standing cross-vendor reviewer for the oracle-authored slice.
 
-The mechanism lands breaking: the moment the validator requires leaf classes,
-every unswept registration fails loudly at registration/publication. The queue is
-therefore ordered so the in-repo sweep lands in the same acceptance window as the
-mechanism, and sibling spool releases + pin bumps complete the window;
-`spool-suite-gate` is expected red mid-queue and green at acceptance.
+Enforcement cannot flip before the sweep: runtime startup registers the
+`help`/`about`/`prime` builtins and publishes every batteries entry, so a
+validator that requires leaf classes on day one fails every boot and no phase
+gate can stay green. The queue therefore stages **mechanism first, flip after
+the sweep**: PH1 lands recursion + leaf-class support *accretively* (new shape
+accepted and preferred; old op-level classes and defaults still tolerated as
+intra-branch scaffolding), PH2 sweeps every in-repo registrant onto the new
+shape with green gates throughout, and PH3 is the **enforcement flip** — delete
+the defaults and the op-level tolerance, forbid non-leaf classes — landing
+atomically with nothing left to break in-repo. The scaffolding never ships as a
+contract: it exists only between PH1 and PH3 on this branch, and the flip is a
+Done-when gate of the queue, not an option. Sibling spools adopt post-flip
+against this checkout; `spool-suite-gate` is expected red from PH3 until the
+last pin bump, and green at acceptance.
 
 ## PLAN-Lhc-001.P3 Affected areas
 
@@ -58,35 +67,51 @@ mechanism, and sibling spool releases + pin bumps complete the window;
 
 ## PLAN-Lhc-001.P4 Implementation phases
 
-- **PLAN-Lhc-001.PH1 (design slice — oracle):** Mechanism end-to-end + the one
-  applied op + focused cold tests; deltas amended if the seam disproves anything.
-  Cross-vendor review (sol-med) gates the phase.
+- **PLAN-Lhc-001.PH1 (design slice — oracle):** Accretive mechanism end-to-end
+  (recursive validator/parse/explain, node classes preferred with op-level
+  tolerance, returns mirror-recursion, leaf-resolving gate/deadline with
+  fallback, per-node help keys, canonical error context) + the one applied op
+  (batteries `spool` + `status` fold-in per DELTA-Lhc-001.CC8) + a synthetic
+  depth-3 fixture + focused cold tests. Deltas amended only with evidence from
+  the applied seam. Cross-vendor review (sol-med) gates the phase. Task manifest
+  names its exact source/test files; PH2 slices may not touch them.
 - **PLAN-Lhc-001.PH2 (in-repo sweep — terra-med, file-disjoint parallel):**
-  (a) batteries ops + renderer + owner tests; (b) guild/text-search/publication
-  constructors + smoke; (c) `.skein` config ops, workflows, `defop`, fixtures.
-  Each slice: leaf classes declared, positional-action grammars folded to real
-  verbs where the surface reads better, cold focused suites green.
-- **PLAN-Lhc-001.PH3 (specs + docs — terra-med):** Promote deltas into root
-  specs, sweep `docs/reference.md` + authoring guide, regenerate api docs,
-  `make docs-check` green.
-- **PLAN-Lhc-001.PH4 (sibling spool fan-out — terra-med, one seat per repo):**
+  (a) batteries remaining ops + reference renderer + owner tests +
+  `spools/batteries.md`/`spools/README.md`; (b) system ops `help`/`about`/`prime`
+  (one registrar), guild, text-search, publication constructors, smoke;
+  (c) `.skein` config ops, `workflows.clj`, `defop` macro, test fixtures. Task
+  files carry exact file manifests and the positional-action migration matrix
+  (which grammars fold to real verbs, which stay positionals). Cold focused
+  suites green per slice.
+- **PLAN-Lhc-001.PH3 (enforcement flip — oracle or sol-med, single atomic
+  slice):** Delete defaults and op-level class tolerance; forbid non-leaf
+  classes and class keys beside an arg-spec; publication-seam validation goes
+  strict (canonical validator + glossary at reconcile). In-repo suites + smoke
+  green at the end of this slice; `spool-suite-gate` goes red here by design.
+- **PLAN-Lhc-001.PH4 (specs + docs — terra-med):** Promote deltas into root
+  specs, sweep `docs/reference.md` + authoring guide CLI-style section,
+  regenerate api docs, `make docs-check` green.
+- **PLAN-Lhc-001.PH5 (sibling spool fan-out — terra-med, one seat per repo):**
   Per spool: adopt leaf classes (and real nesting where grammars used positional
-  actions, e.g. kanban `task`), suite green against the feature checkout, release
-  tag, pin bump in skein-src. Ceremony per repo conventions (`spool bump`,
-  annotated `vN` tags).
-- **PLAN-Lhc-001.PH5 (acceptance):** Full locked suite under the flock, Go tests,
-  smoke, `spool-suite-gate`, quality gates at zero; land via the coordinator
-  landing workflow.
+  actions — kanban `task` is the known case; each spool task enumerates its own
+  matrix), suite green against the feature checkout, release tag, pin bump in
+  skein-src. Ceremony per repo conventions (`spool bump`, annotated `vN` tags).
+- **PLAN-Lhc-001.PH6 (acceptance):** Full locked suite under the flock, Go tests,
+  smoke, `spool-suite-gate` green again, quality gates at zero; land via the
+  coordinator landing workflow.
 
 ## PLAN-Lhc-001.P5 Validation strategy
 
 Per-slice: cold `clojure -M:test <owned namespaces>`. Phase gates: PH1 adds
 socket-level integration coverage for pre-hook verb failures and read-leaf hook
-skipping; PH2 keeps smoke green; PH4 runs each spool's own suite against this
-checkout. Acceptance: full locked suite, `(cd cli && go test ./...)`,
-`clojure -M:smoke`, `make spool-suite-gate`, `make fmt-check lint reflect-check
-docs-check`, clean `git status --short`. Disposable workspaces for every runtime
-experiment; the canonical `.skein` world is never touched by tests.
+skipping; PH2 keeps smoke green under the accretive mechanism; PH3 re-proves
+suites + smoke post-flip and is the phase where registration-failure coverage
+(missing leaf class, class beside arg-spec, interior class, empty subcommands)
+becomes assertive; PH5 runs each spool's own suite against this checkout.
+Acceptance: full locked suite, `(cd cli && go test ./...)`, `clojure -M:smoke`,
+`make spool-suite-gate`, `make fmt-check lint reflect-check docs-check`, clean
+`git status --short`. Disposable workspaces for every runtime experiment; the
+canonical `.skein` world is never touched by tests.
 
 ## PLAN-Lhc-001.P6 Task context
 
@@ -99,6 +124,11 @@ bump task, which is coordinator-sequenced after all spool releases exist.
 
 ## PLAN-Lhc-001.P7 Developer Notes
 
+- 2026-07-22 (coordinator): spec/plan review runs szlo1+nz2x6 (notes n59mo, mzijt
+  on strand exuix) folded: single-source class authoring, doc-only leaves, C63a/b
+  + C33 + C63b-deadline amendments, deep help-alias semantics, canonical error
+  context, publication validator/glossary seam, accretive-then-flip phase order,
+  about/prime registrar, catalog wording. Plan set Reviewed.
 - 2026-07-22 (coordinator): proposal review e8zr7 findings folded; note the
   publication seam (`core-registry` entry spec is `map?` today) is a required
   enforcement point, not an optional hardening.
