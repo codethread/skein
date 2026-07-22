@@ -426,16 +426,26 @@
         (is (s/valid? ::batteries/spool-status-result result))
         (is (= {:marker "v5" :provenance :claimed} (:release-marker result)))))))
 
-(deftest spool-status-rejects-declared-family-without-roots
-  (with-batteries
-    (fn [rt]
-      (with-redefs [runtime/declared
-                    (fn [& _]
-                      {:families {'demo/family {:declared {:git/url "https://example.invalid/demo.git"}}}
-                       :requirements {:valid? true :pending-validations []}})]
-        (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                              #"Declared spool family has no roots"
-                              (weaver/op! rt 'spool ["status"])))))))
+(deftest spool-status-projects-implicit-root-for-rootless-local-family
+  ;; di00f: a bare {:local/root ...} family declares no :roots. Normalization
+  ;; synthesizes the implicit {family "."} sole-root, so status must project that
+  ;; root — join outcomes and modules against it — rather than throw on the raw
+  ;; declaration. Uses a real spools.edn (not a mocked projection) so the fix is
+  ;; exercised through the same normalization path the live world uses.
+  (with-runtime
+    (fn [rt config-dir]
+      (batteries/install! rt)
+      (spit (io/file config-dir "spools.edn")
+            (pr-str {:spools {'demo/family {:local/root "../demo"}}}))
+      (spit (io/file config-dir "module.clj") "{:loaded true}\n")
+      (runtime/module! rt :demo/module {:file "module.clj" :spools ['demo/family]})
+      (let [result (weaver/op! rt 'spool ["status"])
+            family (get-in result [:families 'demo/family])]
+        (is (= :spools-edn (:provenance family)))
+        (is (= :local (get-in family [:effective-coordinate :kind])))
+        ;; the implicit sole-root is the family symbol; the module joins against it
+        (is (= ['demo/family] (get-in family [:modules :demo/module :spools])))
+        (is (s/valid? ::batteries/spool-status-result result))))))
 
 (deftest spool-status-rejects-malformed-nested-results
   (testing "malformed effective coordinate"

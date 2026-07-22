@@ -586,8 +586,8 @@
 (s/def ::declared ::family-entry)
 (s/def ::effective-coordinate ::coordinate)
 (s/def ::approved-family-entry
-  (s/and #(exact-keys? #{:declared :effective-coordinate :provenance :claims} %)
-         (s/keys :req-un [::declared ::effective-coordinate ::provenance ::claims])))
+  (s/and #(exact-keys? #{:declared :effective-coordinate :roots-map :provenance :claims} %)
+         (s/keys :req-un [::declared ::effective-coordinate ::roots-map ::provenance ::claims])))
 (s/def ::approved-family-map (s/map-of symbol? ::approved-family-entry))
 (s/def ::pending-validations vector?)
 (s/def ::valid? boolean?)
@@ -652,9 +652,14 @@
 
 (defn- family-projection [shared families]
   (into {}
-        (map (fn [{:keys [family coordinate claims provenance]}]
+        (map (fn [{:keys [family coordinate roots-map claims provenance]}]
+               ;; roots-map is the normalized root set, with the implicit
+               ;; {family "."} sole-root already applied; carrying it here keeps
+               ;; roots a single source of truth so readers never re-derive them
+               ;; from the raw :declared entry, which may omit :roots.
                [family {:declared (get (:declared-spools shared) family)
                         :effective-coordinate coordinate
+                        :roots-map roots-map
                         :provenance provenance
                         :claims claims}]))
         families))
