@@ -17,6 +17,7 @@
             [clojure.java.io :as io]
             [clojure.string :as str]
             [skein.api.return-shape.alpha :as return-shape]
+            [skein.api.runtime.alpha :as runtime]
             [skein.api.weaver.alpha :as weaver]
             [skein.core.client :as client]
             [skein.core.weaver.config :as weaver-config]
@@ -369,6 +370,44 @@
     (run-with-weaver-world opts (fn [ctx]
                                   (binding [*weaver-world* ctx]
                                     (test-fn))))))
+
+;; --- module lifecycle over a disposable world -------------------------------
+;;
+;; Thin wrappers over `skein.api.runtime.alpha` keyed by a `with-weaver-world`
+;; context so tests declare modules and inspect refresh/status against the
+;; disposable runtime, never a canonical world. Author module sources with the
+;; `:files` fixture, declare them with `declare-module!`, then refresh or read
+;; `module-status`.
+
+(defn declare-module!
+  "Declare one stable module in `ctx`'s disposable weaver runtime.
+
+  Delegates to `skein.api.runtime.alpha/module!`; see its contract for the
+  `opts` grammar and staged/refreshed result shape."
+  [ctx key opts]
+  (runtime/module! (:runtime ctx) key opts))
+
+(defn refresh-modules!
+  "Refresh `ctx`'s disposable weaver runtime against its declared module graph.
+
+  Delegates to `skein.api.runtime.alpha/refresh!`; the no-opts arity refreshes
+  the full graph and the `{:only keys}` arity refreshes the named modules."
+  ([ctx] (runtime/refresh! (:runtime ctx)))
+  ([ctx opts] (runtime/refresh! (:runtime ctx) opts)))
+
+(defn plan-modules
+  "Return the dry-run refresh intentions for `ctx`'s disposable weaver runtime.
+
+  Delegates to `skein.api.runtime.alpha/plan`; publishes and reconciles nothing."
+  ([ctx] (runtime/plan (:runtime ctx)))
+  ([ctx opts] (runtime/plan (:runtime ctx) opts)))
+
+(defn module-status
+  "Return the offline joined module status for `ctx`'s disposable weaver runtime.
+
+  Delegates to `skein.api.runtime.alpha/status`."
+  [ctx]
+  (runtime/status (:runtime ctx)))
 
 (defn set-clock!
   "Install `clock-fn` as `runtime`'s clock: a zero-arg fn returning an Instant.

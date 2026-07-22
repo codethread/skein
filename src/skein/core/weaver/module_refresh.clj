@@ -12,6 +12,11 @@
             [skein.core.weaver.module-publication :as publication]
             [skein.core.weaver.spool-sync :as spool-sync]))
 
+(def plan-caveat
+  "The one honest side effect a dry-run plan still incurs (DELTA-OlrRepl-001.CC14)."
+  (str "Collection may load module source code; any such load is recorded in the "
+       "namespace load ledger. No registry publication or resource reconcile runs."))
+
 (defn initial-state
   "Return the empty runtime-owned module coordinator state."
   []
@@ -442,6 +447,27 @@
        :hard-conflicts []
        :classification/error (exception-data throwable)})))
 
+(defn- plan-result
+  "Assemble the dry-run intentions from staged candidates without publishing.
+
+  Diffs the staged candidate snapshots against the live backends, classifies
+  loaded code, and returns a refresh-result-shaped map flagged `:dry-run?` with
+  the honest caveat. No registry publication, resource reconcile, or coordinator
+  state write occurs; source loads during collection already happened."
+  [runtime sync-result staged provisional backends]
+  (let [changed-kinds (publication/changed-kinds backends (:candidates staged))
+        loaded-status (safe-loaded-status runtime)
+        outcomes (:modules provisional)
+        status (top-status outcomes (:roots sync-result) changed-kinds)]
+    (assoc provisional
+           :status status
+           :dry-run? true
+           :caveat plan-caveat
+           :residuals (:residuals loaded-status)
+           :conflicts (vec (concat (:conflicts provisional)
+                                   (:hard-conflicts loaded-status)))
+           :publication/kinds (vec (sort-by pr-str changed-kinds)))))
+
 (defn- record-result!
   [runtime collection contributions resources outcomes roots result]
   (swap! (:module-state runtime)
@@ -513,7 +539,9 @@
   `context` supplies `:load-startup-files!` and `:with-loader` callbacks owned
   by the daemon runtime namespace. `opts` is empty for full refresh, carries
   `:only` for targeted refresh, or internal `:declare` for module declaration
-  outside startup collection."
+  outside startup collection. `:dry-run? true` runs the same collection,
+  classification, source-load, and staging phases but stops before publication
+  and reconcile, returning intentions for `plan` (DELTA-OlrRepl-001.CC14)."
   [runtime {:keys [load-startup-files! with-loader]} opts]
   ;; The runtime slot is one dedicated Object monitor. Splint cannot see the
   ;; stable object behind the map lookup; refreshes serialize so two collectors
@@ -566,36 +594,41 @@
                                             removed)
                     staged (stage-publications backends base-candidates graph order raw
                                                previous-contributions)
-                    changed-kinds (publication/publish! backends (:candidates staged))
                     provisional (provisional-result mode (:roots sync-result)
                                                     (:conflicts sync-result)
                                                     (:remedies sync-result)
                                                     (:shadows collection)
                                                     (:outcomes staged)
-                                                    removed)
-                    removal-order (->> (module-graph/dependency-order old-graph)
-                                       reverse
-                                       (filter removed))
-                    reconcile-order (vec (concat removal-order order))
-                    reconciled (reconcile-modules runtime with-loader state graph
-                                                  provisional reconcile-order)
-                    contributions (apply dissoc (:contributions staged) removed)
-                    loaded-status (safe-loaded-status runtime)
-                    outcomes (:outcomes reconciled)
-                    state-outcomes (-> (:outcomes state)
-                                       (merge outcomes)
-                                       (#(apply dissoc % removed)))
-                    status (top-status outcomes (:roots sync-result) changed-kinds)
-                    result (assoc provisional
-                                  :status status
-                                  :modules outcomes
-                                  :residuals (:residuals loaded-status)
-                                  :conflicts (vec (concat (:conflicts provisional)
-                                                          (:hard-conflicts loaded-status)))
-                                  :publication/kinds (vec (sort-by pr-str changed-kinds)))]
-                (record-result! runtime collection contributions
-                                (:resources reconciled) state-outcomes
-                                (:roots sync-result) result))
+                                                    removed)]
+                ;; A dry-run stops here: it has collected, classified, staged and
+                ;; validated candidates but publishes nothing, reconciles nothing,
+                ;; and records no coordinator state (DELTA-OlrRepl-001.CC14).
+                (if (:dry-run? opts)
+                  (plan-result runtime sync-result staged provisional backends)
+                  (let [changed-kinds (publication/publish! backends (:candidates staged))
+                        removal-order (->> (module-graph/dependency-order old-graph)
+                                           reverse
+                                           (filter removed))
+                        reconcile-order (vec (concat removal-order order))
+                        reconciled (reconcile-modules runtime with-loader state graph
+                                                      provisional reconcile-order)
+                        contributions (apply dissoc (:contributions staged) removed)
+                        loaded-status (safe-loaded-status runtime)
+                        outcomes (:outcomes reconciled)
+                        state-outcomes (-> (:outcomes state)
+                                           (merge outcomes)
+                                           (#(apply dissoc % removed)))
+                        status (top-status outcomes (:roots sync-result) changed-kinds)
+                        result (assoc provisional
+                                      :status status
+                                      :modules outcomes
+                                      :residuals (:residuals loaded-status)
+                                      :conflicts (vec (concat (:conflicts provisional)
+                                                              (:hard-conflicts loaded-status)))
+                                      :publication/kinds (vec (sort-by pr-str changed-kinds)))]
+                    (record-result! runtime collection contributions
+                                    (:resources reconciled) state-outcomes
+                                    (:roots sync-result) result))))
               (catch Throwable throwable
                 ;; Source loads may already have occurred, but no publication
                 ;; follows a coordinator-wide validation failure.

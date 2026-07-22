@@ -3118,6 +3118,39 @@
           (is (= [:= [:attr :version] 2] (get (graph/queries rt) "owned")))
           (is (contains? (graph/queries rt) "unrelated")))))))
 
+(deftest plan-dry-run-reports-intentions-without-publishing-or-recording
+  (with-runtime
+    (fn [rt _db-file]
+      (let [workspace (get-in rt [:metadata :config-dir])
+            source "modules/planned.clj"
+            suffix (str/replace (str (random-uuid)) "-" "")]
+        (explicit-module-source! workspace source
+                                 (symbol (str "test.module.planned-" suffix)))
+        (reset! module-reconciliations [])
+        (reset! module-contributions
+                {:planned {:queries {"planned" [:= [:attr :v] 1]}}})
+        (weaver-runtime/declare-module!
+         rt :planned {:file source
+                      :contribute 'skein.weaver-test/module-contribute
+                      :reconcile 'skein.weaver-test/module-reconcile})
+        (let [applied-refresh (:last-refresh (weaver-runtime/module-status rt))
+              reconciles (count @module-reconciliations)]
+          (swap! module-contributions assoc
+                 :planned {:queries {"planned" [:= [:attr :v] 2]}})
+          (let [planned (weaver-runtime/refresh-modules! rt {:only [:planned]
+                                                             :dry-run? true})]
+            (is (true? (:dry-run? planned)))
+            (is (string? (:caveat planned)))
+            (is (= :applied (:status planned))
+                "the pending change is reported as an intended publication")
+            (is (= [:queries] (:publication/kinds planned)))
+            (is (= [:= [:attr :v] 1] (get (graph/queries rt) "planned"))
+                "plan publishes nothing")
+            (is (= reconciles (count @module-reconciliations))
+                "plan reconciles nothing")
+            (is (= applied-refresh (:last-refresh (weaver-runtime/module-status rt)))
+                "plan records no coordinator state")))))))
+
 (deftest contribution-publication-is-open-over-runtime-owned-registry-kinds
   (with-runtime
     (fn [rt _db-file]

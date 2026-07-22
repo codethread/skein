@@ -120,6 +120,20 @@
   ;; validated. Public callers continue to mutate through registry.alpha.
   (reset! (get handle registry-state-key) snapshot))
 
+(defn changed-kinds
+  "Return the kind ids whose candidate snapshot differs from the live backend.
+
+  The effect-free counterpart of `publish!`, used by the dry-run plan path to
+  diff intentions without swapping any registry snapshot."
+  [backends candidate-map]
+  (reduce-kv
+   (fn [changed kind-id backend]
+     (if (= (backend-snapshot backend) (get candidate-map kind-id))
+       changed
+       (conj changed kind-id)))
+   []
+   backends))
+
 (defn publish!
   "Publish all changed candidate snapshots and return changed kind ids.
 

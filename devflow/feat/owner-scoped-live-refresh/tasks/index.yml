@@ -22,7 +22,7 @@ tasks:
   - id: 5
     description: Publish new runtime API and test surface
     task_file: tasks/005-runtime-api-and-test-surface.md
-    status: pending
+    status: complete
     blocked_by: [4]
   - id: 6
     description: Convert batteries roster and text-search

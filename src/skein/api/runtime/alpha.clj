@@ -5,14 +5,22 @@
   argument. Use `skein.api.current.alpha/runtime` only at trusted in-process
   entry points that need to capture the active runtime.
 
-  The module reads as the spool lifecycle: read the approved/declared config
-  (`approved`, `declared`, `release-marker`), edit the primary `spools.edn`
-  (`upsert-spool-entry!`, `remove-spool-entry!`), load approved roots
-  (`sync!`, `syncs`), make updated code live (`reload!`, `reload-spool!`),
-  activate modules (`use!`, `uses`, `use-entry`), and serve runtime-owned
-  state and time to trusted spools (`spool-state`, `now`). Component
-  sub-specs live in `skein.api.runtime.internal.shapes`; every registered
-  key stays alpha-qualified."
+  The module reads as the live-image lifecycle: read the approved/declared
+  config (`approved`, `declared`, `release-marker`), edit the primary
+  `spools.edn` (`upsert-spool-entry!`, `remove-spool-entry!`), declare stable
+  modules (`module!`), reconcile the running image against them (`refresh!`,
+  with `plan` its effect-free dry-run), inspect the joined offline picture
+  (`status`), reach for the advanced code-only seam (`reload-code!`), and serve
+  runtime-owned state and time to trusted spools (`spool-state`, `now`).
+
+  `module!`/`refresh!`/`plan`/`status`/`reload-code!` are the normal surface:
+  declarations are data, refresh replaces owner-complete contributions and
+  reconciles resources without stopping the live image, and `reload-code!` is
+  the sharp code-only tool. The older `sync!`/`syncs`/`reload!`/`reload-spool!`/
+  `use!`/`uses`/`use-entry` vars are temporary branch scaffolding kept only so
+  unconverted consumers stay testable until they are removed (PLAN-Olr-001,
+  Task 16). Component sub-specs live in `skein.api.runtime.internal.shapes`;
+  every registered key stays alpha-qualified."
   (:require [clojure.java.io :as io]
             [clojure.spec.alpha :as s]
             [skein.api.runtime.internal.shapes :as shapes]
@@ -26,6 +34,8 @@
 (declare running-release-marker spools-file
          validate-approved-result! validate-declared-result!
          validate-sync-result! validate-sync-ex-data!
+         validate-refresh-opts! validate-refresh-result! validate-plan-result!
+         validate-status-result! validate-module-result! validate-reload-code-result!
          families-requiring
          validate-use-opts! record-use! skip-use
          use-spool-skip use-after-skip exception-data
@@ -166,6 +176,196 @@
   :args (s/cat :runtime map? :lib ::spool-family)
   :ret ::spool-write-result)
 
+;; --- the live module lifecycle ----------------------------------------------
+;;
+;; module! declares stable modules as data; refresh! reconciles the running
+;; image against them, plan is its effect-free dry-run, status reads the joined
+;; offline picture, and reload-code! is the advanced code-only seam. The deep
+;; multi-kind publication and reconcile is the shared coordinator in
+;; skein.core.weaver.module-refresh (startup drives the same entry point), so
+;; these bodies own the public surface: request classification, the arities, and
+;; result-shape validation over named specs (DELTA-OlrRepl-001.CC3-CC9, CC14).
+
+(s/def ::module-key keyword?)
+(s/def ::root-lib symbol?)
+
+;; The declaration grammar's authority is `module!`'s docstring and the
+;; coordinator's `normalize-declaration`; this result shape only asserts the
+;; normalized declaration carries exactly one source target and policy vectors.
+(s/def ::module-declaration
+  (s/and map?
+         #(not= (contains? % :ns) (contains? % :file))
+         #(or (not (contains? % :ns)) (symbol? (:ns %)))
+         #(or (not (contains? % :file)) (string? (:file %)))
+         #(vector? (:spools %))
+         #(vector? (:after %))
+         #(boolean? (:required? %))))
+
+(s/def ::refresh-status #{:applied :partial :unchanged :refused})
+(s/def ::refresh-mode #{:full :targeted})
+(s/def ::refresh-result
+  (s/and map?
+         #(s/valid? ::refresh-status (:status %))
+         #(s/valid? ::refresh-mode (:mode %))
+         #(map? (:modules %))
+         #(map? (:roots %))
+         #(vector? (:residuals %))
+         #(vector? (:conflicts %))
+         #(vector? (:remedies %))))
+
+(s/def ::caveat (s/and string? seq))
+(s/def ::plan-result
+  (s/and ::refresh-result
+         #(true? (:dry-run? %))
+         #(s/valid? ::caveat (:caveat %))))
+
+(s/def ::status-result
+  (s/and map?
+         #(map? (:modules %))
+         #(map? (:contributions %))
+         #(map? (:loaded %))
+         #(contains? % :last-refresh)))
+
+(s/def ::reload-code-result
+  (s/and #(shapes/exact-keys? #{:root-lib :root :namespaces :residuals :hard-conflicts} %)
+         #(s/valid? ::root-lib (:root-lib %))
+         #(s/valid? ::canonical-root (:root %))
+         #(s/valid? ::namespaces (:namespaces %))
+         #(vector? (:residuals %))
+         #(vector? (:hard-conflicts %))))
+
+(s/def ::staged-module-result
+  (s/and #(shapes/exact-keys? #{:module/key :module/declaration :staged?} %)
+         #(true? (:staged? %))
+         #(s/valid? ::module-key (:module/key %))
+         #(s/valid? ::module-declaration (:module/declaration %))))
+(s/def ::module-result
+  (s/or :staged ::staged-module-result
+        :refreshed ::refresh-result))
+
+(defn module!
+  "Declare one stable runtime module under keyword `key` for `runtime`.
+
+  `opts` is closed to a source target (`:ns` synced namespace symbol, or
+  workspace-relative `:file` string — exactly one is required), optional
+  approved `:spools` root prerequisites, optional module-key `:after`
+  dependencies, an optional fully qualified `:contribute` symbol, an optional
+  fully qualified `:reconcile` symbol, and an optional boolean `:required?`.
+  When `:contribute` is omitted the module's contribution is the declaration
+  data collected from the authoring forms evaluated in its source, so a plain
+  file of authoring forms is a complete module (DELTA-OlrRepl-001.CC3).
+
+  During startup-file collection this only stages the declaration and performs
+  no source load, publication, or reconcile. Outside collection it replaces the
+  desired declaration for `key` and refreshes that module plus affected
+  dependents (CC4). Whole-module removal is expressed by omitting the module
+  from a successfully collected full graph, not here. Malformed declarations
+  fail loudly. The staged or refreshed result conforms to `::module-result`."
+  [runtime key opts]
+  (require-valid! ::module-key key "module! key must be a keyword")
+  (validate-module-result! (weaver-runtime/declare-module! runtime key opts)))
+
+(s/fdef module!
+  :args (s/cat :runtime map? :key ::module-key :opts map?)
+  :ret ::module-result)
+
+(defn refresh!
+  "Reconcile `runtime`'s live image against its declared module graph.
+
+  The no-opts arity re-reads `init.clj`/`init.local.clj`, collects the complete
+  layered graph, and applies the Weaver Runtime refresh contract: it composes
+  approved-root synchronization, changed-source reload, contribution collection
+  and classification, owner-complete registry publication, and resource
+  reconciliation, leaving queued events, recent failures, and unrelated
+  spool-state live. `(refresh! runtime {:only keys})` refreshes a non-empty set
+  of known module keys and affected dependents against the active declaration
+  graph without re-reading startup files. Unknown option keys, an empty or
+  malformed `:only`, and unknown module keys fail loudly. Content-identical
+  staged contributions skip publication and reconcile. The atomic multi-phase
+  reconcile is the coordinator that startup also drives; this surface owns the
+  arities, request classification, and result validation. The joined result
+  conforms to `::refresh-result` (DELTA-OlrRepl-001.CC7)."
+  ([runtime] (refresh! runtime {}))
+  ([runtime opts]
+   (validate-refresh-opts! opts)
+   (validate-refresh-result! (weaver-runtime/refresh-modules! runtime opts))))
+
+(s/fdef refresh!
+  :args (s/or :full (s/cat :runtime map?)
+              :targeted (s/cat :runtime map? :opts map?))
+  :ret ::refresh-result)
+
+(defn plan
+  "Return the dry-run intentions of `refresh!` without publishing or reconciling.
+
+  `plan` and `(plan runtime {:only keys})` collect and diff exactly as their
+  `refresh!` counterparts but stop before registry publication and resource
+  reconcile, returning a `::refresh-result`-shaped map flagged `:dry-run? true`
+  with a `:caveat`. The one honest caveat, stated in the result and here:
+  collection may load module source code and any such load is recorded in the
+  namespace load ledger; no publication or reconcile effect runs. Malformed
+  options fail loudly. The result conforms to `::plan-result`
+  (DELTA-OlrRepl-001.CC14)."
+  ([runtime] (plan runtime {}))
+  ([runtime opts]
+   (validate-refresh-opts! opts)
+   (validate-plan-result!
+    (weaver-runtime/refresh-modules! runtime (assoc opts :dry-run? true)))))
+
+(s/fdef plan
+  :args (s/or :full (s/cat :runtime map?)
+              :targeted (s/cat :runtime map? :opts map?))
+  :ret ::plan-result)
+
+(defn status
+  "Return `runtime`'s offline, read-only joined module status.
+
+  Reports desired modules and their declaration layers/shadows, active
+  contributions, module and resource outcomes, root outcomes, and the joined
+  loaded-code picture (current bindings, prior bindings, residuals, hard
+  conflicts) with the last refresh result. It performs no network access, file
+  write, source load, registration, or reconcile. The result conforms to
+  `::status-result` (DELTA-OlrRepl-001.CC8, DELTA-OlrDrt-001.CC15)."
+  [runtime]
+  (validate-status-result! (weaver-runtime/module-status runtime)))
+
+(s/fdef status
+  :args (s/cat :runtime map?)
+  :ret ::status-result)
+
+(defn reload-code!
+  "Make `root-lib`'s current synced source live in dependency order (code only).
+
+  The advanced code-only seam: it loads the selected synced root's namespaces in
+  dependency order and records exact load-ledger entries, then classifies the
+  generation's loaded code against current source. It performs no module
+  contribution publication or resource reconciliation — use `refresh!` for the
+  normal path. `root-lib` is a root-lib symbol from a family's effective `:roots`
+  map (e.g. `skein.spools/kanban`); an unresolvable root fails loudly with a
+  `:reason` in ex-data. The result names the reloaded root, its canonical path,
+  the namespaces reloaded with their sources, and the residual and hard-conflict
+  outcomes from the post-reload classification, conforming to
+  `::reload-code-result` (DELTA-OlrRepl-001.CC9)."
+  [runtime root-lib]
+  (require-valid! ::root-lib root-lib "reload-code! root-lib must be a symbol")
+  (let [reload (spool-sync/reload-synced-spool! runtime root-lib)
+        loaded (spool-sync/loaded-namespace-status runtime)
+        result (assoc (select-keys reload [:root-lib :root :namespaces])
+                      :residuals (:residuals loaded)
+                      :hard-conflicts (:hard-conflicts loaded))]
+    (validate-reload-code-result! result)))
+
+(s/fdef reload-code!
+  :args (s/cat :runtime map? :root-lib ::root-lib)
+  :ret ::reload-code-result)
+
+;; --- temporary branch scaffolding (removed by PLAN-Olr-001 Task 16) ---------
+;;
+;; sync!/syncs, reload!/reload-spool!, and use!/uses/use-entry are the old
+;; acquisition, activation, and code-reload lifecycle. They stay only so
+;; unconverted consumers remain testable until the coordinated cutover; the
+;; normal surface above supersedes them. Do not build new work on these vars.
+
 ;; --- syncing approved roots -------------------------------------------------
 
 (s/def ::sync-result :skein.core.weaver.spool-sync/sync-result)
@@ -211,7 +411,7 @@
   :args (s/cat :runtime map?)
   :ret ::sync-result)
 
-;; --- making updated code live -----------------------------------------------
+;; --- making updated code live (temporary scaffolding; see banner above) -----
 
 (defn reload!
   "Reload startup files from `runtime`'s config dir after clearing registries.
@@ -225,7 +425,6 @@
   :args (s/cat :runtime map?)
   :ret map?)
 
-(s/def ::root-lib symbol?)
 (s/def ::reload-spool-result
   (s/and #(shapes/exact-keys? #{:root-lib :root :namespaces} %)
          #(s/valid? ::root-lib (:root-lib %))
@@ -277,7 +476,7 @@
   :args (s/cat :runtime map? :root-lib ::root-lib)
   :ret ::reload-spool-result)
 
-;; --- activating modules -----------------------------------------------------
+;; --- activating modules (temporary scaffolding; see banner above) -----------
 
 (def ^:private allowed-use-keys #{:ns :file :spools :after :call :required?})
 
@@ -507,6 +706,47 @@
   (when (= :non-additive-sync-diff (:reason data))
     (require-valid! ::non-additive-sync-diff-ex-data data
                     "runtime sync exception data has an invalid shape")))
+
+(def ^:private allowed-refresh-keys #{:only})
+
+(defn- validate-refresh-opts!
+  "Validate the public refresh/plan options before touching the coordinator.
+
+  Options must be a map naming only `:only`; a present `:only` must be a
+  non-empty collection of module keywords. The coordinator separately rejects
+  unknown module keys against the active graph."
+  [opts]
+  (when-not (map? opts)
+    (throw (ex-info "Refresh options must be a map" {:opts opts})))
+  (when-let [unknown (seq (remove allowed-refresh-keys (keys opts)))]
+    (throw (ex-info "Refresh options contain unknown keys"
+                    {:unknown (vec (sort-by pr-str unknown))})))
+  (when (contains? opts :only)
+    (let [only (:only opts)]
+      (when-not (and (coll? only) (seq only) (every? keyword? only))
+        (throw (ex-info "Refresh :only must be a non-empty collection of module keys"
+                        {:only only})))))
+  opts)
+
+(defn- validate-refresh-result! [result]
+  (require-valid! ::refresh-result result "runtime refresh result has an invalid shape")
+  result)
+
+(defn- validate-plan-result! [result]
+  (require-valid! ::plan-result result "runtime plan result has an invalid shape")
+  result)
+
+(defn- validate-status-result! [result]
+  (require-valid! ::status-result result "runtime status result has an invalid shape")
+  result)
+
+(defn- validate-module-result! [result]
+  (require-valid! ::module-result result "runtime module result has an invalid shape")
+  result)
+
+(defn- validate-reload-code-result! [result]
+  (require-valid! ::reload-code-result result "runtime reload-code result has an invalid shape")
+  result)
 
 ;; --- module-use bookkeeping -------------------------------------------------
 
