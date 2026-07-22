@@ -22,7 +22,7 @@ Reference spool for declaring a versioned public weaver operation API.
 Function.
 
 Return Guild's owner-complete built-in operation contribution.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L249-L262">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L267-L280">Source</a></sub></p>
 
 ## <a name="skein.spools.guild/deprecate!">`deprecate!`</a>
 ``` clojure
@@ -34,7 +34,7 @@ Replace a registered guild operation in `runtime` with a loud deprecation stub.
 
   `opts` requires `:replacement` and may include `:since`. Deprecated ops never
   return success; invocation throws ex-info with `:code :operation/deprecated`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L211-L231">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L228-L249">Source</a></sub></p>
 
 ## <a name="skein.spools.guild/deprecated-op">`deprecated-op`</a>
 ``` clojure
@@ -43,7 +43,7 @@ Replace a registered guild operation in `runtime` with a loud deprecation stub.
 Function.
 
 Fail loudly for a deprecated guild operation.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L163-L172">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L171-L180">Source</a></sub></p>
 
 ## <a name="skein.spools.guild/dispatch-op">`dispatch-op`</a>
 ``` clojure
@@ -52,7 +52,7 @@ Fail loudly for a deprecated guild operation.
 Function.
 
 Dispatch a guild-declared operation after parsing and validating input.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L155-L161">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L163-L169">Source</a></sub></p>
 
 ## <a name="skein.spools.guild/install!">`install!`</a>
 ``` clojure
@@ -66,7 +66,7 @@ Install the built-in `guild` operation into `runtime`.
   The guild name is read from runtime metadata when available. Passing
   `guild-name` records a fallback value for contexts without runtime metadata.
   Re-running is reload-safe and clears prior guild declarations in this runtime.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L273-L293">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L291-L311">Source</a></sub></p>
 
 ## <a name="skein.spools.guild/ops">`ops`</a>
 ``` clojure
@@ -75,7 +75,7 @@ Install the built-in `guild` operation into `runtime`.
 Function.
 
 Return JSON-safe metadata describing the installed guild API.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L233-L247">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L251-L265">Source</a></sub></p>
 
 ## <a name="skein.spools.guild/reconcile">`reconcile`</a>
 ``` clojure
@@ -84,7 +84,7 @@ Return JSON-safe metadata describing the installed guild API.
 Function.
 
 Reset Guild's runtime-owned declarations for a freshly applied module.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L264-L271">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L282-L289">Source</a></sub></p>
 
 ## <a name="skein.spools.guild/register-op!">`register-op!`</a>
 ``` clojure
@@ -95,10 +95,12 @@ Function.
 Register a guild operation in `runtime`'s CLI operation registry.
 
   `name` is a simple unqualified registry handle, conventionally dotted and
-  version-suffixed such as `gate.close.v1`. `opts` supports `:doc`, optional
-  `:input-spec`, and optional `:returns`; unknown options fail loudly.
+  version-suffixed such as `gate.close.v1`. `opts` requires caller-supplied
+  leaf `:hook-class` (`:read` or `:mutating`) and `:deadline-class` (`:standard`
+  or `:unbounded`), plus supports `:doc`, optional `:input-spec`, and optional
+  `:returns`; unknown options fail loudly. Guild supplies no class defaults.
   `:returns` is the shared registry return-shape declaration, not a
   Guild-specific schema. `fn-sym` must be a fully qualified symbol resolving in
   the weaver JVM. The handler receives the usual op context plus parsed JSON
   input at `:guild/input`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L174-L203">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L182-L220">Source</a></sub></p>

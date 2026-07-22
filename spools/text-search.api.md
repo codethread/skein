@@ -56,7 +56,7 @@ Return text-search's complete unsafe search-operation contribution.
   because a blessed spool may not reach the weaver's internal op-entry plumbing
   (SPEC-003.C19a) — so the effective op registry stays string-keyed across the
   eager and module paths.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/text-search/src/skein/spools/text_search.clj#L229-L248">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/text-search/src/skein/spools/text_search.clj#L230-L249">Source</a></sub></p>
 
 ## <a name="skein.spools.text-search/default-search-limit">`default-search-limit`</a>
 
@@ -86,7 +86,7 @@ Install the UNSAFE `search` op into the active weaver.
   other shipped spools; the op handler and `search` itself take the runtime
   explicitly. Returns installation metadata carrying `:unsafe true` so callers
   can see what they activated.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/text-search/src/skein/spools/text_search.clj#L210-L227">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/text-search/src/skein/spools/text_search.clj#L212-L228">Source</a></sub></p>
 
 ## <a name="skein.spools.text-search/search">`search`</a>
 ``` clojure

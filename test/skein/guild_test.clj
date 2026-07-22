@@ -34,7 +34,8 @@
   (with-runtime
     (fn [rt _]
       (guild/install! rt)
-      (guild/register-op! rt 'gate.close.v1 {:doc "Close" :returns close-return}
+      (guild/register-op! rt 'gate.close.v1 {:doc "Close" :returns close-return
+                                             :hook-class :mutating :deadline-class :standard}
                           'skein.guild-test/close-handler)
       (let [handle (#'guild/declarations-handle rt)
             kind :skein.spools.guild/declarations
@@ -44,7 +45,8 @@
         (registry/remove-owner! handle kind owner)
         (is (empty? (registry/effective handle kind))
             "removing guild's complete owner partition deletes its declarations")
-        (guild/register-op! rt 'gate.close.v1 {:doc "Close" :returns close-return}
+        (guild/register-op! rt 'gate.close.v1 {:doc "Close" :returns close-return
+                                               :hook-class :mutating :deadline-class :standard}
                             'skein.guild-test/close-handler)
         (let [entry (assoc (get (registry/effective handle kind) "gate.close.v1")
                            :doc "Workspace close")]
@@ -63,7 +65,8 @@
   (with-runtime
     (fn [rt _]
       (guild/install! rt "coverage-guild")
-      (guild/register-op! rt 'gate.close.v1 {:doc "Close" :returns close-return}
+      (guild/register-op! rt 'gate.close.v1 {:doc "Close" :returns close-return
+                                             :hook-class :mutating :deadline-class :standard}
                           'skein.guild-test/close-handler)
       (let [entries (filterv #(= 'skein.spools.guild (:provenance %)) (weaver/ops rt))
             missing (mapv :name (filter #(not (contains? % :returns)) entries))
@@ -81,12 +84,17 @@
     (fn [rt _]
       (guild/install! rt)
       (guild/register-op! rt 'gate.close.v1
-                          {:doc "Close a peer gate" :input-spec ::close-input :returns close-return}
+                          {:doc "Close a peer gate" :input-spec ::close-input :returns close-return
+                           :hook-class :mutating :deadline-class :standard}
                           'skein.guild-test/close-handler)
       (is (= {:op "gate.close.v1" :input {:task "T-1"}}
              (weaver/op! rt 'gate.close.v1 [(json-arg {:task "T-1"})])))
-      (guild/register-op! rt 'ping.v1 {:doc "Ping" :returns close-return}
+      (guild/register-op! rt 'ping.v1 {:doc "Ping" :returns close-return
+                                       :hook-class :read :deadline-class :standard}
                           'skein.guild-test/close-handler)
+      (is (= [:read :standard]
+             ((juxt :hook-class :deadline-class)
+              (:arg-spec (weaver/resolve-op rt 'ping.v1)))))
       (is (= {:op "ping.v1" :input {}}
              (weaver/op! rt 'ping.v1 []))))))
 
@@ -95,7 +103,8 @@
     (fn [rt _]
       (guild/install! rt)
       (guild/register-op! rt 'gate.close.v1
-                          {:doc "Close a peer gate" :input-spec ::close-input :returns close-return}
+                          {:doc "Close a peer gate" :input-spec ::close-input :returns close-return
+                           :hook-class :mutating :deadline-class :standard}
                           'skein.guild-test/close-handler)
       (try
         (weaver/op! rt 'gate.close.v1 [(json-arg {:wrong "x"})])
@@ -111,10 +120,12 @@
       (guild/install! rt "fallback-guild")
       (is (= "fallback-guild" (:guild (guild/ops {:op/runtime rt}))))
       (guild/register-op! rt 'gate.close.v1
-                          {:doc "Close v1" :input-spec ::close-input :returns close-return}
+                          {:doc "Close v1" :input-spec ::close-input :returns close-return
+                           :hook-class :mutating :deadline-class :standard}
                           'skein.guild-test/close-handler)
       (guild/register-op! rt 'gate.close.v2
-                          {:doc "Close v2" :input-spec ::close-input :returns close-return}
+                          {:doc "Close v2" :input-spec ::close-input :returns close-return
+                           :hook-class :mutating :deadline-class :standard}
                           'skein.guild-test/close-handler)
       (guild/deprecate! rt 'gate.close.v1 {:replacement "gate.close.v2" :since "2026-07-02"})
       (let [listing (weaver/op! rt 'guild ["list"])]
@@ -134,7 +145,8 @@
   (with-runtime
     (fn [rt _]
       (guild/install! rt)
-      (guild/register-op! rt 'gate.close.v1 {:doc "Close v1" :returns close-return}
+      (guild/register-op! rt 'gate.close.v1 {:doc "Close v1" :returns close-return
+                                             :hook-class :mutating :deadline-class :standard}
                           'skein.guild-test/close-handler)
       (guild/deprecate! rt 'gate.close.v1 {:replacement "gate.close.v2"})
       (try
@@ -152,18 +164,31 @@
       (guild/install! rt)
       (testing "unknown register-op! opts"
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"guild/register-op! received unknown keys"
-                              (guild/register-op! rt 'gate.close.v1 {:doc "x" :extra true}
+                              (guild/register-op! rt 'gate.close.v1 {:doc "x" :extra true
+                                                                     :hook-class :read :deadline-class :standard}
+                                                  'skein.guild-test/close-handler))))
+      (testing "leaf classes are required from the guild caller"
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"requires :hook-class"
+                              (guild/register-op! rt 'missing.hook.v1 {:doc "x" :deadline-class :standard}
+                                                  'skein.guild-test/close-handler)))
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"requires :deadline-class"
+                              (guild/register-op! rt 'missing.deadline.v1 {:doc "x" :hook-class :read}
                                                   'skein.guild-test/close-handler))))
       (testing "namespaced registry names are rejected by the public registry"
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"simple symbols or keywords"
-                              (guild/register-op! rt 'gate/close.v1 {:doc "x"}
+                              (guild/register-op! rt 'gate/close.v1 {:doc "x"
+                                                                     :hook-class :read :deadline-class :standard}
                                                   'skein.guild-test/close-handler))))
       (testing "unqualified handlers fail before registration"
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"fully qualified"
-                              (guild/register-op! rt 'bad.handler.v1 {:doc "x"} 'close-handler))))
+                              (guild/register-op! rt 'bad.handler.v1 {:doc "x"
+                                                                      :hook-class :read :deadline-class :standard}
+                                                  'close-handler))))
       (testing "unresolved handlers fail before public registration"
         (is (thrown? java.io.FileNotFoundException
-                     (guild/register-op! rt 'bad.resolve.v1 {:doc "x"} 'missing.guild/handler)))
+                     (guild/register-op! rt 'bad.resolve.v1 {:doc "x"
+                                                             :hook-class :read :deadline-class :standard}
+                                         'missing.guild/handler)))
         (is (not-any? #(= "bad.resolve.v1" (:name %)) (weaver/ops rt))))
       (testing "deprecating an unregistered op fails loudly"
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"not registered"

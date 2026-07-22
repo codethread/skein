@@ -585,7 +585,9 @@
                   :variadic? true
                   :doc (format-alpha/reflow
                         "|Optional subcommand path; slices the detail envelope's
-                         |node to the node the tokens name, at any depth.")}]})
+                         |node to the node the tokens name, at any depth.")}]
+   :hook-class :read
+   :deadline-class :standard})
 
 (def ^:private operation-return-shape
   "Declared return shape for the op-wide `operation` map (DELTA-Dtf-001.CC1);
@@ -694,7 +696,9 @@
                   :variadic? true
                   :doc (format-alpha/reflow
                         (str "|Reserved: " field " is op-level, so a trailing verb
-                             |fails loudly and redirects to `help`."))}]})
+                             |fails loudly and redirects to `help`."))}]
+   :hook-class :read
+   :deadline-class :standard})
 
 (def ^:private about-arg-spec (meta-verb-arg-spec "about" "about"))
 (def ^:private prime-arg-spec (meta-verb-arg-spec "prime" "prime"))
@@ -723,19 +727,16 @@
   (let [register-op! (requiring-resolve 'skein.api.weaver.alpha/register-op!)]
     (register-op! runtime core-registry/system-owner 'help
                   {:doc (:doc help-arg-spec)
-                   :hook-class :read
                    :arg-spec help-arg-spec
                    :returns help-return-shape}
                   'skein.core.weaver.help/op-help-handler)
     (register-op! runtime core-registry/system-owner 'about
                   {:doc (:doc about-arg-spec)
-                   :hook-class :read
                    :arg-spec about-arg-spec
                    :returns (meta-verb-return-shape :about)}
                   'skein.core.weaver.help/op-about-handler)
     (register-op! runtime core-registry/system-owner 'prime
                   {:doc (:doc prime-arg-spec)
-                   :hook-class :read
                    :arg-spec prime-arg-spec
                    :returns (meta-verb-return-shape :prime)}
                   'skein.core.weaver.help/op-prime-handler)))

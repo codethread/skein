@@ -197,7 +197,9 @@
                              "truncating. Search does not consult batteries' set-read-limit! — that "
                              "runtime-owned cap governs list/ready, not this op.")}}
    :positionals [{:name :substring :type :string :required? true
-                  :doc "Substring to search for, matched literally."}]})
+                  :doc "Substring to search for, matched literally."}]
+   :hook-class :read
+   :deadline-class :standard})
 
 (def ^:private search-return
   {:type :collection
@@ -222,8 +224,7 @@
      :ops [(weaver/register-op! rt 'search
                                 {:doc search-doc
                                  :arg-spec search-arg-spec
-                                 :returns search-return
-                                 :hook-class :read}
+                                 :returns search-return}
                                 'skein.spools.text-search/search-op)]}))
 
 (defn contribute
