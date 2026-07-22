@@ -6,7 +6,9 @@
   Source/contribution failures retain the affected owner's prior declarations;
   changed contributions prevalidate across all registered kinds before
   publication; resource reconcilers run afterward with explicit degradation."
-  (:require [clojure.set :as set]
+  (:require [clojure.java.io :as io]
+            [clojure.set :as set]
+            [clojure.tools.namespace.parse :as ns-parse]
             [skein.core.weaver.dispatch :as dispatch]
             [skein.core.weaver.module-graph :as module-graph]
             [skein.core.weaver.module-publication :as publication]
@@ -43,10 +45,16 @@
   ([kind-id entry-key value opts]
    (module-graph/collect-entry! kind-id entry-key value opts)))
 
+(defn- informative-throwable [throwable]
+  (or (last (filter ex-data
+                    (take-while some? (iterate ex-cause throwable))))
+      throwable))
+
 (defn- exception-data [throwable]
-  {:message (ex-message throwable)
-   :class (str (class throwable))
-   :data (ex-data throwable)})
+  (let [informative (informative-throwable throwable)]
+    {:message (ex-message informative)
+     :class (str (class informative))
+     :data (ex-data informative)}))
 
 (defn- fail! [message data]
   (throw (ex-info message data)))
@@ -180,13 +188,15 @@
                    :conflicts []
                    :remedies []}))))
           (if (= :non-additive-sync-diff reason)
-            {:sync (spool-sync/approved-spool-syncs runtime)
-             :roots (conflict-root-outcomes diff error)
-             :conflicts (vec (mapcat #(get diff %)
-                                     [:removed-roots :changed-roots
-                                      :redefinitions :namespace-residuals
-                                      :hard-conflicts :maven-version-bumps]))
-             :remedies (cond-> [] (:remedy error) (conj (:remedy error)))}
+            (let [sync-result (spool-sync/approved-spool-syncs runtime)]
+              {:sync sync-result
+               :roots (merge (sync-root-outcomes sync-result)
+                             (conflict-root-outcomes diff error))
+               :conflicts (vec (mapcat #(get diff %)
+                                       [:removed-roots :changed-roots
+                                        :redefinitions :namespace-residuals
+                                        :hard-conflicts :maven-version-bumps]))
+               :remedies (cond-> [] (:remedy error) (conj (:remedy error)))})
             {:fatal (exception-data throwable)
              :roots (sorted-map)
              :conflicts []
@@ -247,6 +257,25 @@
 (defn- source-stamp [source-binding]
   (some-> source-binding (select-keys [:root-lib :file :sha256])))
 
+(defn- declared-file-namespace [file]
+  (with-open [reader (java.io.PushbackReader. (io/reader (io/file file)))]
+    (some-> (ns-parse/read-ns-decl reader)
+            ns-parse/name-from-ns-decl)))
+
+(defn- collection-context [runtime key declaration]
+  (if-let [ns-sym (:ns declaration)]
+    {:module/key key
+     :source/file (spool-sync/synced-namespace-file runtime ns-sym)
+     :source/namespace ns-sym}
+    (let [file (spool-sync/module-file runtime (:file declaration))]
+      {:module/key key
+       :source/file file
+       :source/namespace (declared-file-namespace file)})))
+
+(defn- load-module-file! [runtime file result]
+  (spool-sync/with-namespace-load-observation
+    runtime #(do (load-file file) result)))
+
 (defn- load-source!
   [runtime with-loader key declaration previous-source]
   (if-let [ns-sym (:ns declaration)]
@@ -258,19 +287,22 @@
                 :namespace ns-sym}))
       (if (and source-binding
                (not= previous-source (source-stamp source-binding)))
-        (with-loader #(do (load-file (:file source-binding))
-                          {:ns ns-sym
-                           :file (:file source-binding)
-                           :collection/reload? true}))
+        (with-loader #(load-module-file!
+                       runtime (:file source-binding)
+                       {:ns ns-sym
+                        :file (:file source-binding)
+                        :collection/reload? true}))
         (with-loader #(spool-sync/load-synced-namespace! runtime ns-sym key))))
     (let [file (spool-sync/module-file runtime (:file declaration))]
-      (with-loader #(do (load-file file) {:file file})))))
+      (with-loader #(load-module-file! runtime file {:file file})))))
 
 (defn- evaluate-module
   [runtime with-loader key declaration previous-contribution previous-source]
   (try
-    (let [{:keys [return contribution]}
+    (let [context (collection-context runtime key declaration)
+          {:keys [return contribution]}
           (module-graph/with-contribution-collection
+            context
             #(load-source! runtime with-loader key declaration previous-source))
           source-status (if (and (:ns declaration) (nil? (:file return)))
                           :unchanged

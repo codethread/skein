@@ -2979,34 +2979,42 @@
 ;; --- owner-scoped module refresh coordinator (TASK-Olr-004) -----------------
 
 (defn- write-runtime-module!
-  [workspace relative-path ns-sym body]
-  (let [file (io/file workspace relative-path)]
-    (.mkdirs (.getParentFile file))
-    (spit file (str "(ns " ns-sym "\n  (:require [skein.core.weaver.runtime :as runtime]))\n"
-                    body "\n"))
-    file))
+  ([workspace relative-path ns-sym body]
+   (write-runtime-module! workspace relative-path ns-sym [] body))
+  ([workspace relative-path ns-sym required-namespaces body]
+   (let [file (io/file workspace relative-path)]
+     (.mkdirs (.getParentFile file))
+     (spit file
+           (str "(ns " ns-sym
+                "\n  (:require [skein.core.weaver.runtime :as runtime]"
+                (str/join "" (map #(str "\n            [" % "]") required-namespaces))
+                "))\n" body "\n"))
+     file)))
 
 (defn- explicit-module-source!
   [workspace relative-path ns-sym]
   (write-runtime-module! workspace relative-path ns-sym "nil"))
 
 (defn- write-local-spool-module!
-  [workspace root-lib ns-sym body]
-  (let [relative-root "spools/module-root"
-        root (io/file workspace relative-root)
-        relative-source (-> (str ns-sym)
-                            (str/replace "." "/")
-                            (str/replace "-" "_"))
-        source (io/file root "src" (str relative-source ".clj"))]
-    (io/make-parents source)
-    (spit (io/file workspace "spools.edn")
-          (pr-str {:spools {root-lib {:local/root relative-root}}}))
-    (spit (io/file root "deps.edn") "{:paths [\"src\"]}\n")
-    (spit source
-          (str "(ns " ns-sym
-               "\n  (:require [skein.core.weaver.runtime :as runtime]))\n"
-               body "\n"))
-    source))
+  ([workspace root-lib ns-sym body]
+   (write-local-spool-module! workspace root-lib ns-sym [] body))
+  ([workspace root-lib ns-sym required-namespaces body]
+   (let [relative-root "spools/module-root"
+         root (io/file workspace relative-root)
+         relative-source (-> (str ns-sym)
+                             (str/replace "." "/")
+                             (str/replace "-" "_"))
+         source (io/file root "src" (str relative-source ".clj"))]
+     (io/make-parents source)
+     (spit (io/file workspace "spools.edn")
+           (pr-str {:spools {root-lib {:local/root relative-root}}}))
+     (spit (io/file root "deps.edn") "{:paths [\"src\"]}\n")
+     (spit source
+           (str "(ns " ns-sym
+                "\n  (:require [skein.core.weaver.runtime :as runtime]"
+                (str/join "" (map #(str "\n            [" % "]") required-namespaces))
+                "))\n" body "\n"))
+     source)))
 
 (deftest startup-collects-layered-module-graph-and-full-refresh-removes-owners
   (let [world (temp-world)
@@ -3255,6 +3263,91 @@
           (is (not (contains? (graph/queries rt) "deleted"))
               "a deleted authoring form is omitted from the replacement"))))))
 
+(deftest f10-ns-module-refuses-foreign-namespace-authoring-forms
+  (with-runtime
+    (fn [rt _db-file]
+      (let [workspace (get-in rt [:metadata :config-dir])
+            suffix (str/replace (str (random-uuid)) "-" "")
+            ns-a (symbol (str "test.module.foreign-a-" suffix))
+            ns-b (symbol (str "test.module.foreign-b-" suffix))
+            root-lib 'test/module-root]
+        (write-local-spool-module!
+         workspace root-lib ns-a
+         "(runtime/collect-module-entry! :queries \"foreign-a\" [:= [:attr :v] 1])")
+        (write-local-spool-module!
+         workspace root-lib ns-b [ns-a]
+         "(runtime/collect-module-entry! :queries \"foreign-b\" [:= [:attr :v] 1])")
+        (let [result (runtime/module! rt :foreign-ns
+                                      {:ns ns-b :spools [root-lib]})
+              error (get-in result [:modules :foreign-ns :error :data])]
+          (is (= :partial (:status result)))
+          (is (= :failed (get-in result [:modules :foreign-ns :status])))
+          (is (= :foreign-contribution-namespace (:reason error)))
+          (is (= :foreign-ns (:module/key error)))
+          (is (= ns-a (:namespace error)))
+          (is (empty? (select-keys (graph/queries rt) ["foreign-a" "foreign-b"]))))))))
+
+(deftest f10-file-module-refuses-foreign-namespace-authoring-forms
+  (with-runtime
+    (fn [rt _db-file]
+      (let [workspace (get-in rt [:metadata :config-dir])
+            suffix (str/replace (str (random-uuid)) "-" "")
+            ns-a (symbol (str "test.module.file-foreign-a-" suffix))
+            ns-b (symbol (str "test.module.file-foreign-b-" suffix))
+            root-lib 'test/module-root
+            source "modules/file-foreign.clj"]
+        (write-local-spool-module!
+         workspace root-lib ns-a
+         "(runtime/collect-module-entry! :queries \"file-foreign-a\" [:= [:attr :v] 1])")
+        (write-runtime-module!
+         workspace source ns-b [ns-a]
+         "(runtime/collect-module-entry! :queries \"file-foreign-b\" [:= [:attr :v] 1])")
+        (let [result (runtime/module! rt :foreign-file
+                                      {:file source :spools [root-lib]})
+              error (get-in result [:modules :foreign-file :error :data])]
+          (is (= :partial (:status result)))
+          (is (= :foreign-contribution-namespace (:reason error)))
+          (is (= :foreign-file (:module/key error)))
+          (is (= ns-a (:namespace error)))
+          (is (empty? (select-keys (graph/queries rt)
+                                   ["file-foreign-a" "file-foreign-b"]))))))))
+
+(deftest f10-per-namespace-modules-refresh-either-source-without-loss
+  (with-runtime
+    (fn [rt _db-file]
+      (let [workspace (get-in rt [:metadata :config-dir])
+            suffix (str/replace (str (random-uuid)) "-" "")
+            ns-a (symbol (str "test.module.scoped-a-" suffix))
+            ns-b (symbol (str "test.module.scoped-b-" suffix))
+            root-lib 'test/module-root
+            source-a (write-local-spool-module!
+                      workspace root-lib ns-a
+                      "(runtime/collect-module-entry! :queries \"scoped-a\" [:= [:attr :v] 1])")
+            source-b (write-local-spool-module!
+                      workspace root-lib ns-b [ns-a]
+                      "(runtime/collect-module-entry! :queries \"scoped-b\" [:= [:attr :v] 1])")]
+        (is (= :applied
+               (:status (runtime/module! rt :scoped-a
+                                         {:ns ns-a :spools [root-lib]}))))
+        (is (= :applied
+               (:status (runtime/module! rt :scoped-b
+                                         {:ns ns-b :spools [root-lib]
+                                          :after [:scoped-a]}))))
+        (spit source-b
+              (str "(ns " ns-b
+                   "\n  (:require [skein.core.weaver.runtime :as runtime] [" ns-a "]))\n"
+                   "(runtime/collect-module-entry! :queries \"scoped-b\" [:= [:attr :v] 2])\n"))
+        (is (= :applied (:status (runtime/refresh! rt {:only [:scoped-b]}))))
+        (is (= [:= [:attr :v] 1] (get (graph/queries rt) "scoped-a")))
+        (is (= [:= [:attr :v] 2] (get (graph/queries rt) "scoped-b")))
+        (spit source-a
+              (str "(ns " ns-a
+                   "\n  (:require [skein.core.weaver.runtime :as runtime]))\n"
+                   "(runtime/collect-module-entry! :queries \"scoped-a\" [:= [:attr :v] 2])\n"))
+        (is (= :applied (:status (runtime/refresh! rt {:only [:scoped-a]}))))
+        (is (= [:= [:attr :v] 2] (get (graph/queries rt) "scoped-a")))
+        (is (= [:= [:attr :v] 2] (get (graph/queries rt) "scoped-b")))))))
+
 (deftest f4-unledgered-loaded-ns-module-fails-with-structured-reason
   (with-runtime
     (fn [rt _db-file]
@@ -3277,6 +3370,40 @@
           (is (= :unledgered-loaded-namespace
                  (get-in result [:modules :unledgered :error :data :reason])))
           (is (not (contains? (graph/queries rt) "unledgered"))))))))
+
+(deftest f11-file-module-and-repl-requires-become-observed-residuals
+  (with-runtime
+    (fn [rt _db-file]
+      (let [workspace (get-in rt [:metadata :config-dir])
+            suffix (str/replace (str (random-uuid)) "-" "")
+            file-required-ns (symbol (str "test.module.file-required-" suffix))
+            repl-required-ns (symbol (str "test.module.repl-required-" suffix))
+            module-ns (symbol (str "test.module.file-observer-" suffix))
+            root-lib 'test/module-root
+            source "modules/file-observer.clj"]
+        (write-local-spool-module! workspace root-lib file-required-ns "(def value :file)")
+        (write-local-spool-module! workspace root-lib repl-required-ns "(def value :repl)")
+        (write-runtime-module!
+         workspace source module-ns [file-required-ns]
+         "(runtime/collect-module-entry! :queries \"file-observer\" [:= [:attr :v] 1])")
+        (is (= :applied
+               (:status (runtime/module! rt :file-observer
+                                         {:file source :spools [root-lib]}))))
+        (is (= :unledgered-loaded-namespace
+               (:reason (some #(when (= file-required-ns (:namespace %)) %)
+                              (:residuals (spool-sync/loaded-namespace-status rt))))))
+        (is (not-any? #(= file-required-ns (:namespace %))
+                      (spool-sync/namespace-load-ledger rt)))
+        (weaver-runtime/with-runtime-and-spool-classloader
+          rt #(require repl-required-ns))
+        (let [ex (is (thrown? clojure.lang.ExceptionInfo (runtime/sync! rt)))
+              residuals (:residuals (spool-sync/loaded-namespace-status rt))]
+          (is (= :non-additive-sync-diff (:reason (ex-data ex))))
+          (is (= #{file-required-ns repl-required-ns}
+                 (->> residuals
+                      (filter #(= :unledgered-loaded-namespace (:reason %)))
+                      (map :namespace)
+                      set))))))))
 
 (deftest f5-status-is-identical-after-refreshed-source-files-disappear
   (with-runtime

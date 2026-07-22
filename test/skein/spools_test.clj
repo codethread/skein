@@ -2575,6 +2575,55 @@
                       %)
                   bindings))))))
 
+(deftest f12-classpath-overlap-is-not-observed-as-unledgered
+  (with-runtime
+    (fn [rt config-dir]
+      (require 'skein.spools.batteries)
+      (let [lib 'demo/batteries-overlap
+            root (write-local-lib! config-dir "batteries-overlap"
+                                   'skein.spools.batteries)]
+        (write-spools! config-dir
+                       (pr-str {:spools {lib {:local/root "spools/batteries-overlap"}}}))
+        (is (#{:loaded :already-available}
+             (get-in (runtime/sync! rt) [:spools lib :status])))
+        (let [status (spool-sync/loaded-namespace-status rt)]
+          (is (:clean? status))
+          (is (empty? (filter #(= 'skein.spools.batteries (:namespace %))
+                              (:residuals status))))
+          (is (= (.getCanonicalPath root)
+                 (get-in status [:provisions 'skein.spools.batteries 0 :root]))))))))
+
+(deftest f13-source-load-boundaries-batch-namespace-observation
+  (with-runtime
+    (fn [rt config-dir]
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
+            ns-a (symbol (str "demo.batch-a-" suffix))
+            ns-b (symbol (str "demo.batch-b-" suffix))
+            lib (symbol (str "demo/batch-" suffix))
+            root (write-local-lib! config-dir (str "batch-" suffix) ns-a)
+            observe @#'spool-sync/current-namespace-observations
+            calls (atom 0)]
+        (write-spool-ns!
+         root ns-b
+         (str "(ns " ns-b " (:require [" ns-a "]))\n"
+              "(def value " ns-a "/marker)\n"))
+        (write-spools! config-dir
+                       (pr-str {:spools {lib {:local/root (str "spools/batch-" suffix)}}}))
+        (runtime/sync! rt)
+        (with-redefs-fn
+          {#'spool-sync/current-namespace-observations
+           (fn [& args]
+             (swap! calls inc)
+             (apply observe args))}
+          #(do
+             (runtime/use! rt :f13/target {:ns ns-b :spools [lib]})
+             (is (= 1 @calls)
+                 "the two-namespace target closure classifies once")
+             (reset! calls 0)
+             (spool-sync/reload-synced-spool! rt lib)
+             (is (= 1 @calls)
+                 "the two-namespace root reload classifies once")))))))
+
 (deftest reload-synced-spool-makes-single-namespace-source-live
   (with-runtime
     (fn [rt config-dir]

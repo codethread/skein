@@ -5,7 +5,8 @@
   records both startup layers, makes `init.local.clj` shadow `init.clj`
   deterministically, and validates the complete winning graph before callers
   perform source loads, registry publication, or resource reconciliation."
-  (:require [clojure.set :as set]
+  (:require [clojure.java.io :as io]
+            [clojure.set :as set]
             [clojure.string :as str]))
 
 (def ^:private declaration-keys
@@ -24,6 +25,10 @@
 
 (def ^:dynamic *contribution-collector*
   "Dynamically bound authoring-form contribution collector, or nil."
+  nil)
+
+(def ^:dynamic ^:private *contribution-context*
+  "Dynamically bound module/source context for contribution collection, or nil."
   nil)
 
 (defn- fail! [message data]
@@ -224,6 +229,26 @@
   []
   (some? *contribution-collector*))
 
+(defn- current-source-context []
+  {:source/file (some-> *file* io/file .getCanonicalPath)
+   :source/namespace (ns-name *ns*)})
+
+(defn- require-collection-source! []
+  (let [{expected-file :source/file
+         expected-ns :source/namespace
+         module-key :module/key} *contribution-context*
+        {actual-file :source/file
+         actual-ns :source/namespace} (current-source-context)]
+    (when (or (not= expected-file actual-file)
+              (and expected-ns (not= expected-ns actual-ns)))
+      (fail! (str "Module " module-key
+                  " authoring form evaluated from foreign namespace " actual-ns)
+             {:reason :foreign-contribution-namespace
+              :module/key module-key
+              :namespace actual-ns
+              :source/file actual-file
+              :module/source {:file expected-file :namespace expected-ns}}))))
+
 (defn collect-entry!
   "Record one authoring-form registry entry in the active module contribution.
 
@@ -243,6 +268,7 @@
      (fail! "Contribution :override? must be boolean"
             {:kind kind-id :key entry-key :override? override?}))
    (when *contribution-collector*
+     (require-collection-source!)
      (swap! *contribution-collector*
             (fn [contribution]
               (cond-> (assoc-in contribution [kind-id :entries entry-key] value)
@@ -252,10 +278,11 @@
    value))
 
 (defn with-contribution-collection
-  "Call `f` while collecting authoring-form entries; return value and data."
-  [f]
+  "Call `f` while collecting entries from exactly one module source target."
+  [context f]
   (let [collector (atom {})
-        return (binding [*contribution-collector* collector]
+        return (binding [*contribution-collector* collector
+                         *contribution-context* context]
                  (f))]
     {:return return
      :contribution (update-vals @collector
