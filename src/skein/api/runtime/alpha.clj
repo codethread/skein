@@ -64,6 +64,9 @@
   "Return declared spool families with release-floor validation as data.
 
   `:families` has the same declared/effective projection as `approved`.
+  Each family projection's `:declared`, `:effective-coordinate`, `:provenance`,
+  and `:claims` conform to `::spool-entry`, `::spool-coordinate`,
+  `::spool-provenance`, and `::spool-claims`.
   `:requirements` is valid with pending validations, or invalid with findings
   and bump suggestions. Stage-1 structural errors still throw. The explicit
   `running-marker` arity accepts nil to leave Skein floor checks pending. The
@@ -80,6 +83,9 @@
                                   :running-marker ::running-marker))
   :ret ::declared-result)
 
+(s/def ::release-marker-claim ::specs/release-marker-claim)
+(s/def ::release-marker-result ::specs/release-marker-result)
+
 (defn release-marker
   "Return the running Skein release marker and its provenance.
 
@@ -90,22 +96,24 @@
   matching annotated tag. Git startup, checkout-root resolution, and nonzero
   Git command failures throw. Consumers that require marker arithmetic must
   reject `:none` explicitly. The result conforms to
-  `:skein.core.specs/release-marker-result`; marker claims conform to
-  `:skein.core.specs/release-marker-claim`."
+  `::release-marker-result`; marker claims conform to `::release-marker-claim`."
   [runtime]
   (let [result (access/release-marker runtime)]
-    (require-valid! ::specs/release-marker-result result
+    (require-valid! ::release-marker-result result
                     "runtime release marker has an invalid shape")
     result))
 
 (s/fdef release-marker
   :args (s/cat :runtime map?)
-  :ret :skein.core.specs/release-marker-result)
+  :ret ::release-marker-result)
 
 ;; --- the spools.edn write seam ----------------------------------------------
 
 (s/def ::spool-family symbol?)
 (s/def ::spool-entry :skein.core.weaver.spool-sync/family-entry)
+(s/def ::spool-coordinate ::spool-sync/coordinate)
+(s/def ::spool-provenance ::spool-sync/provenance)
+(s/def ::spool-claims ::spool-sync/claims)
 (s/def ::spool-write-result
   (s/and #(shapes/exact-keys? #{:status :lib :entry :file} %)
          #(s/valid? ::spool-write-status (:status %))
