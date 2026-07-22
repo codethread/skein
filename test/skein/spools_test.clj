@@ -2563,35 +2563,36 @@
   (with-runtime
     (fn [rt _config-dir]
       (require 'skein.spools.batteries)
-      (let [bindings (:classpath-bindings (spool-sync/loaded-namespace-status rt))]
-        (is (some #(= {:ownership :classpath
-                       :classpath-owner :skein-api
-                       :namespace 'skein.api.runtime.alpha}
-                      %)
-                  bindings))
-        (is (some #(= {:ownership :classpath
-                       :classpath-owner :batteries
-                       :namespace 'skein.spools.batteries}
-                      %)
-                  bindings))))))
+      (require 'skein.spools.workflow)
+      (let [bindings (into {} (map (juxt :namespace identity))
+                           (:classpath-bindings (spool-sync/loaded-namespace-status rt)))]
+        (doseq [ns-sym ['skein.api.runtime.alpha
+                        'skein.spools.batteries
+                        'skein.spools.workflow]]
+          (is (= :classpath (get-in bindings [ns-sym :ownership])))
+          (is (= :base-classpath (get-in bindings [ns-sym :classpath-owner])))
+          (is (string? (get-in bindings [ns-sym :source]))))))))
 
-(deftest f12-classpath-overlap-is-not-observed-as-unledgered
+(deftest f12-base-classpath-overlap-is-not-observed-as-unledgered
   (with-runtime
     (fn [rt config-dir]
-      (require 'skein.spools.batteries)
-      (let [lib 'demo/batteries-overlap
-            root (write-local-lib! config-dir "batteries-overlap"
-                                   'skein.spools.batteries)]
+      (require 'skein.spools.workflow)
+      (let [lib 'demo/workflow-overlap
+            root (write-local-lib! config-dir "workflow-overlap"
+                                   'skein.spools.workflow)]
         (write-spools! config-dir
-                       (pr-str {:spools {lib {:local/root "spools/batteries-overlap"}}}))
+                       (pr-str {:spools {lib {:local/root "spools/workflow-overlap"}}}))
+        (is (#{:loaded :already-available}
+             (get-in (runtime/sync! rt) [:spools lib :status])))
         (is (#{:loaded :already-available}
              (get-in (runtime/sync! rt) [:spools lib :status])))
         (let [status (spool-sync/loaded-namespace-status rt)]
           (is (:clean? status))
-          (is (empty? (filter #(= 'skein.spools.batteries (:namespace %))
+          (is (nil? (:pending-generation (runtime/syncs rt))))
+          (is (empty? (filter #(= 'skein.spools.workflow (:namespace %))
                               (:residuals status))))
           (is (= (.getCanonicalPath root)
-                 (get-in status [:provisions 'skein.spools.batteries 0 :root]))))))))
+                 (get-in status [:provisions 'skein.spools.workflow 0 :root]))))))))
 
 (deftest f13-source-load-boundaries-batch-namespace-observation
   (with-runtime

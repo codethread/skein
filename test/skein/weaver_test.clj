@@ -21,6 +21,7 @@
             [skein.core.weaver.dispatch :as dispatch]
             [skein.core.weaver.lifecycle :as lifecycle]
             [skein.core.weaver.metadata :as metadata]
+            [skein.core.weaver.module-refresh :as module-refresh]
             [skein.core.weaver.runtime :as weaver-runtime]
             [skein.core.weaver.spool-sync :as spool-sync]
             [skein.core.db :as db]
@@ -3404,6 +3405,15 @@
                       (filter #(= :unledgered-loaded-namespace (:reason %)))
                       (map :namespace)
                       set))))))))
+
+(deftest f14-informative-throwable-retains-outer-marker-context
+  (let [throwable (try
+                    (@#'spool-sync/validate-marker!
+                     "v0" {:family 'demo/family :field :git/tag})
+                    (catch clojure.lang.ExceptionInfo e e))
+        error (@#'module-refresh/exception-data throwable)]
+    (is (= {:family 'demo/family :field :git/tag :marker "v0"}
+           (select-keys (:data error) [:family :field :marker])))))
 
 (deftest f5-status-is-identical-after-refreshed-source-files-disappear
   (with-runtime

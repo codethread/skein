@@ -45,16 +45,23 @@
   ([kind-id entry-key value opts]
    (module-graph/collect-entry! kind-id entry-key value opts)))
 
-(defn- informative-throwable [throwable]
+(defn- informative-throwable
+  "Return the deepest structured cause beneath compiler and loader wrappers."
+  [throwable]
   (or (last (filter ex-data
                     (take-while some? (iterate ex-cause throwable))))
       throwable))
 
 (defn- exception-data [throwable]
-  (let [informative (informative-throwable throwable)]
+  (let [causes (vec (take-while some? (iterate ex-cause throwable)))
+        informative (informative-throwable throwable)]
     {:message (ex-message informative)
      :class (str (class informative))
-     :data (ex-data informative)}))
+     :data (when (some ex-data causes)
+             (reduce (fn [data cause]
+                       (merge data (ex-data cause)))
+                     {}
+                     (reverse causes)))}))
 
 (defn- fail! [message data]
   (throw (ex-info message data)))

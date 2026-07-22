@@ -1600,11 +1600,12 @@
 (defn load-synced-namespace!
   "Load `ns-sym` from `runtime`'s synced spool roots.
 
-  An already-loaded namespace with the same attributed root, file, and bytes is
-  a no-op. Otherwise the source is loaded from its single synced approved
-  provider and appended to the generation ledger; a namespace whose source is
-  missing or ambiguous fails loudly. The optional owner is the stable runtime
-  module key responsible for this explicit load."
+  An already-loaded namespace with no ledger record is left untouched so source
+  classification can report its unledgered provenance. A ledger binding whose
+  attributed root, file, and bytes still match is also a no-op. Otherwise the
+  source is loaded from its single synced approved provider and appended to the
+  generation ledger; a missing or ambiguous source fails loudly. The optional
+  owner is the stable runtime module key responsible for this explicit load."
   ([runtime ns-sym]
    (load-synced-namespace! runtime ns-sym nil))
   ([runtime ns-sym owner]
@@ -1829,21 +1830,28 @@
                   (empty? (:residuals %))
                   (empty? (:hard-conflicts %))))))
 
-(defn- classpath-owner [ns-sym]
-  (let [ns-name (str ns-sym)]
-    (cond
-      (str/starts-with? ns-name "skein.api.") :skein-api
-      (= ns-sym 'skein.spools.batteries) :batteries
-      :else nil)))
+(defn- namespace-source-resources [ns-sym]
+  (let [stem (-> (name ns-sym)
+                 (str/replace "-" "_")
+                 (str/replace "." "/"))]
+    [(str stem ".clj") (str stem ".cljc")]))
 
-(defn- classpath-bindings []
+(defn- classpath-owner [runtime ns-sym]
+  (let [base-loader (some-> ^ClassLoader (:spool-classloader runtime) .getParent)]
+    (if-let [source (some #(some-> base-loader (.getResource %) str)
+                          (namespace-source-resources ns-sym))]
+      {:classpath-owner :base-classpath :source source}
+      (when (contains? (:inherited-namespaces runtime) ns-sym)
+        {:classpath-owner :inherited-jvm}))))
+
+(defn- classpath-bindings [runtime]
   (->> (all-ns)
        (keep (fn [ns-obj]
                (let [ns-sym (ns-name ns-obj)]
-                 (when-let [owner (classpath-owner ns-sym)]
-                   {:ownership :classpath
-                    :classpath-owner owner
-                    :namespace ns-sym}))))
+                 (when-let [owner (classpath-owner runtime ns-sym)]
+                   (merge {:ownership :classpath
+                           :namespace ns-sym}
+                          owner)))))
        (sort-by (comp str :namespace))
        vec))
 
@@ -1960,12 +1968,12 @@
 (defn- retained-unledgered-residuals [runtime latest]
   (->> (some-> runtime :namespace-load-status deref :residuals)
        (filter #(= :unledgered-loaded-namespace (:reason %)))
-       (remove #(classpath-owner (:namespace %)))
+       (remove #(classpath-owner runtime (:namespace %)))
        (remove #(contains? latest (:namespace %)))))
 
-(defn- observed-unledgered-residuals [latest provisions]
+(defn- observed-unledgered-residuals [runtime latest provisions]
   (for [[ns-sym providers] provisions
-        :when (and (nil? (classpath-owner ns-sym))
+        :when (and (nil? (classpath-owner runtime ns-sym))
                    (find-ns ns-sym)
                    (not (contains? latest ns-sym)))]
     {:reason :unledgered-loaded-namespace
@@ -2009,7 +2017,7 @@
          unledgered-residuals
          (->> (concat (retained-unledgered-residuals runtime latest)
                       (when observe-loaded?
-                        (observed-unledgered-residuals latest provisions)))
+                        (observed-unledgered-residuals runtime latest provisions)))
               (reduce (fn [by-namespace residual]
                         (assoc by-namespace (:namespace residual) residual))
                       (sorted-map))
@@ -2056,7 +2064,7 @@
          result {:ledger records
                  :current-bindings (:current classification)
                  :prior-bindings prior
-                 :classpath-bindings (classpath-bindings)
+                 :classpath-bindings (classpath-bindings runtime)
                  :provisions provisions
                  :residuals residuals
                  :hard-conflicts hard-conflicts
@@ -2078,7 +2086,7 @@
       {:ledger (namespace-load-ledger runtime)
        :current-bindings (sorted-map)
        :prior-bindings (sorted-map)
-       :classpath-bindings (classpath-bindings)
+       :classpath-bindings (classpath-bindings runtime)
        :provisions (sorted-map)
        :residuals []
        :hard-conflicts []

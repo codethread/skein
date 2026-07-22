@@ -638,6 +638,11 @@
                         ;; Append-only for this process generation. Config reload
                         ;; deliberately leaves loaded-code evidence intact.
                         :namespace-load-ledger (atom {:last-order 0 :records []})
+                        ;; Embedded runtimes can share a JVM. Namespaces already
+                        ;; present before this runtime creates its spool loader
+                        ;; belong to the inherited image, not this runtime's
+                        ;; synced-root ledger.
+                        :inherited-namespaces (into #{} (map ns-name) (all-ns))
                         ;; Status reads this recorded classification without
                         ;; consulting source files. Sync/source-load boundaries
                         ;; replace it when their in-memory evidence changes.
