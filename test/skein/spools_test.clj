@@ -2383,6 +2383,52 @@
   (some #(when (= ns-sym (:namespace %)) %)
         (:residuals (spool-sync/loaded-namespace-status rt))))
 
+(deftest f3-cross-root-require-load-retains-unledgered-residual
+  (with-runtime
+    (fn [rt config-dir]
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
+            required-ns (symbol (str "demo.required-" suffix))
+            requiring-ns (symbol (str "demo.requiring-" suffix))
+            required-lib (symbol (str "demo/required-" suffix))
+            requiring-lib (symbol (str "demo/requiring-" suffix))
+            required-root (write-local-lib! config-dir (str "required-" suffix) required-ns)
+            requiring-root (write-local-lib! config-dir (str "requiring-" suffix) requiring-ns)
+            required-file (write-spool-ns!
+                           required-root required-ns
+                           (str "(ns " required-ns ")\n(def value :required)\n"))
+            required-entry {:local/root (str "spools/required-" suffix)}
+            requiring-entry {:local/root (str "spools/requiring-" suffix)}]
+        (write-spool-ns!
+         requiring-root requiring-ns
+         (str "(ns " requiring-ns " (:require [" required-ns "]))\n"
+              "(def value " required-ns "/value)\n"))
+        (write-spools! config-dir
+                       (pr-str {:spools {required-lib required-entry
+                                         requiring-lib requiring-entry}}))
+        (runtime/sync! rt)
+        (runtime/use! rt :f3/requiring {:ns requiring-ns :spools [requiring-lib]})
+        (is (find-ns required-ns))
+        (is (not-any? #(= required-ns (:namespace %))
+                      (spool-sync/namespace-load-ledger rt)))
+        (is (= :unledgered-loaded-namespace
+               (:reason (namespace-residual rt required-ns))))
+        (testing "edited source cannot false-clean the unledgered root"
+          (spit required-file
+                (str "(ns " required-ns ")\n(def value :edited)\n"))
+          (let [ex (is (thrown? clojure.lang.ExceptionInfo (runtime/sync! rt)))]
+            (is (= :non-additive-sync-diff (:reason (ex-data ex))))
+            (is (false? (:clean? (spool-sync/loaded-namespace-status rt))))
+            (is (= :pending (get-in (runtime/syncs rt)
+                                    [:pending-generation :status])))))
+        (testing "deleted source cannot clear the pending generation"
+          (is (.delete required-file))
+          (let [ex (is (thrown? clojure.lang.ExceptionInfo (runtime/sync! rt)))]
+            (is (= :non-additive-sync-diff (:reason (ex-data ex))))
+            (is (= :unledgered-loaded-namespace
+                   (:reason (namespace-residual rt required-ns))))
+            (is (= :pending (get-in (runtime/syncs rt)
+                                    [:pending-generation :status])))))))))
+
 (deftest loaded-namespace-ledger-path-shrink-remains-residual
   (with-runtime
     (fn [rt config-dir]

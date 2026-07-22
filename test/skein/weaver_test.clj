@@ -3278,6 +3278,25 @@
                  (get-in result [:modules :unledgered :error :data :reason])))
           (is (not (contains? (graph/queries rt) "unledgered"))))))))
 
+(deftest f5-status-is-identical-after-refreshed-source-files-disappear
+  (with-runtime
+    (fn [rt _db-file]
+      (let [workspace (get-in rt [:metadata :config-dir])
+            suffix (str/replace (str (random-uuid)) "-" "")
+            ns-sym (symbol (str "test.module.status-offline-" suffix))
+            root-lib 'test/module-root
+            source (write-local-spool-module!
+                    workspace root-lib ns-sym
+                    (str "(runtime/collect-module-entry! :queries \"offline\" "
+                         "[:= [:attr :version] 1])"))]
+        (is (= :applied
+               (:status (runtime/module! rt :status-offline
+                                         {:ns ns-sym :spools [root-lib]}))))
+        (let [before (runtime/status rt)]
+          (is (.delete source))
+          (is (.delete (io/file workspace "spools.edn")))
+          (is (= before (runtime/status rt))))))))
+
 (deftest f6-plan-never-syncs-or-records-refused-results
   (with-runtime
     (fn [rt _db-file]

@@ -638,6 +638,10 @@
                         ;; Append-only for this process generation. Config reload
                         ;; deliberately leaves loaded-code evidence intact.
                         :namespace-load-ledger (atom {:last-order 0 :records []})
+                        ;; Status reads this recorded classification without
+                        ;; consulting source files. Sync/source-load boundaries
+                        ;; replace it when their in-memory evidence changes.
+                        :namespace-load-status (atom nil)
                         :module-use-state (atom {})
                         :module-state
                         (atom ((requiring-resolve

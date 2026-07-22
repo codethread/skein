@@ -1172,7 +1172,7 @@
 
 (declare clojure-source? parse-source-ns source-file->ns-sym namespace-sources-in-paths
          classify-namespace-loads phase1-namespace-observations latest-bindings
-         load-synced-target!)
+         load-synced-target! record-current-namespace-status! record-namespace-status!)
 
 (def ^:private pending-generation-remedy
   "Operator-facing remedy for a non-additive spool sync diff."
@@ -1279,7 +1279,12 @@
                               "Namespace load ledger has an invalid shape" {})
                (vreset! recorded record)
                next-state)))
-    @recorded))
+    (let [record @recorded]
+      ;; A source can require a namespace from another synced root through the
+      ;; spool classloader. Refresh the recorded projection after compilation,
+      ;; when `find-ns` can expose any such require-path load (F3).
+      (record-current-namespace-status! runtime)
+      record)))
 
 (defn namespace-load-ledger
   "Return this runtime generation's append-only spool namespace load records."
@@ -1463,8 +1468,9 @@
                         (:spools approved))
            failed (into {} (keep :failed) phase1)
            survivors (into [] (keep :survivor) phase1)
-           namespace-status (classify-namespace-loads
-                             runtime approved (phase1-namespace-observations phase1))
+           namespace-status (->> (phase1-namespace-observations phase1)
+                                 (classify-namespace-loads runtime approved)
+                                 (record-namespace-status! runtime))
            structural-diff (non-additive-diff previous previous-fingerprints {} approved survivors {}
                                               namespace-status)
            _ (when (seq structural-diff)
@@ -1883,6 +1889,17 @@
                      :message (ex-message t)})))))
           (:spools approved))))
 
+(defn- record-namespace-status! [runtime status]
+  (when-let [status-atom (:namespace-load-status runtime)]
+    (reset! status-atom status))
+  status)
+
+(defn- record-current-namespace-status! [runtime]
+  (let [approved (approved-spools runtime)]
+    (->> (current-namespace-observations runtime approved)
+         (#(classify-namespace-loads runtime approved % {:observe-loaded? true}))
+         (record-namespace-status! runtime))))
+
 (defn- phase1-namespace-observations
   "Return source-classification observations from one sync phase-1 result."
   [phase1]
@@ -1909,6 +1926,18 @@
     (.isFile (io/file (:file load-record))) :path-shrunk
     :else :deleted-file))
 
+(defn- retained-unledgered-residuals [runtime latest]
+  (->> (some-> runtime :namespace-load-status deref :residuals)
+       (filter #(= :unledgered-loaded-namespace (:reason %)))
+       (remove #(contains? latest (:namespace %)))))
+
+(defn- observed-unledgered-residuals [latest provisions]
+  (for [[ns-sym providers] provisions
+        :when (and (find-ns ns-sym) (not (contains? latest ns-sym)))]
+    {:reason :unledgered-loaded-namespace
+     :namespace ns-sym
+     :providers providers}))
+
 (defn classify-namespace-loads
   "Classify cumulative load evidence against current approved source observations.
 
@@ -1916,88 +1945,111 @@
   Earlier records remain visible as prior retained-code evidence and never drive
   current-source attribution. Unclassified roots are residual, incomplete
   observations; they can never prove a pending generation clean."
-  [runtime approved observations]
-  (let [records (namespace-load-ledger runtime)
-        latest (latest-bindings records)
-        prior (prior-bindings records latest)
-        unclassified (into {} (keep (fn [{:keys [root-lib status] :as observation}]
-                                      (when (= :unclassified status)
-                                        [root-lib observation])))
-                           observations)
-        provisions (->> observations
-                        (filter #(= :classified (:status %)))
-                        (mapcat :providers)
-                        (group-by :namespace)
-                        (into (sorted-map)
-                              (map (fn [[ns-sym providers]]
-                                     [ns-sym (vec (sort-by (juxt (comp str :root-lib) :file)
-                                                           providers))]))))
-        hard-conflicts (->> provisions
-                            (keep (fn [[ns-sym providers]]
-                                    (when (< 1 (count (set (map :root-lib providers))))
-                                      {:reason :duplicate-provider
-                                       :namespace ns-sym
-                                       :providers providers})))
-                            vec)
-        conflicted (set (map :namespace hard-conflicts))
-        approved-libs (set (keys (:spools approved)))
-        classification
-        (reduce-kv
-         (fn [result ns-sym load-record]
-           (let [providers (get provisions ns-sym [])
-                 same-root (filterv #(= (:root-lib load-record) (:root-lib %)) providers)
-                 exact (some #(when (= (:file load-record) (:file %)) %) same-root)
-                 failed-root (get unclassified (:root-lib load-record))]
-             (cond
-               (contains? conflicted ns-sym)
-               result
+  ([runtime approved observations]
+   (classify-namespace-loads runtime approved observations {}))
+  ([runtime approved observations {:keys [observe-loaded?]}]
+   (let [records (namespace-load-ledger runtime)
+         latest (latest-bindings records)
+         prior (prior-bindings records latest)
+         unclassified (into {} (keep (fn [{:keys [root-lib status] :as observation}]
+                                       (when (= :unclassified status)
+                                         [root-lib observation])))
+                            observations)
+         provisions (->> observations
+                         (filter #(= :classified (:status %)))
+                         (mapcat :providers)
+                         (group-by :namespace)
+                         (into (sorted-map)
+                               (map (fn [[ns-sym providers]]
+                                      [ns-sym (vec (sort-by (juxt (comp str :root-lib) :file)
+                                                            providers))]))))
+         hard-conflicts (->> provisions
+                             (keep (fn [[ns-sym providers]]
+                                     (when (< 1 (count (set (map :root-lib providers))))
+                                       {:reason :duplicate-provider
+                                        :namespace ns-sym
+                                        :providers providers})))
+                             vec)
+         conflicted (set (map :namespace hard-conflicts))
+         approved-libs (set (keys (:spools approved)))
+         unledgered-residuals
+         (->> (concat (retained-unledgered-residuals runtime latest)
+                      (when observe-loaded?
+                        (observed-unledgered-residuals latest provisions)))
+              (reduce (fn [by-namespace residual]
+                        (assoc by-namespace (:namespace residual) residual))
+                      (sorted-map))
+              vals
+              vec)
+         classification
+         (reduce-kv
+          (fn [result ns-sym load-record]
+            (let [providers (get provisions ns-sym [])
+                  same-root (filterv #(= (:root-lib load-record) (:root-lib %)) providers)
+                  exact (some #(when (= (:file load-record) (:file %)) %) same-root)
+                  failed-root (get unclassified (:root-lib load-record))]
+              (cond
+                (contains? conflicted ns-sym)
+                result
 
-               failed-root
-               (-> result
-                   (update :residuals conj {:reason :unclassified-root
-                                            :namespace ns-sym
-                                            :binding load-record
-                                            :root-failure (dissoc failed-root :providers)})
-                   (assoc :incomplete? true))
+                failed-root
+                (-> result
+                    (update :residuals conj {:reason :unclassified-root
+                                             :namespace ns-sym
+                                             :binding load-record
+                                             :root-failure (dissoc failed-root :providers)})
+                    (assoc :incomplete? true))
 
-               (and exact (= (:sha256 load-record) (:sha256 exact)))
-               (assoc-in result [:current ns-sym] load-record)
+                (and exact (= (:sha256 load-record) (:sha256 exact)))
+                (assoc-in result [:current ns-sym] load-record)
 
-               exact
-               (update result :residuals conj {:reason :changed-bytes
-                                               :namespace ns-sym
-                                               :binding load-record
-                                               :providers [exact]})
+                exact
+                (update result :residuals conj {:reason :changed-bytes
+                                                :namespace ns-sym
+                                                :binding load-record
+                                                :providers [exact]})
 
-               :else
-               (update result :residuals conj
-                       {:reason (residual-reason load-record same-root providers approved-libs)
-                        :namespace ns-sym
-                        :binding load-record
-                        :providers providers}))))
-         {:current (sorted-map) :residuals [] :incomplete? false}
-         latest)
-        result {:ledger records
-                :current-bindings (:current classification)
-                :prior-bindings prior
-                :classpath-bindings (classpath-bindings)
-                :provisions provisions
-                :residuals (:residuals classification)
-                :hard-conflicts hard-conflicts
-                :complete? (not (:incomplete? classification))
-                :clean? (and (not (:incomplete? classification))
-                             (empty? (:residuals classification))
-                             (empty? hard-conflicts))}]
-    (require-spec! ::namespace-load-status result
-                   "Namespace load status has an invalid shape" {})
-    result))
+                :else
+                (update result :residuals conj
+                        {:reason (residual-reason load-record same-root providers approved-libs)
+                         :namespace ns-sym
+                         :binding load-record
+                         :providers providers}))))
+          {:current (sorted-map) :residuals [] :incomplete? false}
+          latest)
+         residuals (into (:residuals classification) unledgered-residuals)
+         incomplete? (or (:incomplete? classification) (seq unledgered-residuals))
+         result {:ledger records
+                 :current-bindings (:current classification)
+                 :prior-bindings prior
+                 :classpath-bindings (classpath-bindings)
+                 :provisions provisions
+                 :residuals residuals
+                 :hard-conflicts hard-conflicts
+                 :complete? (not incomplete?)
+                 :clean? (and (not incomplete?)
+                              (empty? residuals)
+                              (empty? hard-conflicts))}]
+     (require-spec! ::namespace-load-status result
+                    "Namespace load status has an invalid shape" {})
+     result)))
 
 (defn loaded-namespace-status
-  "Return current source classification over this generation's load ledger."
+  "Return the last recorded source classification for this runtime generation.
+
+  Sync and source-load boundaries refresh the snapshot. This read consults only
+  runtime memory; it never discovers, reads, or fingerprints source files."
   [runtime]
-  (let [approved (approved-spools runtime)]
-    (classify-namespace-loads runtime approved
-                              (current-namespace-observations runtime approved))))
+  (or (some-> runtime :namespace-load-status deref)
+      {:ledger (namespace-load-ledger runtime)
+       :current-bindings (sorted-map)
+       :prior-bindings (sorted-map)
+       :classpath-bindings (classpath-bindings)
+       :provisions (sorted-map)
+       :residuals []
+       :hard-conflicts []
+       :complete? true
+       :clean? true}))
 
 (defn reload-synced-spool!
   "Make `root-lib`'s latest synced source live under the spool classloader.
