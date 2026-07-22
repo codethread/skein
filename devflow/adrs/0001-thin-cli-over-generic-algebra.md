@@ -21,6 +21,15 @@ The motivating pain, in the user's words:
 
 The root cause was self-identified: one docs sentence — *"spools should invent their own domain terms"* — that steered every spool toward bespoke vocabulary. The tempting fix was to make the generic surface (`list`/`ready --query`, `weave --pattern`, and new `view`/`transition`/`await` registries) *the* canonical layer, with domain verbs demoted to sugar.
 
+The question was then deliberately inverted — the pivot that reframed the whole exercise and forced the philosophy to be re-derived:
+
+> Everything we just discussed requires careful consideration of a blessed upfront design that exposes everything through a serde compat cli. It is elegant if we get it right, but the last message identified it's easy to get wrong - and we potentially put users into a state of having to design around constraints (even if the constraints might yield a 'better' design, users may favour the 'easy' design). Everything we just discussed could be in a rust cli, with some ability to load in those configurations (given they are data). We would be creating serialisable dsl's to encode turing complete logic … we have a full programming language already, we have full introspection over repl, and we give users as much freedom as possible to create their own clis … are we just undertaking a design excercise that buys very little for users in practice?
+
+Two load-bearing objections live in that quote, and both are decisive:
+
+1. **"Correct" loses to "easy" when the design can force workarounds.** The generic algebra only pays off if the upfront serde design is gotten *right*; get it wrong and users must design around its constraints — even a genuinely "better" surface gets abandoned for the "easy" one. Custom Clojure is the "easy" that's always available as the escape hatch, so a constraining generic surface doesn't win the design, it just gets bypassed.
+2. **The whole shape is what a *static binary* is forced to invent.** A serde-compatible generic CLI plus config-as-data DSLs encoding Turing-complete logic is exactly the architecture a Rust CLI — with no embedded language at runtime — has to build to be extensible. Skein is not that binary: it already ships a full language and a live REPL. So the algebra rebuilds, worse, a capability the runtime already has.
+
 ## ADR-001.P2 Options considered
 
 - **ADR-001.O1 — Unified generic algebra as canonical.** Elevate the primitive surface (`list`/`ready` + `--query`, `add`, `weave --pattern`) to the blessed read/write surface; domain verbs survive only as inspectable sugar over it.
@@ -31,13 +40,13 @@ The root cause was self-identified: one docs sentence — *"spools should invent
 
 **Keep `TEN-006`. Ops stay canonical. Do not build the generic CLI algebra (no view / transition / alias registries, no generalized effects-as-data extension surface). Views stay cut; `weave --pattern` keeps its place; generic `await` waits for a second genuine consumer.**
 
-O2 is coherent engineering, not a strawman — that is exactly why it needed refuting on the merits rather than dismissing. The decisive refutation is that its elegance is bought with precisely the parallel extension system the philosophy forbids, to defend a trust boundary that does not exist in v1.
+O2 is coherent engineering, not a strawman — that is exactly why it needed refuting on the merits rather than dismissing. The decisive refutation has two prongs: it re-invents, in a constrained serde form, the full language the runtime already exposes (so its constraints only earn users workarounds, never leverage); and the enforcement that would justify those constraints defends a trust boundary that does not exist in v1. This is the same conclusion PHILOSOPHY.md reaches — but reached again from the alternative rather than borrowed from it.
 
 ## ADR-001.P4 Why — key quotes
 
-Preserved so the reasoning is repeatable. From the closing synthesis of the session:
+Preserved so the reasoning is repeatable. The distinction that matters: the philosophy was **not** invoked as pre-existing authority that settled the question. It was *re-derived* by taking the pivot's alternative seriously — a serde-wire generic algebra loaded from data is the correct design for a runtime that has no language of its own to fall back on (the Rust-binary case). Skein already ships an unconstrained, introspectable, reloadable language plus a live REPL; measured against that baseline the generic algebra rebuilds a worse copy of what exists, and the constraints it would impose are exactly what pushes users to design around it — the pivot's "easy beats correct" objection, arrived at structurally. That re-derivation is *why* PHILOSOPHY.md reads the way it does; the closing synthesis re-arrives at the same line from first principles:
 
-**The philosophy already answered it (the load-bearing quote):**
+**Re-derived from the alternative, not asserted:**
 
 > The line that decides it: *"Do not grow the CLI into a parallel configuration or extension system when the daemon config and REPL already provide that role."* The transition registry, guard-clause language, scope language, view artifact capabilities, condition grammar for `await` — every one of those is a serializable DSL re-encoding a slice of what trusted Clojure already does. You'd be building constrained data languages *for people who already hold an unconstrained, introspectable, reloadable language*. That's Greenspun's rule pointed at effect systems: the scope language either stays too weak (users design around it, resent it, or fork) or grows guard-by-guard until it's a bad Clojure.
 
