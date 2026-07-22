@@ -42,5 +42,5 @@ tasks:
   - id: 9
     description: Pin bumps + full acceptance gates
     task_file: tasks/009-pin-bumps-and-acceptance.md
-    status: in_progress
+    status: complete
     blocked_by: [6, 7, 8]
