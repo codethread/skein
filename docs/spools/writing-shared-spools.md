@@ -327,43 +327,16 @@ Example:
 
 ## The discovery surface your spool ships
 
-Skein's discovery convention has three tiers — generated `help`, authored `about`, run-first `prime`
-— described in [`docs/reference.md`](../reference.md) ("Discovery tiers"). For a spool op this
-means:
+Skein's discovery convention has three tiers — generated `help`, authored `about`, run-first `prime` — described in [`docs/reference.md`](../reference.md) ("Discovery tiers"). For a spool op this means:
 
-1. **Declare your verbs as recursive `:subcommands` arg-spec data; never hand-roll dispatch or usage errors.**
-   A node may nest to the depth your command needs. `strand help <op> <verb> [<verb> ...]` slices any
-   declared node, a trailing `strand <op> <verb> --help`/`-h` rewrites to it, and missing/unknown-verb
-   failures become structured parser errors carrying the walked path and available names. `help`,
-   `-h`, `--help`, and the arg name `subcommand` are reserved and rejected at registration. The old
-   sole-token `<op> help` alias is retired — a bare `<op> help` word now fails with a loud redirect to
-   `strand help <op>`. Bare `<op>` stays a loud non-zero error — never exit-0 help.
-2. **Author leaf classes and per-verb annotations on the arg-spec node, not prose blobs.** Every
-   invocable leaf carries `:hook-class` (`:read` or `:mutating`) and `:deadline-class` (`:standard` or
-   `:unbounded`). Interior nodes carry neither. A flat op's root is its leaf; raw-envelope ops are the
-   sole exception and declare both classes in registration metadata. Each subcommand's spec may
-   carry a closed `use-when`/`notes`/`failure-modes` sub-map (string arrays; `failure-modes` holds
-   glossary outcome **names**). The projection folds them into that verb's node, so `help` stays the
-   single non-drifting source for anything derivable from a verb's shape.
-3. **Ship `:about` when your op has semantics beyond its argument shapes.** Author a non-blank `:about`
-   prose string in the op metadata (not an `about` subcommand); the builtin `strand about <op>`
-   meta-verb projects it in a minimal `{about, source}` envelope. Keep it cross-verb narrative
-   (purpose, conventions, attribute contracts) — never restate a node-derivable fact, that is `help`'s
-   job.
-4. **Ship `:prime` when your spool carries working discipline.** If an agent must load conventions
-   before acting (board lanes, handover contracts, workflow rules), author a non-blank `:prime` prose
-   string in the op metadata; `strand prime <op>` projects it. Generate it from the same definitions
-   the spool installs so the discipline can never drift from the installed surface.
+1. **Declare your verbs as recursive `:subcommands` arg-spec data; never hand-roll dispatch or usage errors.** A node may nest to the depth your command needs. `strand help <op> <verb> [<verb> ...]` slices any declared node, a trailing `strand <op> <verb> --help`/`-h` rewrites to it, and missing/unknown-verb failures become structured parser errors carrying the walked path and available names. `help`, `-h`, `--help`, and the arg name `subcommand` are reserved and rejected at registration. The old sole-token `<op> help` alias is retired — a bare `<op> help` word now fails with a loud redirect to `strand help <op>`. Bare `<op>` stays a loud non-zero error — never exit-0 help.
+2. **Author leaf classes and per-verb annotations on the arg-spec node, not prose blobs.** Every invocable leaf carries `:hook-class` (`:read` or `:mutating`) and `:deadline-class` (`:standard` or `:unbounded`). Interior nodes carry neither. A flat op's root is its leaf; raw-envelope ops are the sole exception and declare both classes in registration metadata. Each subcommand's spec may carry a closed `use-when`/`notes`/`failure-modes` sub-map (string arrays; `failure-modes` holds glossary outcome **names**). The projection folds them into that verb's node, so `help` stays the single non-drifting source for anything derivable from a verb's shape.
+3. **Ship `:about` when your op has semantics beyond its argument shapes.** Author a non-blank `:about` prose string in the op metadata (not an `about` subcommand); the builtin `strand about <op>` meta-verb projects it in a minimal `{about, source}` envelope. Keep it cross-verb narrative (purpose, conventions, attribute contracts) — never restate a node-derivable fact, that is `help`'s job.
+4. **Ship `:prime` when your spool carries working discipline.** If an agent must load conventions before acting (board lanes, handover contracts, workflow rules), author a non-blank `:prime` prose string in the op metadata; `strand prime <op>` projects it. Generate it from the same definitions the spool installs so the discipline can never drift from the installed surface.
 
 ### Glossary outcomes: contribute before the ops that use them
 
-Shared failure outcomes are defined **once** in the runtime glossary and referenced by name from each
-verb's `failure-modes`. Register your outcomes with `register-glossary-outcome!` (qualified, stable
-names; a collision fails loudly — a deliberate change uses `replace-glossary-outcome!` or, better, a
-new name) in the module contribution that also owns the referring ops. Publication validates the
-whole contribution before replacing the owner partition, so an op whose glossary reference is
-absent fails loudly and retains the prior owner state. A spool that ships its outcomes this way
-carries them portably wherever its module is declared.
+Shared failure outcomes are defined **once** in the runtime glossary and referenced by name from each verb's `failure-modes`. Register your outcomes with `register-glossary-outcome!` (qualified, stable names; a collision fails loudly — a deliberate change uses `replace-glossary-outcome!` or, better, a new name) in the module contribution that also owns the referring ops. Publication validates the whole contribution before replacing the owner partition, so an op whose glossary reference is absent fails loudly and retains the prior owner state. A spool that ships its outcomes this way carries them portably wherever its module is declared.
 
 ### The `:about`/`:prime` metadata shape is a compatibility boundary
 
@@ -394,22 +367,18 @@ applies to shared-spool CLIs.
 - Prefer `list` for live, filterable entities; `ps` already owns the live
   process listing. Use a plural noun such as `harnesses`, `suites`, or
   `backends` for a fixed catalog.
-- Prefer one op with declared subcommands for a cohesive multi-verb domain. Compose deeper verb trees
-  from flat `def` node blocks, reusing a node where more than one parent needs the same leaf. Keep
-  single-purpose projections and config-registered ops flat.
+- Prefer one op with declared subcommands for a cohesive multi-verb domain. Compose deeper verb trees from flat `def` node blocks, reusing a node where more than one parent needs the same leaf. Keep single-purpose projections and config-registered ops flat.
 - Before a `v1` promise, a vocabulary correction may be a clear cut under
   TEN-000@1. After `v1`, keep the old contract and publish the correction under a
   new name as described in [Versioning and release](#versioning-and-release).
 
-Every text-bearing flag or positional MUST use the declared arg-spec parser so
-whole-value `:stdin` and `:payload/<name>` references resolve.
+Every text-bearing flag or positional MUST use the declared arg-spec parser so whole-value `:stdin` and `:payload/<name>` references resolve.
 
 ## Versioning and release
 
 ### Publishing a shared spool with git distribution
 
-A spool repository is one release unit. Approve it once in `spools.edn`, at one commit, and map each
-library root to its path in that checkout:
+A spool repository is one release unit. Approve it once in `spools.edn`, at one commit, and map each library root to its path in that checkout:
 
 ```clojure
 {:spools

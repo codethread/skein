@@ -115,10 +115,7 @@ sha-pinned family and map its root within the checkout — an entry in the consu
 
 ## External spool consumption
 
-How to apply and verify entries like these: [Writing shared
-spools](../docs/spools/writing-shared-spools.md) covers the coordinate shape and publishing;
-[customisation](../docs/spools/customisation.md) covers activating config changes against a
-running weaver; `strand spool-status` shows what the runtime actually serves.
+How to apply and verify entries like these: [Writing shared spools](../docs/spools/writing-shared-spools.md) covers the coordinate shape and publishing; [customisation](../docs/spools/customisation.md) covers activating config changes against a running weaver; `strand spool status` shows what the runtime actually serves.
 
 `ct.spools.devflow` is consumed from
 [`codethread/devflow.spool`](https://github.com/codethread/devflow.spool) by git coordinate rather
