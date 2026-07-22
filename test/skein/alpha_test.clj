@@ -4,6 +4,8 @@
             [skein.api.current.alpha :as current]
             [skein.api.graph.alpha :as graph]
             [skein.api.hooks.alpha :as hooks]
+            [skein.api.patterns.alpha :as patterns]
+            [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [clojure.test :refer [deftest is use-fixtures]]
             [skein.api.weaver.alpha :as weaver]
@@ -120,6 +122,32 @@
                   :state "closed"
                   :attributes {:owner "agent" :phase "batched"}}
                  (select-keys (:after updated) [:id :state :attributes]))))))))
+
+(s/def ::name-forms-pattern-input map?)
+
+(defn name-forms-pattern
+  "Fixture pattern fn for the lookup-name-forms test; ignores its input."
+  [_]
+  [{:ref 'only :title "name-forms"}])
+
+(deftest pattern-lookups-accept-cli-string-forms
+  (with-runtime
+    (fn [rt]
+      (patterns/register-pattern! rt 'name-forms 'skein.alpha-test/name-forms-pattern
+                                  ::name-forms-pattern-input)
+      (let [entry (patterns/resolve-pattern rt 'name-forms)]
+        (is (= entry (patterns/resolve-pattern rt "name-forms"))
+            "a raw CLI string resolves the same registered entry")
+        (is (= entry (patterns/resolve-pattern rt " :name-forms "))
+            "trimming and the leading-colon keyword form match query lookup rules")
+        (is (= entry (patterns/resolve-pattern rt :name-forms))
+            "a keyword resolves the same entry"))
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"must not be blank"
+                            (patterns/resolve-pattern rt "  "))
+          "a blank string fails loudly instead of resolving")
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Pattern not found"
+                            (patterns/resolve-pattern rt "absent"))
+          "an unknown name still fails with the pattern-not-found contract"))))
 
 (deftest conjoin-where-overlays-an-extra-clause
   (let [bare [:= [:attr :owner] "agent"]
