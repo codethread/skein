@@ -1,0 +1,57 @@
+# Weaver Runtime delta for r85t4-sqlite-schema-story
+
+**Document ID:** `DELTA-Sss-002`
+**Root spec:** [daemon-runtime.md](../../../specs/daemon-runtime.md) (`SPEC-004`)
+**Feature:** [../proposal.md](../proposal.md) (`PROP-Sss-001`)
+**Status:** Draft
+**Last Updated:** 2026-07-22
+**Configuration identification:** Document IDs must be ordered as document type, short name, sequential id, then optional version:
+`DELTA-Dwr-001` for v1 and `DELTA-Dwr-001@2` for v2. Omit `@1`; append `@2`, `@3`, etc. only when a new version supersedes an externally
+referenced document. Prefix every nested point ID with the full document ID so references are globally grepable and do not clash across documents.
+
+## DELTA-Sss-002.P1 Summary
+
+Storage initialization becomes generation-aware. `SPEC-004.C91b` grows from "validate structure, throw on mismatch" to a stamped
+compatibility contract: read the schema generation, refuse newer generations, adopt unstamped current-shape databases as generation 1
+after a canonical structural comparison, and point older generations at the maintained migration path. `SPEC-004.C16b`'s "no in-tree
+migration path" stance is superseded by the migration-ladder contract for the stamped era.
+
+## DELTA-Sss-002.P2 Contract changes
+
+- **DELTA-Sss-002.CC1 (generation check, amends `SPEC-004.C91b`):** Storage initialization reads `PRAGMA user_version` before any DDL.
+  A database stamped with a newer generation than the binary understands is refused without modification. A database stamped with an
+  older generation is refused with a pointer to the maintained forward-migration path. Only a database at the binary's generation (or an
+  adoptable unstamped one, CC2) proceeds to structural validation and `IF NOT EXISTS` DDL.
+- **DELTA-Sss-002.CC2 (adoption):** A database with no stamp (`user_version` 0) that structurally matches generation 1 is adopted by
+  stamping `user_version = 1` in place at initialization; no row data is touched and adoption is idempotent. Before adoption, a canonical
+  validator compares every Skein-owned table and index against a freshly constructed generation-1 schema: exact columns, order, declared
+  types, nullability, defaults, primary keys, foreign keys, CHECK constraints, index columns and order, uniqueness, and partial-index
+  predicates, covering core and auxiliary objects and rejecting extra columns on managed tables. Any mismatch refuses initialization
+  without writing the stamp.
+- **DELTA-Sss-002.CC3 (migration ladder):** Every generation bump adds a maintained, versioned migration step. Steps remain available in
+  later releases and compose in order, so a user can migrate from any released generation to the current one. Each step applies its DDL,
+  data changes, and `user_version` update in one SQLite transaction so failure rolls the whole step back; a step that cannot be
+  transactional must define durable resume or rollback semantics with failure-injection tests proving recovery from every persisted
+  checkpoint before it can ship. The dedicated migration space is also the readable history of physical schema changes.
+- **DELTA-Sss-002.CC4 (error contract):** Incompatible-generation failures report both the found and the expected generation. The
+  newer-generation refusal names the binary as too old for the database; the older-generation refusal names the maintained migration
+  path, replacing today's bare "use a new database or migrate it explicitly".
+- **DELTA-Sss-002.CC5 (scope of guarantee):** The two-sided skew guarantee holds between generation-aware binaries and stamped
+  databases. Binaries released before schema stamps cannot retroactively inspect `user_version` and stay outside it; `SPEC-004.C16b`'s
+  pre-EAV worlds remain historical (reinitialize or use the archived migrate op) and are not folded into the ladder.
+
+## DELTA-Sss-002.P3 Design decisions
+
+### DELTA-Sss-002.D1 Adoption stamps at initialization, not via a trusted op
+
+- **Decision:** The generation-1 stamp of an unstamped current-shape database is written during ordinary storage initialization, gated
+  on the full canonical comparison of CC2.
+- **Rationale:** The write is metadata-only, idempotent, and provably safe when the comparison passes; requiring a manual op would strand
+  every existing world on first upgrade for no added safety.
+- **Rejected:** Explicit trusted adoption op — ceremony without protection, since the validator is the protection either way.
+
+## DELTA-Sss-002.P4 Open questions
+
+- **DELTA-Sss-002.Q1:** Migration-code home and invocation surface (mill-side Go `mill weaver migrate` vs JVM-side; automatic vs
+  explicit) are deliberately deferred until the first real migration makes the runtime constraints concrete (`PROP-Sss-001.Q3`/`NG1`).
+  Not blocking: generation 1 ships with an empty ladder.
