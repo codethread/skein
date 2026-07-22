@@ -44,22 +44,6 @@
   (spit (io/file target "spools.edn")
         (pr-str (test-support/embedded-spools-edn ".skein/spools.edn"))))
 
-(defn- write-peer-overlays!
-  "Point a disposable config directory at the Task 16 peer feature roots."
-  [target]
-  (spit (io/file target "spools.local.edn")
-        (pr-str
-         {:spools
-          {'ct.spools/agent-run
-           {:local/root "/Users/ct/dev/projects/agent-harness.spool__feat--owner-scoped-live-refresh"
-            :claims "v9"}
-           'codethread/kanban
-           {:local/root "/Users/ct/dev/projects/kanban.spool__feat--owner-scoped-live-refresh"
-            :claims "v5"}
-           'codethread/devflow
-           {:local/root "/Users/ct/dev/projects/devflow.spool__feat--owner-scoped-live-refresh"
-            :claims "v2"}}})))
-
 (defn- with-runtime-loader
   "Run f with runtime's ambient binding and synced spool classloader."
   [rt f]
@@ -111,7 +95,6 @@
         config-dir (str "/tmp/skein-config-test-" (java.util.UUID/randomUUID))]
     (.mkdirs (java.io.File. config-dir))
     (write-embedded-spools! config-dir)
-    (write-peer-overlays! config-dir)
     (let [rt (weaver-runtime/start! db-file {:world (test-world config-dir)
                                              :publish? false})]
       (try
@@ -158,10 +141,6 @@
   ;; The copied config dir would reinterpret repo-relative local roots. Git
   ;; families remain byte-for-byte sourced from the checked-in approvals.
   (write-embedded-spools! target)
-  ;; Task 16 integration fixtures exercise the approved peer feature roots.
-  ;; Absolute paths remain disposable-world inputs; canonical overlays are never
-  ;; read or changed.
-  (write-peer-overlays! target)
   ;; The shipped config leaves chime's notifier to each developer's personal
   ;; init.local.clj. Bind an inert command through that same overlay hook
   ;; (loaded after init.clj on startup and on every reload) so the test also
