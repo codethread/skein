@@ -6,7 +6,7 @@
 **RFC:** none
 **Root specs:** [strand-model.md](../../specs/strand-model.md), [daemon-runtime.md](../../specs/daemon-runtime.md)
 **Feature specs:** [specs/strand-model.delta.md](./specs/strand-model.delta.md), [specs/daemon-runtime.delta.md](./specs/daemon-runtime.delta.md)
-**Status:** Draft
+**Status:** Reviewed
 **Last Updated:** 2026-07-22
 **Configuration identification:** Document IDs must be ordered as document type, short name, sequential id, then optional version:
 `PLAN-Dwr-001` for v1 and `PLAN-Dwr-001@2` for v2. Omit `@1`; append `@2`, `@3`, etc. only when a new version supersedes an externally
@@ -32,8 +32,9 @@ the deliverable is the contract, the guard, and the stamp — kept as small as t
   Comparison covers exact columns, order, declared types, nullability, defaults, primary keys, foreign keys, CHECK constraints, index
   columns/order/uniqueness, and partial-index predicates, for Skein-owned tables and indexes, rejecting extra columns on managed tables
   (`DELTA-Sss-002.CC2`). The validator takes two comparison modes: pre-DDL screening (every baseline object present and exact; only
-  additive-since-baseline objects may be absent — `DELTA-Sss-002.CC2a`; the additive set is empty at stamp introduction) and full
-  (post-DDL acceptance). While `current-generation` is 1, the live `schema-sql` *is* the
+  additive-since-baseline objects may be absent — `DELTA-Sss-002.CC2a`) and full (post-DDL acceptance). The additive set is an explicit
+  validator parameter, empty in production at stamp introduction; tests exercise the additive branches by injecting a synthetic
+  additive object with matching extra DDL, never by reclassifying a real baseline object. While `current-generation` is 1, the live `schema-sql` *is* the
   generation-1 reference; the reference-db construction makes the validator self-maintaining within a generation, and the first bump
   snapshots the outgoing reference per `DELTA-Sss-002.CC3`.
 - **PLAN-Sss-001.A3 (generation gate):** Classification is a pure decision function over `(found-generation, binary-generation,
@@ -68,9 +69,10 @@ stamping, both skew refusals with found/expected generations in the error data, 
 unit tests on the pure classification function across every branch (including older/newer stamped generations, simulated by
 parameterizing the binary generation); integration tests for fresh empty db bootstrapped and stamped; unstamped matching db adopted
 idempotently; unstamped mismatched db (missing column, extra column, wrong index, legacy document/edge-constraint shapes) refused
-without a stamp write; stamped current-generation db lacking an additive auxiliary table opened and back-filled, while one lacking a
-baseline object is refused untouched; unstamped non-empty db lacking an additive auxiliary object passing pre-DDL screening, gaining
-the object from DDL, passing full validation, and only then being stamped; newer-generation db refused untouched; older-generation
+without a stamp write; via the synthetic additive-set seam (`PLAN-Sss-001.A2`): stamped current-generation db lacking an additive
+auxiliary table opened and back-filled, while one lacking a baseline object is refused untouched, and an unstamped non-empty db
+lacking an additive auxiliary object passing pre-DDL screening, gaining the object from DDL, passing full validation, and only then
+being stamped; newer-generation db refused untouched; older-generation
 refusal (via a hand-stamped `user_version` against a parameterized binary generation) naming the migration path.
 
 ### PLAN-Sss-001.PH2 Spec promotion and index
