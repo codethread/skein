@@ -133,10 +133,13 @@
               |pmap), and blocking derefs read in the public body - flag
               |helpers that bury them where reviewers cannot question the
               |call flow.
-              |Changed markdown is the counter-rule: prose
-              |paragraphs run full length, one source line each, for the
-              |IDE to wrap - flag newly hard-wrapped markdown prose (code
-              |fences and tables excepted). The mechanical gate for
+              |Changed markdown is the counter-rule: prose paragraphs run
+              |full length, one source line each, for the IDE to wrap - flag
+              |newly hard-wrapped markdown prose (code fences and tables
+              |excepted). Generated docs/api/*.api.md and spools/*.api.md
+              |are excluded: they mirror hard-wrapped Clojure docstrings, and
+              |their reproduction is governed by `make api-docs`. The
+              |mechanical gate for
               |converted api modules - docstrings, width, dependency rules
               |(quality.api-form) - is lint's job; judge what it cannot:
               |wrap points that fight reading, ordering that buries the

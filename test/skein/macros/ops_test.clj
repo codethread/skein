@@ -10,7 +10,9 @@
                                {:arg-spec {:op "sample" :doc "Sample."}}
                                [ctx] ctx))]
     (is (= 'do (first form)))
-    (is (some #(and (seq? %) (= 'skein.core.weaver.module-refresh/collect-entry! (first %))) form))))
+    (is (some #(and (seq? %)
+                    (= 'skein.core.weaver.module-refresh/collect-entry! (first %)))
+              form))))
 
 (deftest collection-replaces-same-key-and-allows-an-empty-owner
   (let [context {:module/key :test/ops
@@ -18,14 +20,18 @@
                  :source/namespace 'user}
         result (module-graph/with-contribution-collection
                  context
-                 #(do (module-graph/collect-entry! :ops 'sample {:name "sample" :version 1})
-                      (module-graph/collect-entry! :ops 'sample {:name "sample" :version 2})))]
-    (is (= {:name "sample" :version 2} (get-in result [:contribution :ops :entries 'sample])))
-    (is (= {} (:contribution (module-graph/with-contribution-collection context (constantly nil)))))))
+                 #(do (module-graph/collect-entry! :ops "sample" {:name "sample" :version 1})
+                      (module-graph/collect-entry! :ops "sample" {:name "sample" :version 2})))]
+    (is (= {:name "sample" :version 2}
+           (get-in result [:contribution :ops :entries "sample"])))
+    (is (= {} (:contribution
+               (module-graph/with-contribution-collection context (constantly nil)))))))
 
 (deftest defop-rejects-malformed-authoring-forms
   (testing "macro-time shape checks fail loudly"
     (is (thrown? clojure.lang.Compiler$CompilerException
-                 (macroexpand-1 '(skein.macros.ops/defop "bad" "doc" {:arg-spec {}} [ctx] ctx))))
+                 (macroexpand-1
+                  '(skein.macros.ops/defop "bad" "doc" {:arg-spec {}} [ctx] ctx))))
     (is (thrown? clojure.lang.Compiler$CompilerException
-                 (macroexpand-1 '(skein.macros.ops/defop missing-doc nil {:arg-spec {}} [ctx] ctx))))))
+                 (macroexpand-1
+                  '(skein.macros.ops/defop missing-doc nil {:arg-spec {}} [ctx] ctx))))))

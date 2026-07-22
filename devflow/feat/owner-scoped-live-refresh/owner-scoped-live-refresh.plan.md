@@ -112,6 +112,13 @@ No open question blocks task generation.
 
 ## PLAN-Olr-001.P9 Developer Notes
 
+### PLAN-Olr-001.DN18 Main drift reconciliation: 2026-07-22
+
+- Merged main `63ee77b` into feature head `ded8fec`, whose merge-base was `5744744`. The conflicts joined main's versioned glossary and help-transform APIs with the feature branch's module lifecycle, owner-partitioned registries, runtime clock, and test seams. Generated API files were regenerated from the combined source. Main's deliberate roster-spool removal won over obsolete feature edits to that spool.
+- Runtime access and construction now retain both owner stores and the glossary/help-transform slots. Built-in help operations publish under the system owner, operation registration validates glossary references before owner publication, and `runtime.alpha` exports both the module lifecycle and Clock surface. The API-doc generator includes `clock`, `registry`, `runtime-glossary`, and `runtime-help-transform`.
+- Cold shard integration exposed four transitional faults. Module source loading now distinguishes inherited classpath namespaces from unledgered spool namespaces. Workspace macros publish canonical string keys and keep the cross-namespace `declaration-entry` helper public. Chime's rule registry is a direct versioned spool-state handle so the module publisher can discover it. Mixed `use!`/`module!` startup edges no longer name module keys in the legacy use registry, and the startup test refreshes the `:config` module through `runtime/refresh!` without using the destructive reload path.
+- Task 9 and later domain conversions must keep registry handles directly in runtime spool-state; nested handles remain the F9 inventory debt. Task 11 should convert the remaining legacy `use!` declarations, then restore all ordering edges inside the module graph instead of relying on source order across two registries. Task 16 should remove the old reload scaffold; live module tests now use targeted refresh. Incoming Clock support remains available to scheduler and polling work.
+
 ### PLAN-Olr-001.DN15 Workspace contribution macros (Task 10): 2026-07-22
 
 - `defop`, `defquery`, `defpattern`/`defp`, and `defrule` now collect complete

@@ -341,6 +341,36 @@ truth; it does not try to repair or adopt anything. Every runtime use entry is v
 family filtering. A malformed entry fails loudly with its use key and value instead of disappearing
 from the status result.
 
+### 3.4 Discovery — help, about, prime — BAT-C25
+
+Every batteries op is discoverable through the three built-in meta-verbs (see
+[cli.md](../devflow/specs/cli.md) SPEC-002.C39 and the discovery-tier deltas). The behavior batteries
+opts into:
+
+- **`strand help <op>`** projects the op's declared arg-spec into the canonical help envelope. Where
+  it adds value, an op's arg-spec also declares a closed `:annotations` sub-map — `use-when` (when to
+  reach for the op), `notes` (a subtlety the flag docs do not cover), and `failure-modes` (the named
+  outcomes the op can produce). For a subcommand op, annotations sit on the routed child, so
+  `strand help spool add` shows only that verb's failure modes. `--help` after an op (`strand add
+  --help`) is sugar for the same projection.
+- **`strand about <op>`** returns the op's cross-verb narrative — how it relates to its sibling verbs
+  — for the ops that declare `:about` prose (today `add` and `weave`). It is prose, not a flag list;
+  reach for `help` for the invocation shape.
+- **`strand prime <op>`** returns the op's orientation prose for the ops that declare `:prime` (today
+  `add` and `weave`): what to run first, what to prefer.
+
+`failure-modes` carry glossary outcome **names** only; the envelope resolves each to its definition
+once, in its `glossary` map. Batteries owns and registers these outcomes (e.g.
+`batteries/state-invalid`, `batteries/query-unknown`, `batteries/spool-release-unresolved`) from
+`install!` before the ops that reference them, so the definitions travel with the spool.
+
+Batteries also **exports** `default-help-transform`, a reference renderer that turns the raw help
+envelope into readable text. It is a single recursive function over the uniform node — the op root, a
+subcommand verb, and any deeper level render through the same body with no per-level special-casing.
+It is exported for trusted config to elect (`register-default-help-transform!`), never registered
+from `install!`: absent that election, `strand help` stays raw-JSON, and `strand help --json <op>`
+always bypasses any elected transform.
+
 ## 4. Attribute and edge flag semantics
 
 Reproducing old SPEC-002.C6–C8 (see SPEC-002-D004.R2):

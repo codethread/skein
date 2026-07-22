@@ -1,0 +1,66 @@
+tasks:
+  - id: 1
+    description: Help envelope + fractal node projection
+    task_file: tasks/001-help-envelope-node-projection.md
+    status: complete
+    blocked_by: []
+  - id: 2
+    description: Glossary registry + annotation validation + existence check
+    task_file: tasks/002-glossary-registry-and-validation.md
+    status: complete
+    blocked_by: [1]
+  - id: 3
+    description: Help glossary-closure integration
+    task_file: tasks/003-help-glossary-closure.md
+    status: complete
+    blocked_by: [1, 2]
+  - id: 4
+    description: Meta-verbs + about/prime metadata + source pointer
+    task_file: tasks/004-meta-verbs-metadata-source.md
+    status: complete
+    blocked_by: [2, 3]
+  - id: 5
+    description: --help grammar (weaver rewrite + Go dispatcher)
+    task_file: tasks/005-help-grammar-rewrite-dispatcher.md
+    status: complete
+    blocked_by: [1]
+  - id: 6
+    description: Default-transform slot + help-render integration
+    task_file: tasks/006-transform-slot-and-render.md
+    status: complete
+    blocked_by: [4]
+  - id: 7
+    description: Batteries reference renderer + depth proof + adoption
+    task_file: tasks/007-batteries-renderer-and-adoption.md
+    status: complete
+    blocked_by: [3, 4, 6]
+  - id: 8
+    description: init.clj transform election + discovery E2E
+    task_file: tasks/008-init-election-e2e.md
+    status: complete
+    blocked_by: [5, 7]
+  - id: 9
+    description: agent-harness.spool adoption + producer tests/docs
+    task_file: tasks/009-agent-spool-adoption.md
+    status: complete
+    blocked_by: [8]
+  - id: 13
+    description: kanban.spool retired-alias grammar fix
+    task_file: tasks/013-kanban-spool-grammar-fix.md
+    status: complete
+    blocked_by: [8]
+  - id: 10
+    description: "[HITL] Reviewed release/tag of agent (v8) + kanban (v5) spools"
+    task_file: tasks/010-agent-spool-release.md
+    status: complete
+    blocked_by: [9, 13]
+  - id: 11
+    description: Coordinate bump (agent + kanban) + spool-suite-gate + agent E2E
+    task_file: tasks/011-coordinate-bump-and-gate.md
+    status: complete
+    blocked_by: [10]
+  - id: 12
+    description: Spec promotion + TEN-006 edit + docs
+    task_file: tasks/012-spec-promotion-and-docs.md
+    status: complete
+    blocked_by: [11]

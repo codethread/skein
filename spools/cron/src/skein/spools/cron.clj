@@ -28,7 +28,8 @@
             [skein.api.current.alpha :as current]
             [skein.api.runtime.alpha :as runtime]
             [skein.api.scheduler.alpha :as scheduler]
-            [skein.api.spool.alpha :refer [fail! reject-unknown-keys! require-valid!]])
+            [skein.api.spool.alpha :refer [fail! poll-until! reject-unknown-keys!
+                                           require-valid!]])
   (:import [java.time Instant]
            [java.util Random]
            [java.util.concurrent ExecutorService Executors
@@ -228,8 +229,8 @@
   `skein.test.alpha/await-quiescent!` returns before a job completes. The
   in-flight latch is incremented on the event lane in `fire-wake` before submit,
   so once the lane has quiesced any offloaded job is already counted. Polls the
-  latch atom until the count reaches zero or the budget expires, throwing loudly
-  on timeout (TEN-003), mirroring the event-lane join in
+  latch atom until the count reaches zero or the budget expires on the runtime
+  Clock, throwing loudly on timeout (TEN-003), mirroring the event-lane join in
   `skein.test.alpha/await-quiescent!`. `opts` accepts `:timeout-ms` (a
   positive integer); unknown keys are rejected loudly. The default budget comes
   from `skein.spools.test-support/await-budget-ms`."
@@ -241,14 +242,14 @@
                         ((requiring-resolve 'skein.spools.test-support/await-budget-ms)))]
      (require-valid! ::timeout-ms timeout-ms
                      "await-quiescent! :timeout-ms must be a positive integer")
-     (let [deadline (+ (System/currentTimeMillis) timeout-ms)]
-       (loop []
-         (cond
-           (zero? @counter) runtime
-           (> (System/currentTimeMillis) deadline)
-           (fail! "Timed out awaiting cron quiescence"
-                  {:timeout-ms timeout-ms :in-flight @counter})
-           :else (do (Thread/sleep 5) (recur))))))))
+     (poll-until!
+      (runtime/clock runtime)
+      {:timeout-ms timeout-ms
+       :poll-ms 5
+       :check #(deref counter)
+       :pred->result #(when (zero? %) runtime)
+       :on-timeout #(fail! "Timed out awaiting cron quiescence"
+                           {:timeout-ms timeout-ms :in-flight %})}))))
 
 ;; Public seam shape (clojure.spec)
 ;;

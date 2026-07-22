@@ -194,7 +194,7 @@
         (is (= {"name" "echo" "argv" [] "from" "peer-test"} via-symbol))
         (is (= (:weaver-id beta) (get status "weaver_id")))
         (is (true? (get status "healthy")))
-        (is (some #(= "echo" (get % "name")) (get listed "ops")))))))
+        (is (some #(= "echo" (get-in % ["operation" "name"])) (get listed "ops")))))))
 
 (deftest call-peer-rejects-invalid-op-type-before-connect-test
   (let [peer-row {:name "offline"

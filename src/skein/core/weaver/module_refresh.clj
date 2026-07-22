@@ -264,6 +264,10 @@
 (defn- source-stamp [source-binding]
   (some-> source-binding (select-keys [:root-lib :file :sha256])))
 
+(defn- classpath-binding [runtime ns-sym]
+  (some #(when (= ns-sym (:namespace %)) %)
+        (:classpath-bindings (spool-sync/loaded-namespace-status runtime))))
+
 (defn- declared-file-namespace [file]
   (with-open [reader (java.io.PushbackReader. (io/reader (io/file file)))]
     (some-> (ns-parse/read-ns-decl reader)
@@ -286,19 +290,32 @@
 (defn- load-source!
   [runtime with-loader key declaration previous-source]
   (if-let [ns-sym (:ns declaration)]
-    (let [source-binding (latest-source-binding runtime ns-sym)]
-      (when (and (find-ns ns-sym) (nil? source-binding))
+    (let [source-binding (latest-source-binding runtime ns-sym)
+          classpath-binding (classpath-binding runtime ns-sym)]
+      (when (and (find-ns ns-sym) (nil? source-binding) (nil? classpath-binding))
         (fail! "Loaded module namespace has no source-ledger binding"
                {:reason :unledgered-loaded-namespace
                 :module/key key
                 :namespace ns-sym}))
-      (if (and source-binding
-               (not= previous-source (source-stamp source-binding)))
+      (cond
+        (and (find-ns ns-sym) (nil? source-binding) classpath-binding)
+        (let [file (spool-sync/synced-namespace-file runtime ns-sym)]
+          (with-loader #(load-module-file!
+                         runtime file
+                         {:ns ns-sym
+                          :file file
+                          :collection/reload? true
+                          :classpath-binding classpath-binding})))
+
+        (and source-binding
+             (not= previous-source (source-stamp source-binding)))
         (with-loader #(load-module-file!
                        runtime (:file source-binding)
                        {:ns ns-sym
                         :file (:file source-binding)
                         :collection/reload? true}))
+
+        :else
         (with-loader #(spool-sync/load-synced-namespace! runtime ns-sym key))))
     (let [file (spool-sync/module-file runtime (:file declaration))]
       (with-loader #(load-module-file! runtime file {:file file})))))

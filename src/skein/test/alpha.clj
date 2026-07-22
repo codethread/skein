@@ -6,7 +6,8 @@
   fixtures (`config.json`, `spools.edn`, `init.clj`, arbitrary workspace
   files), starts an unpublished in-process weaver runtime with explicit
   storage selection, exposes an orchestration context map, and stops/cleans up
-  afterwards. Weaver-side behavior is exercised through `repl!`, which
+  afterwards. Manual clocks make runtime time and sleeps deterministic.
+  Weaver-side behavior is exercised through `repl!`, which
   evaluates weaver-routed forms over the runtime's real nREPL transport.
 
   Deliberately out of scope: strand/query wrappers, assertion DSLs, spool
@@ -16,6 +17,7 @@
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.string :as str]
+            [skein.api.clock.alpha :as clock]
             [skein.api.return-shape.alpha :as return-shape]
             [skein.api.runtime.alpha :as runtime]
             [skein.api.weaver.alpha :as weaver]
@@ -409,14 +411,101 @@
   [ctx]
   (runtime/status (:runtime ctx)))
 
-(defn set-clock!
-  "Install `clock-fn` as `runtime`'s clock: a zero-arg fn returning an Instant.
+;; A manual clock is an ordinary Clock capability (`skein.api.clock.alpha/clock`)
+;; carrying extra `::control` state — its virtual instant and the one runtime it
+;; is installed in — so time and pumps can be driven from a single test thread.
+;; No protocol is involved, matching the reload-safe capability shape the base
+;; Clock now uses.
 
-  Deterministic tests inject an advanceable clock so subsystems that read the
-  runtime clock seam (the scheduler) resolve due-ness against test time rather
-  than the wall clock. Pair with `advance!` to step it."
-  [runtime clock-fn]
-  (weaver-runtime/set-clock! runtime clock-fn))
+(defn- manual-control
+  [clock]
+  (::control clock))
+
+(defn- manual-clock?
+  [clock]
+  (some? (manual-control clock)))
+
+(defn- require-positive-duration!
+  [duration]
+  (when-not (and (instance? Duration duration)
+                 (not (.isNegative ^Duration duration))
+                 (not (.isZero ^Duration duration)))
+    (throw (ex-info "advance! requires a strictly positive java.time.Duration"
+                    {:duration duration})))
+  duration)
+
+(defn- install-manual-clock!
+  [manual runtime]
+  (let [installed-runtime (:installed-runtime (manual-control manual))]
+    (loop []
+      (let [installed @installed-runtime]
+        (cond
+          (nil? installed)
+          (when-not (compare-and-set! installed-runtime nil runtime)
+            (recur))
+
+          (identical? installed runtime)
+          nil
+
+          :else
+          (throw (ex-info "A manual clock can be installed in only one runtime"
+                          {:installed-runtime installed
+                           :requested-runtime runtime})))))
+    nil))
+
+(defn- uninstall-manual-clock!
+  [manual runtime]
+  (let [installed-runtime (:installed-runtime (manual-control manual))]
+    (when (identical? @installed-runtime runtime)
+      (compare-and-set! installed-runtime runtime nil))
+    nil))
+
+(defn- advance-manual-clock!
+  [manual ^Duration duration]
+  (let [{:keys [current-instant installed-runtime]} (manual-control manual)
+        target (swap! current-instant #(.plus ^Instant % duration))]
+    (when-let [runtime @installed-runtime]
+      (weaver-runtime/run-clock-pumps! runtime))
+    target))
+
+(defn manual-clock
+  "Return an uninstalled manual Clock beginning at `initial-instant`.
+
+  Sleeping advances its time immediately. Once installed with `set-clock!`,
+  sleeping also runs that runtime's registered clock pumps synchronously."
+  [initial-instant]
+  (when-not (instance? Instant initial-instant)
+    (throw (ex-info "manual-clock requires a java.time.Instant"
+                    {:initial-instant initial-instant})))
+  (let [current-instant (atom initial-instant)
+        installed-runtime (atom nil)]
+    (assoc (clock/clock
+            (fn [] @current-instant)
+            (fn [^Duration duration]
+              (swap! current-instant #(.plus ^Instant % duration))
+              (when-let [runtime @installed-runtime]
+                (weaver-runtime/run-clock-pumps! runtime))
+              nil))
+           ::control {:current-instant current-instant
+                      :installed-runtime installed-runtime})))
+
+(defn set-clock!
+  "Install `installed-clock` as `runtime`'s Clock.
+
+  A manual clock may belong to only one runtime. Replacing one detaches it from
+  that runtime so later sleeps on the old clock cannot pump the runtime."
+  [runtime installed-clock]
+  (when-not (clock/clock? installed-clock)
+    (throw (ex-info "set-clock! requires a skein.api.clock.alpha/Clock"
+                    {:clock installed-clock})))
+  (when (manual-clock? installed-clock)
+    (install-manual-clock! installed-clock runtime))
+  (let [previous-clock (weaver-runtime/clock runtime)]
+    (weaver-runtime/set-clock! runtime installed-clock)
+    (when (and (not (identical? previous-clock installed-clock))
+               (manual-clock? previous-clock))
+      (uninstall-manual-clock! previous-clock runtime)))
+  nil)
 
 (defn advance!
   "Move `runtime`'s clock forward by `duration`, then pump clock consumers.
@@ -426,14 +515,13 @@
   every registered clock-consumer pump (subsystems that arm real timers off the
   runtime clock, such as the scheduler) runs synchronously so its due-check
   observes the new now before `advance!` returns. Returns the new Instant."
-  [runtime ^Duration duration]
-  (when (or (nil? duration) (.isZero duration) (.isNegative duration))
-    (throw (ex-info "advance! requires a strictly positive java.time.Duration"
-                    {:duration duration})))
-  (let [target (.plus ^Instant (weaver-runtime/now runtime) duration)]
-    (weaver-runtime/set-clock! runtime (constantly target))
-    (weaver-runtime/run-clock-pumps! runtime)
-    target))
+  [runtime duration]
+  (require-positive-duration! duration)
+  (let [installed-clock (weaver-runtime/clock runtime)]
+    (when-not (manual-clock? installed-clock)
+      (throw (ex-info "advance! requires an installed manual Clock"
+                      {:clock installed-clock})))
+    (advance-manual-clock! installed-clock duration)))
 
 (defn run-focused!
   "Run the named test namespaces in-process and return the aggregate

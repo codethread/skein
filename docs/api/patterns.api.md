@@ -23,7 +23,7 @@ Function.
 Describe a registered weave pattern and its input contract in `runtime`.
 
   Missing patterns or unregistered input specs fail loudly.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/patterns/alpha.clj#L52-L67">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/patterns/alpha.clj#L55-L70">Source</a></sub></p>
 
 ## <a name="skein.api.patterns.alpha/patterns">`patterns`</a>
 ``` clojure
@@ -50,10 +50,13 @@ Register a trusted weaver pattern handler and input spec in `runtime`.
 ```
 Function.
 
-Return the registered weave pattern for a simple symbol or keyword name.
+Return the registered weave pattern for a name.
+
+  Accepts a simple symbol, keyword, or raw CLI string (trimmed, optional leading
+  colon), matching `skein.api.graph.alpha/resolve-query` string handling.
 
   Missing patterns fail loudly.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/patterns/alpha.clj#L40-L50">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/patterns/alpha.clj#L40-L53">Source</a></sub></p>
 
 ## <a name="skein.api.patterns.alpha/weave!">`weave!`</a>
 ``` clojure
@@ -67,4 +70,4 @@ Validate pattern input, invoke the pattern, and apply its create-only batch.
   The four-argument arity threads an explicit request-context map for trusted
   callers (the connected-client tier); the three-argument arity derives its own
   weave context.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/patterns/alpha.clj#L69-L103">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/patterns/alpha.clj#L72-L106">Source</a></sub></p>

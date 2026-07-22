@@ -7,7 +7,6 @@
   [{:name "batteries" :source "spools/batteries/src/skein/spools/batteries.clj" :outfile "spools/batteries.api.md"}
    {:name "workflow" :source "spools/workflow/src/skein/spools/workflow.clj" :outfile "spools/workflow.api.md"}
    {:name "guild" :source "spools/guild/src/skein/spools/guild.clj" :outfile "spools/guild.api.md"}
-   {:name "roster" :source "spools/roster/src/skein/spools/roster.clj" :outfile "spools/roster.api.md"}
    {:name "text-search" :source "spools/text-search/src/skein/spools/text_search.clj" :outfile "spools/text-search.api.md"}
    {:name "shell" :source "spools/workflow/src/skein/spools/executors/shell.clj" :outfile "spools/executors/shell.api.md"}
    {:name "chime" :source "spools/chime/src/skein/spools/chime.clj" :outfile "spools/chime.api.md"}
@@ -17,13 +16,19 @@
 ;; the behavior contracts stay in the root specs.
 (def alpha-api-docs
   (concat
-   (for [nm ["batch" "cli" "current" "events" "format" "graph" "hooks" "notes"
-             "patterns" "peers" "registry" "relations" "return-shape" "runtime" "scheduler"
-             "spool" "vocab" "weaver"]]
+   (for [nm ["batch" "cli" "clock" "current" "events" "format" "graph" "hooks"
+             "notes" "patterns" "peers" "registry" "relations" "return-shape"
+             "runtime" "scheduler" "spool" "vocab" "weaver"]]
      {:name nm
       :source (str "src/skein/api/" (if (= nm "return-shape") "return_shape" nm) "/alpha.clj")
       :outfile (str "docs/api/" nm ".api.md")})
-   [{:name "test"
+   [{:name "runtime-glossary"
+     :source "src/skein/api/runtime/glossary/alpha.clj"
+     :outfile "docs/api/runtime-glossary.api.md"}
+    {:name "runtime-help-transform"
+     :source "src/skein/api/runtime/help_transform/alpha.clj"
+     :outfile "docs/api/runtime-help-transform.api.md"}
+    {:name "test"
      :source "src/skein/test/alpha.clj"
      :outfile "docs/api/test.api.md"}]))
 

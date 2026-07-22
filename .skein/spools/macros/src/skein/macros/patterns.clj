@@ -52,7 +52,7 @@
        ~@forms
        (defn ~name ~docstring ~argv ~@body)
        (module-refresh/collect-entry!
-        :patterns '~name
+        :patterns ~(str name)
         {:name ~(str name) :fn '~fn-sym :input-spec ~spec-key :doc ~docstring})
        (var ~name))))
 

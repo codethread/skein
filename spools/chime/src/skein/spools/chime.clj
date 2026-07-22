@@ -45,7 +45,11 @@
   otherwise reuse a preserved map missing the new key (docs/spools/writing-shared-spools.md
   'Versioned spool state', SPEC-004.C95). The `state-shape-matches-declared-version`
   test fails loudly if `new-state` and this version drift apart."
-  2)
+  3)
+
+(def ^:private rule-kinds-version
+  "Shape version for the directly stored owner-registry handle."
+  1)
 
 (defn- new-rule-kinds []
   (doto (registry/registry)
@@ -59,7 +63,6 @@
    ;; registry handle first; reconcile! seeds changed effective rules under this
    ;; same monitor before replacing the visible view (MI2).
    :rule-registry (atom {})
-   :rule-kinds (new-rule-kinds)
    :seen-notifications (atom #{})
    :failure-log (atom [])
    :scanned-batch-ids (atom [])})
@@ -69,7 +72,10 @@
 
 (defn- notifier-binding [] (:notifier-binding (state)))
 (defn- rule-registry [] (:rule-registry (state)))
-(defn- rule-kinds [] (:rule-kinds (state)))
+(defn- rule-kinds []
+  (runtime/spool-state (rt) ::rule-kinds
+                       {:version rule-kinds-version}
+                       new-rule-kinds))
 (defn- seen-notifications [] (:seen-notifications (state)))
 (defn- failure-log [] (:failure-log (state)))
 (defn- scanned-batch-ids [] (:scanned-batch-ids (state)))
@@ -373,7 +379,9 @@
 (defn contribute
   "Materialize Chime's rule kind for dependent module contributions."
   [{:keys [runtime]}]
-  (runtime/spool-state runtime ::state {:version state-version} new-state)
+  (binding [*runtime* runtime]
+    (runtime/spool-state runtime ::state {:version state-version} new-state)
+    (rule-kinds))
   {})
 
 (defn reconcile
@@ -409,6 +417,7 @@
   []
   (let [runtime (rt)]
     (runtime/spool-state runtime ::state {:version state-version} new-state)
+    (rule-kinds)
     (hooks/register-hook! runtime :chime/registration-barrier mutation-hook-types
                      'skein.spools.chime/mutation-registration-barrier!
                      {:order Long/MAX_VALUE :spool "chime"})

@@ -1,6 +1,6 @@
 # Alpha Surface
 
-**Document ID:** `SPEC-005` **Status:** Implemented **Last Updated:** 2026-07-19 **Related:** [Strand Model](./strand-model.md), [CLI Surface](./cli.md), [REPL API](./repl-api.md), [Weaver Runtime](./daemon-runtime.md), [Spools index](../../spools/README.md), [Writing shared spools](../../docs/spools/writing-shared-spools.md)
+**Document ID:** `SPEC-005` **Status:** Implemented **Last Updated:** 2026-07-21 **Related:** [Strand Model](./strand-model.md), [CLI Surface](./cli.md), [REPL API](./repl-api.md), [Weaver Runtime](./daemon-runtime.md), [Spools index](../../spools/README.md), [Writing shared spools](../../docs/spools/writing-shared-spools.md)
 
 ## SPEC-005.P1 Purpose
 
@@ -9,9 +9,9 @@ This spec draws the line around what Skein ships as "alpha": which surface is in
 ## SPEC-005.P2 In-contract surface
 
 - **SPEC-005.C1:** The four root specs are the behavior contracts for shipped engine surface: strand model and storage semantics (SPEC-001), the public `strand`/`mill` CLI (SPEC-002), the trusted Clojure/REPL surface (SPEC-003), and the weaver runtime, transports, and registries (SPEC-004).
-- **SPEC-005.C2:** The blessed spool-facing API is every `skein.api.*.alpha` namespace — currently `batch`, `cli`, `current`, `events`, `format`, `graph`, `hooks`, `notes`, `patterns`, `peers`, `relations`, `return-shape`, `runtime`, `scheduler`, `spool`, `vocab`, `weaver` — plus `skein.test.alpha`, `skein.userland.alpha`, and the human-facing `skein.repl` helpers. Each is specified in SPEC-003/SPEC-004 (relations in SPEC-001.P5, notes in SPEC-001, vocab in SPEC-001) and follows accretion-based compatibility within its subnamespace. `skein.api.return-shape.alpha` exposes the in-contract `validate!`, `explain`, and `check!` functions; `skein.test.alpha/check-op-return!` accretes within the already-listed author-side test tier.
+- **SPEC-005.C2:** The blessed spool-facing API is every `skein.api.*.alpha` namespace — currently `batch`, `cli`, `clock`, `current`, `events`, `format`, `graph`, `hooks`, `notes`, `patterns`, `peers`, `relations`, `return-shape`, `runtime`, `scheduler`, `spool`, `vocab`, `weaver` — plus `skein.test.alpha`, `skein.userland.alpha`, and the human-facing `skein.repl` helpers. Each is specified in SPEC-003/SPEC-004 (relations in SPEC-001.P5, notes in SPEC-001, vocab in SPEC-001) and follows accretion-based compatibility within its subnamespace. `skein.api.return-shape.alpha` exposes the in-contract `validate!`, `explain`, and `check!` functions; `skein.test.alpha/check-op-return!` accretes within the already-listed author-side test tier.
 - **SPEC-005.C3:** The reference spools shipped in the Skein tree — `executors/shell`, `guild`,
-  `roster`, `text-search`, and `workflow` — are in-contract through their spool docs at
+  `text-search` and `workflow` — are in-contract through their spool docs at
   [`spools/*.md`](../../spools/README.md) (the shell executor's contract doc nests one level deeper,
   at `spools/executors/shell.md`), loaded **opt-in**: an approved `spools.edn` coordinate, synced by
   `runtime/sync!`, and activated by a `:spools`-guarded `runtime/use!`. `batteries` is the single
@@ -21,7 +21,7 @@ This spec draws the line around what Skein ships as "alpha": which surface is in
   `skein.spools.util` and `skein.spools.format` no longer name authoring helpers: `format` is deleted
   in favor of the already-blessed `skein.api.format.alpha` (`fill`, `reflow`), and `util` is
   promoted to blessed `skein.api.spool.alpha` (`fail!`, `reject-unknown-keys!`, `require-valid!`,
-  `attr-key->str`, `attr-get`, `poll-until-deadline!`, `entity-projection`; SPEC-005.C2).
+  `attr-key->str`, `attr-get`, `poll-until!`, `entity-projection`; SPEC-005.C2).
   The composable arg-spec fragments that once rode along (`note-surface`, `work-root`, `timeout-secs`, `outcome`) found no consumers and were removed before any release (PR #105); spool authors declare their own arg-spec data.
   `entity-projection` fails loudly unless its strand-shaped input contains `:id`, `:title`, `:state`,
   and `:attributes`, then returns exactly those four keys; domain-specific rows may extend that base
@@ -38,7 +38,7 @@ This spec draws the line around what Skein ships as "alpha": which surface is in
 
 - **SPEC-005.C5:** `skein.core.*` is internal and may change freely (public vars included); trusted code that requires it accepts the compatibility cost (SPEC-004.C40).
 - **SPEC-005.C5b:** `skein.api.*.internal` namespaces are implementation plumbing for their sibling `.alpha` modules (SPEC-003.C19a). They are not `skein.api.*.alpha` namespaces, so the exclusionary rule already places them outside the contract; like `skein.core.*`, their public vars may change freely.
-- **SPEC-005.C5a:** The deterministic-test-time seams accrete within already-blessed tiers, so tier membership is unchanged (SPEC-005.C2): `skein.api.runtime.alpha/now` is an in-contract read on `runtime.alpha`, and `skein.test.alpha/await-quiescent!`, `set-clock!`, and `advance!` are in-contract author-side controls on the blessed test namespace; their behaviour contracts live in SPEC-004.C1a/C74b and SPEC-003.C28a. The runtime clock component itself — the `:clock` runtime-map slot and the clock-pump registry — is internal: core subsystems read it through a `skein.core.weaver.runtime` core-tier accessor (SPEC-005.C5), and the in-contract read is `runtime.alpha/now`, not the core accessor.
+- **SPEC-005.C5a:** Deterministic time is in-contract through the blessed tiers in C2: `skein.api.clock.alpha` owns the Clock abstraction, `skein.api.runtime.alpha/clock` and `now` expose the runtime Clock and its data-first read, and `skein.test.alpha/manual-clock`, `set-clock!`, and `advance!` are author-side controls (SPEC-004.C1a, SPEC-003.C17a/C28a). The runtime-map `:clock` slot and clock-pump registry remain internal core plumbing.
 - **SPEC-005.C6:** The mill JSON socket protocol is internal transport glue between the shipped Go binaries: its frame shapes, operation set, `mill/*` error codes, protocol version, and the `mill.json` field set carry no contract. The contract is the CLI command surface (SPEC-002) plus the published artifact locations (SPEC-004.C9a). Nothing but the shipped binaries should dial `mill.sock`.
 - **SPEC-005.C7:** On the weaver socket, the error `type` taxonomy and envelope shape are contract (SPEC-004.C24); concrete error `code` strings are contract only where individually specified (`operation/deadline-exceeded` SPEC-004.C26b, `query/not-found` SPEC-004.C36b, `hook/failed` SPEC-004.C84). Other code strings, and all human-readable message text, may change.
 - **SPEC-005.C8:** Also internal: exact generated-file contents beyond their specified behavior (SPEC-002.C14a), client-side transport timeout values, storage mechanics beyond declared semantics (PRAGMAs, cascade mechanics, index choices), and the stderr rendering format of error frames (its byte-faithful `details=` JSON payload stays contract per SPEC-002.C4).

@@ -2,8 +2,12 @@
   "Macros for defining Skein CLI ops as module contribution entries."
   (:require [skein.core.weaver.module-refresh :as module-refresh]))
 
-(defn- declaration-entry
-  "Return the stored op declaration assembled from a defop form."
+(defn declaration-entry
+  "Return the stored op declaration assembled from a `defop` form.
+
+  `defop` expansions call this function from the namespace that owns the
+  declared operation, so it is public even though callers should normally use
+  the macro."
   [op-name opts fn-sym]
   (let [stream? (boolean (:stream? opts))]
     (cond-> {:name (name op-name)
@@ -37,6 +41,6 @@
     `(do
        (defn ~handler-name ~docstring ~argv ~@body)
        (module-refresh/collect-entry!
-        :ops '~name
+        :ops ~(str name)
         (declaration-entry '~name ~metadata '~fn-sym))
        (var ~handler-name))))

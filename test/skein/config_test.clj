@@ -162,6 +162,24 @@
   ["feature-active" "feature-work" "feature-owner-work" "feature-run"
    "workflow-runs" "devflow-runs" "work"])
 
+(defn- portable-source
+  "Rewrite an op-help envelope's absolute `:source` file to a repo-relative path.
+
+  The runtime resolves each op's source to an absolute on-disk path — the most
+  useful form for the live API — so freezing it verbatim would bind the surface
+  baseline to one checkout. Strip the checkout-root prefix here so the frozen
+  surface reads e.g. `.skein/config.clj` and stays portable across CI and other
+  worktrees; `:line` is kept as-is."
+  [detail]
+  (let [root (str (System/getProperty "user.dir") "/")]
+    (cond-> detail
+      (get-in detail [:source :file])
+      (update-in [:source :file]
+                 (fn [file]
+                   (if (str/starts-with? file root)
+                     (subs file (count root))
+                     file))))))
+
 (defn- capture-config-surface
   "Load the config module at config-path into an isolated runtime and return its
   registered config-owned surface as plain, EDN-round-trippable data.
@@ -185,7 +203,7 @@
           rt
           (fn []
             (load-module-source! rt :config config-path)
-            {:op-help (into {} (map (fn [op] [op (op! "help" [op])])) config-op-names)
+            {:op-help (into {} (map (fn [op] [op (portable-source (op! "help" [op]))])) config-op-names)
              :queries (into {} (map (fn [q] [q (get (graph/queries rt) q)])) named-query-names)}))
         (finally
           (weaver-runtime/stop! rt)
@@ -204,7 +222,7 @@
                    "devflow-describe" "devflow-run-history" "devflow-squash-run"
                    "devflow-status" "workflow-runs" "devflow-conventions"
                    "flow-await" "hitl" "land" "flow" "agent" "bench"]]
-    (is (some #(= op-name (:name %)) (weaver/ops rt))))
+    (is (some #(= op-name (:name %)) (weaver/ops rt)) op-name))
   (is (some #(= "delegate-pipeline" (:name %)) (patterns/patterns rt)))
   ;; agent-plan is spool-owned now; a real startup wires the agents spool in
   ;; via init.clj, so it must still be registered end to end
@@ -242,7 +260,7 @@
                        {:namespace "ct.spools.kanban"
                         :doc "spools/kanban.md"
                         :purpose "User-facing kanban board: feature/epic cards with refinement/pending/claimed/in_review lanes."}]
-              :ops [{:name "kanban" :help "strand help kanban" :manual "strand kanban about"}
+              :ops [{:name "kanban" :help "strand help kanban" :manual "strand about kanban"}
                     {:name "kanban-export" :help "strand help kanban-export"}
                     {:name "kanban-tree" :help "strand help kanban-tree"
                      :purpose "Epic -> feature -> task kanban hierarchy with derived task status, in one projection for renderers."}
@@ -259,7 +277,7 @@
                     {:name "workflow-runs" :help "strand help workflow-runs"}
                     {:name "feature-costs" :help "strand help feature-costs"
                      :purpose "Agent-run cost/usage rollup beneath a work root, as pure data. Registered by .skein/analytics.clj."}
-                    {:name "agent" :help "strand help agent" :manual "strand agent about"}
+                    {:name "agent" :help "strand help agent" :manual "strand about agent"}
                     {:name "flow" :help "strand help flow"
                      :purpose (format-alpha/reflow
                                "|Generic driver for any registered workflow: start by name, then
@@ -274,7 +292,7 @@
                                 |sol-med) optional. Registered by .skein/workflows.clj.")}
                     {:name "flow-await" :help "strand help flow-await"}
                     {:name "hitl" :help "strand help hitl" :purpose "Interactive user+agent session with a self-terminating tracking strand."}
-                    {:name "land" :help "strand help land" :manual "strand land about"
+                    {:name "land" :help "strand help land" :manual "strand about land"
                      :purpose (format-alpha/reflow
                                "|Coordinator-only landing workflow: push+draft-PR, green CI, roster
                                 |sign-off, then a mechanical GitHub squash-merge under the merge lock
@@ -298,8 +316,9 @@
 (deftest converted-config-surface-is-byte-identical-to-pre-refactor
   ;; TASK-Srm-009.MI1 acceptance gate. surface_baseline.edn is the config-owned
   ;; op-help + named-query surface captured via capture-config-surface; it was
-  ;; snapshotted pre-defquery/defop-conversion (base ad5d2eb) and re-captured
-  ;; when declared :returns joined the op-help surface (PLAN-Dcr-001).
+  ;; snapshotted pre-defquery/defop-conversion (base ad5d2eb), re-captured
+  ;; when declared :returns joined the op-help surface (PLAN-Dcr-001), and
+  ;; re-captured again for the canonical help envelope (TASK-Dtf-001).
   ;; Asserting the current converted config reproduces it byte-for-byte proves the
   ;; refactor changed no generated `help <op>` and no registered query definition;
   ;; the devflow-conventions payload is pinned by the test above. The golden is a
@@ -669,7 +688,7 @@
   (with-config-runtime
     (fn [_rt]
       (letfn [(positionals [op-name]
-                (->> (get-in (op! "help" [op-name]) [:arg-spec :positionals])
+                (->> (get-in (op! "help" [op-name]) [:node :invocation :positionals])
                      (mapv (juxt :name :required :variadic))))]
         (is (= [["feature" true false] ["worktree-check" false false]]
                (positionals "devflow-start")))
@@ -687,7 +706,7 @@
         (is (= [["feature" true false]] (positionals "devflow-squash-run")))
         (is (= [["feature" true false]] (positionals "devflow-status")))
         (is (= "Start the devflow lifecycle for a feature."
-               (get-in (op! "help" ["devflow-start"]) [:arg-spec :doc])))))))
+               (get-in (op! "help" ["devflow-start"]) [:node :doc])))))))
 
 (defn- shell-gate-complete!
   "Close the ready :shell land gate for feature the way the shell executor
@@ -1016,20 +1035,20 @@
   (with-config-runtime
     (fn [_rt]
       (let [help (op! "help" ["land"])
-            subs (get-in help [:arg-spec :subcommands])
+            subs (get-in help [:node :children])
             by-name (into {} (map (juxt :name identity)) subs)]
         (is (= "land about" (:operation (op! "land" ["about"]))))
         (is (= #{"about" "start" "next" "complete" "choose" "status" "break-lock"}
                (set (map :name subs))))
-        (is (str/starts-with? (get-in help [:arg-spec :doc])
+        (is (str/starts-with? (get-in help [:node :doc])
                               "Drive the coordinator landing workflow"))
         ;; flags render sorted by key: branch, card, worktree
         (is (= [["branch" true] ["card" false] ["worktree" true]]
-               (mapv (juxt :name :required) (get-in by-name ["start" :flags]))))
+               (mapv (juxt :name :required) (get-in by-name ["start" :invocation :flags]))))
         (is (= [["feature" true false]]
-               (mapv (juxt :name :required :variadic) (get-in by-name ["start" :positionals]))))
+               (mapv (juxt :name :required :variadic) (get-in by-name ["start" :invocation :positionals]))))
         (is (= [["feature" true false] ["choice" true false] ["tail" false true]]
-               (mapv (juxt :name :required :variadic) (get-in by-name ["choose" :positionals])))))
+               (mapv (juxt :name :required :variadic) (get-in by-name ["choose" :invocation :positionals])))))
       ;; required flags and positionals fail loudly at parse
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Missing required flag --branch"
                             (op! "land" ["start" "no-flags"])))
@@ -1038,27 +1057,26 @@
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unknown workflow run"
                             (op! "land" ["status" "never-landed"]))))))
 
-(defn- assert-treadle-installed-after-config
-  "Assert the subagent executor loaded and declares :config in :after — its install! runs an
-  initial gate scan, so config.clj's harness aliases must already exist or a
-  durable ready gate would be stamped gate/error on every cold start."
+(defn- assert-treadle-installed-after-runtime-dependencies
+  "Assert the subagent executor loads after the legacy modules it consumes."
   [rt]
   (let [use (get (runtime/uses rt) :skein/spools-treadle)]
     (is (= :loaded (:status use)))
-    (is (some #{:config} (get-in use [:opts :after])))))
+    (is (every? (set (get-in use [:opts :after])) [:harnesses :workflows]))))
 
 (defn- assert-workflow-spool-consent-edges
   "Assert repo startup guards every module that now relies on the workflow coordinate."
   [rt]
-  (let [uses (runtime/uses rt)]
+  (let [uses (runtime/uses rt)
+        config-module (get-in (runtime/status rt) [:modules :config])]
     (doseq [use-id [:skein/spools-workflow :skein/spools-shell]]
       (is (= ['skein.spools/workflow] (get-in uses [use-id :opts :spools]))
           (str use-id " must opt into skein.spools/workflow")))
     (is (= ['skein.spools/workflow 'ct.spools/agent-run
             'codethread/devflow 'skein.macros/macros]
-           (get-in uses [:config :opts :spools]))
+           (:spools config-module))
         ":config must guard every spool coordinate its config.clj ns requires")
-    (is (true? (get-in uses [:config :opts :required?]))
+    (is (true? (:required? config-module))
         ":config is required — a guarded but non-required module skips silently, dropping the op/query surface")
     (doseq [use-id [:workflows]]
       (is (= ['skein.spools/workflow 'ct.spools/delegation]
@@ -1104,28 +1122,20 @@
             #(is (thrown-with-msg? clojure.lang.ExceptionInfo #"projection must match"
                                    (project "malformed-step")))))))))
 
-(defn- assert-roster-spool-consent-edge
-  "Assert repo startup guards the activated roster spool with its coordinate."
-  [rt]
-  (let [uses (runtime/uses rt)]
-    (is (= ['skein.spools/roster] (get-in uses [:skein/spools-roster :opts :spools]))
-        ":skein/spools-roster must opt into skein.spools/roster")))
-
-(deftest repo-local-startup-and-reload-preserve-registrations
+(deftest repo-local-startup-and-refresh-preserve-registrations
   (with-startup-config-runtime
     (fn [rt]
       (assert-config-registrations rt)
-      (assert-treadle-installed-after-config rt)
+      (assert-treadle-installed-after-runtime-dependencies rt)
       (assert-workflow-spool-consent-edges rt)
       (assert-kanban-tracker-installed rt)
-      (assert-roster-spool-consent-edge rt)
       (op! "devflow-start" ["startup-feature" "already-in-worktree-ok"])
-      (is (= :loaded (:status (runtime/reload! rt))))
+      (let [refresh-result (runtime/refresh! rt {:only #{:config}})]
+        (is (contains? #{:applied :unchanged} (:status refresh-result))))
       (assert-config-registrations rt)
       (assert-workflow-spool-consent-edges rt)
       (assert-kanban-tracker-installed rt)
-      (assert-roster-spool-consent-edge rt)
-      ;; runtime registries reload; the strand graph and run state persist
+      ;; Module-owned registrations refresh; the strand graph and run state persist.
       (let [status (op! "devflow-status" ["startup-feature"])]
         (is (false? (:done status)))
         (is (= "create-or-confirm-worktree" (:checkpoint (first (:ready status)))))))))

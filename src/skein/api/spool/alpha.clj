@@ -2,25 +2,26 @@
   "Blessed spool-authoring helpers: the accretion-compatible home for the shared
   fail-loud and validation seams every reference spool leans on.
 
-  Living in the `skein.api.*.alpha` tier freezes this helper set
-  (`entity-projection`, `fail!`, `reject-unknown-keys!`, `require-valid!`,
-  `attr-key->str`, `attr-get`, `poll-until-deadline!`) as a compat commitment,
-  so no blessed namespace has to reach down into a
-  `skein.spools.*` peer to reuse them.
+  The public helper set is `entity-projection`, `fail!`,
+  `reject-unknown-keys!`, `require-valid!`, `attr-key->str`, `attr-get`, and
+  `poll-until!`, so no blessed namespace has to reach down into a
+  `skein.spools.*` peer to reuse it.
 
   Reference spools all need the same tiny fail-loud and validation seams: throw
   an `ex-info` with a contextual data map (TEN-003), reject unknown option keys,
   validate a boundary shape against a `clojure.spec` and attach its explain data,
   coerce an attribute key to its string wire form, tolerantly read an
   attribute back regardless of whether its key arrived keyword- or
-  string-keyed, and poll a check fn until a deadline. Those were copy-pasted -
+  string-keyed, and poll a check fn against a Clock. Those were copy-pasted -
   and had begun to drift - across most shipped spools, and now share this one
   source instead of re-deriving them per file. `skein.spools.workflow` is a
   deliberate exception: it keeps its own branded `reject-unknown-keys!` rather
   than adopting this one."
   (:require [clojure.spec.alpha :as s]
+            [skein.api.clock.alpha :as clock]
             [skein.api.format.alpha :as format-alpha]
-            [skein.core.specs :as specs]))
+            [skein.core.specs :as specs])
+  (:import [java.time Duration Instant]))
 
 (declare entity-projection-keys reject-omitted-attribute!)
 
@@ -140,57 +141,59 @@
   :args (s/cat :strand map? :k ::specs/attribute-key)
   :ret any?)
 
-;; The closed five-key option shape for `poll-until-deadline!`. Key exactness
+;; The closed five-key option shape for `poll-until!`. Key exactness
 ;; is enforced manually via `reject-unknown-keys!` so the failure names the
 ;; offending keys; this named shape owns the required set and field contracts.
-(s/def ::deadline int?)
-(s/def ::poll-ms (s/and integer? (complement neg?)))
+(s/def ::timeout-ms (s/and integer? (complement neg?) #(<= % Long/MAX_VALUE)))
+(s/def ::poll-ms (s/and integer? pos? #(<= % Long/MAX_VALUE)))
 (s/def ::check ifn?)
 (s/def ::pred->result ifn?)
 (s/def ::on-timeout ifn?)
 (s/def ::poll-options
-  (s/keys :req-un [::deadline ::poll-ms ::check ::pred->result ::on-timeout]))
+  (s/keys :req-un [::timeout-ms ::poll-ms ::check ::pred->result ::on-timeout]))
 
-(defn poll-until-deadline!
+(defn poll-until!
   "The shared spool-tier long-poll skeleton behind `skein.spools.workflow/await!`
-  and `skein.spools.roster/await-quiet!`: call `check` (a zero-arg fn) once,
-  test its value with `pred->result`, and repeat every `poll-ms` until either
-  `pred->result` returns a non-nil result or `deadline` (a `System/currentTimeMillis`
-  epoch millis value, as already computed by each caller from its own
-  `:timeout-secs`/`:timeout-ms` option) has passed.
+  and `skein.spools.cron/await-quiescent!`: call `check` (a zero-arg fn) once, test
+  its value with `pred->result`, and repeat on `installed-clock` every `poll-ms`
+  until either `pred->result` returns a non-nil result or `timeout-ms` has
+  elapsed on that Clock.
 
   `pred->result` receives each `check` value and returns a non-nil result to
-  stop and return it, or nil to keep polling. Once `deadline` passes with
-  `pred->result` still nil, `on-timeout` receives the last `check` value and
-  its return value becomes the result. `deadline` and `poll-ms` are both
-  required — this helper does not supply timeout/cadence defaults; those stay
-  owned by each caller so existing behavior is unchanged. Fails loudly
-  (TEN-003) on option keys outside the five named here, when `deadline` is
-  not a long, when `poll-ms` is not a non-negative integer, or when
-  `check`/`pred->result`/`on-timeout` is not a function, rather than
-  surfacing a bare NPE/`IllegalArgumentException` once the loop actually
-  runs."
-  [{:keys [deadline poll-ms check pred->result on-timeout] :as opts}]
-  (reject-unknown-keys! "poll-until-deadline!"
-                        #{:deadline :poll-ms :check :pred->result :on-timeout}
+  stop and return it, or nil to keep polling. At or after the derived deadline,
+  `on-timeout` receives the last `check` value and its return value becomes the
+  result. `timeout-ms` and `poll-ms` are required; callers own their defaults.
+  Fails loudly (TEN-003) before checking or sleeping when the Clock, exact option
+  keys, numeric bounds, or required functions are malformed."
+  [installed-clock {:keys [timeout-ms poll-ms check pred->result on-timeout] :as opts}]
+  (require-valid! ::clock/clock installed-clock
+                  "poll-until! clock must be a skein.api.clock.alpha/Clock")
+  (when-not (map? opts)
+    (fail! "poll-until! opts must be a map" {:opts opts}))
+  (reject-unknown-keys! "poll-until!"
+                        #{:timeout-ms :poll-ms :check :pred->result :on-timeout}
                         opts)
-  (require-valid! ::deadline deadline "poll-until-deadline! :deadline must be a long")
+  (require-valid! ::timeout-ms timeout-ms
+                  "poll-until! :timeout-ms must be a non-negative integer")
   (require-valid! ::poll-ms poll-ms
-                  "poll-until-deadline! :poll-ms must be a non-negative integer")
-  (require-valid! ::check check "poll-until-deadline! :check must be a function")
+                  "poll-until! :poll-ms must be a positive integer")
+  (require-valid! ::check check "poll-until! :check must be a function")
   (require-valid! ::pred->result pred->result
-                  "poll-until-deadline! :pred->result must be a function")
+                  "poll-until! :pred->result must be a function")
   (require-valid! ::on-timeout on-timeout
-                  "poll-until-deadline! :on-timeout must be a function")
-  (loop []
-    (let [value (check)]
-      (or (pred->result value)
-          (if (>= (System/currentTimeMillis) deadline)
+                  "poll-until! :on-timeout must be a function")
+  (let [deadline (.plusMillis ^Instant (clock/now installed-clock) (long timeout-ms))
+        poll-duration (Duration/ofMillis (long poll-ms))]
+    (loop []
+      (let [value (check)]
+        (if-some [result (pred->result value)]
+          result
+          (if-not (.isBefore ^Instant (clock/now installed-clock) deadline)
             (on-timeout value)
-            (do (Thread/sleep (long poll-ms)) (recur)))))))
+            (do (clock/sleep! installed-clock poll-duration) (recur))))))))
 
-(s/fdef poll-until-deadline!
-  :args (s/cat :opts ::poll-options)
+(s/fdef poll-until!
+  :args (s/cat :clock ::clock/clock :opts ::poll-options)
   :ret any?)
 
 ;; Entity projection mechanics

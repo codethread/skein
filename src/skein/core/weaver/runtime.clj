@@ -5,6 +5,7 @@
             [clojure.string :as str]
             [nrepl.server :as nrepl]
             [skein.api.cli.alpha :as cli]
+            [skein.api.clock.alpha :as clock]
             [skein.core.specs :as specs]
             [skein.core.weaver.config :as weaver-config]
             [skein.core.weaver.core-registry :as core-registry]
@@ -198,12 +199,16 @@
 
 ;; --- Clock seam (RFC-Dtt-001) ---
 ;;
-;; The runtime owns one clock: a `:clock` atom holding a zero-arg fn that returns
-;; the current Instant, defaulting to the real wall clock. Subsystems that time
-;; off it (the scheduler) read `now`; deterministic tests swap the fn via
-;; `skein.test.alpha/set-clock!` and step it with `advance!`. Consumers that arm
-;; real timers register a synchronous due-check pump so `advance!` can drive them
-;; without waiting on wall time.
+;; The runtime owns one Clock in its `:clock` atom, defaulting to the real system
+;; clock. Subsystems that time off it read `clock` or `now`; deterministic tests
+;; install a manual Clock via `skein.test.alpha/set-clock!`. Consumers that arm
+;; real timers register a synchronous due-check pump so manual sleeping can drive
+;; them without waiting on wall time.
+
+(defn clock
+  "Return runtime's installed `skein.api.clock.alpha/Clock`."
+  [runtime]
+  (deref (:clock runtime)))
 
 (defn now
   "Return the current Instant from runtime's clock seam.
@@ -211,12 +216,12 @@
   Defaults to the real wall clock; deterministic tests inject an advanceable
   clock through `skein.test.alpha/set-clock!`."
   ^Instant [runtime]
-  ((deref (:clock runtime))))
+  (clock/now (clock runtime)))
 
 (defn set-clock!
-  "Replace runtime's clock with `clock-fn`, a zero-arg fn returning an Instant."
-  [runtime clock-fn]
-  (reset! (:clock runtime) clock-fn)
+  "Replace runtime's installed `skein.api.clock.alpha/Clock`."
+  [runtime installed-clock]
+  (reset! (:clock runtime) installed-clock)
   nil)
 
 (defn register-clock-pump!
@@ -330,6 +335,8 @@
   (core-registry/reset-store! (:pattern-store runtime))
   (core-registry/reset-store! (:op-store runtime))
   (core-registry/reset-store! (:hook-store runtime))
+  (reset! (:glossary-registry runtime) {})
+  (reset! (:help-transform-slot runtime) nil)
   (clear-event-system-for-reload! runtime)
   (install-built-in-ops! runtime))
 
@@ -614,7 +621,7 @@
           hook-store (core-registry/backed-registry :hooks)
           runtime-base {:storage storage
                         :datasource ds
-                        :clock (atom (fn [] (Instant/now)))
+                        :clock (atom (clock/system-clock))
                         :clock-pumps (atom {})
                         ;; Each core registry is an owner-partition store; its
                         ;; effective projection stays under the historical key so
@@ -628,6 +635,8 @@
                         :op-store op-store
                         :hook-registry (:effective hook-store)
                         :hook-store hook-store
+                        :glossary-registry (atom {})
+                        :help-transform-slot (atom nil)
                         :generation-id (str (java.util.UUID/randomUUID))
                         :release-marker resolved-release-marker
                         :approved-spool-sync-state (atom {})

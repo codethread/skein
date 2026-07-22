@@ -11,7 +11,7 @@
   modules (`module!`), reconcile the running image against them (`refresh!`,
   with `plan` its effect-free dry-run), inspect the joined offline picture
   (`status`), reach for the advanced code-only seam (`reload-code!`), and serve
-  runtime-owned state and time to trusted spools (`spool-state`, `now`).
+  runtime-owned state and time to trusted spools (`spool-state`, `clock`, `now`).
 
   `module!`/`refresh!`/`plan`/`status`/`reload-code!` are the normal surface:
   declarations are data, refresh replaces owner-complete contributions and
@@ -23,6 +23,7 @@
   every registered key stays alpha-qualified."
   (:require [clojure.java.io :as io]
             [clojure.spec.alpha :as s]
+            [skein.api.clock.alpha :as clock-api]
             [skein.api.runtime.internal.shapes :as shapes]
             [skein.api.runtime.internal.spools-edn :as spools-edn]
             [skein.api.spool.alpha :refer [require-valid!]]
@@ -568,6 +569,15 @@
   :ret ::use-result)
 
 ;; --- runtime-owned services for trusted spools ------------------------------
+
+(defn clock
+  "Return `runtime`'s installed `skein.api.clock.alpha/Clock`."
+  [runtime]
+  (weaver-runtime/clock runtime))
+
+(s/fdef clock
+  :args (s/cat :runtime map?)
+  :ret ::clock-api/clock)
 
 (defn now
   "Return the current java.time.Instant from `runtime`'s clock seam.

@@ -68,6 +68,7 @@ nav:
       - Index: docs/api/README.md
       - skein.api.batch.alpha: docs/api/batch.api.md
       - skein.api.cli.alpha: docs/api/cli.api.md
+      - skein.api.clock.alpha: docs/api/clock.api.md
       - skein.api.current.alpha: docs/api/current.api.md
       - skein.api.events.alpha: docs/api/events.api.md
       - skein.api.format.alpha: docs/api/format.api.md
@@ -79,6 +80,8 @@ nav:
       - skein.api.relations.alpha: docs/api/relations.api.md
       - skein.api.return-shape.alpha: docs/api/return-shape.api.md
       - skein.api.runtime.alpha: docs/api/runtime.api.md
+      - skein.api.runtime.glossary.alpha: docs/api/runtime-glossary.api.md
+      - skein.api.runtime.help-transform.alpha: docs/api/runtime-help-transform.api.md
       - skein.api.scheduler.alpha: docs/api/scheduler.api.md
       - skein.api.spool.alpha: docs/api/spool.api.md
       - skein.api.vocab.alpha: docs/api/vocab.api.md
@@ -98,10 +101,6 @@ nav:
           - Contract: spools/guild.md
           - Cookbook: spools/guild.cookbook.md
           - API: spools/guild.api.md
-      - Roster Active-Work Registry:
-          - Contract: spools/roster.md
-          - Cookbook: spools/roster.cookbook.md
-          - API: spools/roster.api.md
       - Text Search (UNSAFE):
           - Contract: spools/text-search.md
           - Cookbook: spools/text-search.cookbook.md

@@ -268,37 +268,57 @@ Do not expect the CLI to be a package manager, query authoring surface, plugin h
 
 ## Discovery tiers: help, about, prime
 
-Skein has one deliberate convention for "how do I find out?", with three tiers. They form an
+Skein has one deliberate convention for "how do I find out?", with three tiers, and they form an
 escalation path. `prime` orients you; `about` explains an op you are about to lean on; `help`
-answers exact invocation questions. Each tier has a different source of truth:
+answers exact invocation questions. Each is a **meta-verb** you put first, naming the op second:
+`strand prime <op>`, `strand about <op>`, `strand help <op>`. Each tier has a different source of
+truth:
 
 | Tier | Source | Question it answers | Examples |
 | --- | --- | --- | --- |
-| `help` | **Generated** from registered arg-spec data | "What can I type?" — verbs, flags, positionals, types | `strand help`, `strand help <op>`, `strand <op> help\|-h\|--help` |
-| `about` | **Authored** per-op JSON manual | "What does this op mean?" — semantics, contracts, attribute conventions | `strand kanban about`, `strand agent about` |
-| `prime` | **Authored** prose orientation | "How do we work here?" — run **before** starting work | `mill skein prime`, `mill strand prime`, `strand kanban prime`, `strand agent prime` |
+| `help` | **Generated** from registered arg-spec data | "What can I type?" — verbs, flags, positionals, types | `strand help`, `strand help <op>`, `strand help <op> <verb>` |
+| `about` | **Authored** per-op prose | "What does this op mean?" — semantics, contracts, attribute conventions | `strand about agent` |
+| `prime` | **Authored** prose orientation | "How do we work here?" — run **before** starting work | `mill skein prime`, `mill strand prime`, `strand prime agent` |
 
-**`help` is never hand-written.** `strand help` lists every registered op; `strand help <op>`
-renders one op's detail from its arg-spec, including declared subcommands. Ops that declare
-`:subcommands` also answer `strand <op> help`, `strand <op> -h`, and `strand <op> --help` (sole
-token, no payloads) with the same detail at exit 0, and their missing/unknown-subcommand failures
-are structured parser errors carrying the available names — no spool ever writes its own usage
-strings or dispatch errors. Contracts: SPEC-002.C39, SPEC-003.C64/C65, SPEC-004.C63c–e.
+The meta-verb goes first. The old `<op> help` / `<op> about` / `<op> prime` sole-token sugar is
+retired: a bare `help`, `about`, or `prime` in verb position now fails with a loud redirect to
+`strand help <op>`, unless the op declares a real subcommand by that name (several spool ops do,
+noted below). A trailing `--help` or `-h` flag still works on any op, so `strand agent --help`
+rewrites to `strand help agent`.
 
-**`about` is the op's manual.** A spool op whose meaning goes beyond its argument shapes ships an
-`about` subcommand returning a structured JSON document: purpose, conventions, attribute contracts,
-and usage examples. Think man page, machine-readable. Purely structural ops (batteries
-`add`/`list`/...) do not need one — their arg-spec already says everything.
+**`help` is never hand-written.** It is one declared, versioned schema, uniformly projected;
+renderings are transforms over it. `strand help` lists every registered op; `strand help <op>`
+renders one op's detail from its arg-spec; `strand help <op> <verb>` slices to a single subcommand.
+A detail response is a canonical envelope, `{schema-version, operation, source, glossary, node}`,
+verbose by default, where `node` is a self-similar shape that recurses into subcommands, `source`
+points at the handler's `file:line` when it resolves, and `glossary` defines the named failure
+outcomes a node references. With no help transform registered, that raw envelope JSON is the output.
+A workspace can register one default help transform to render it as friendlier text instead; `--json`
+is the sole opt-out, always returning the raw envelope, so a failing transform can never brick help.
+Missing or unknown subcommands fail with structured parser errors carrying the available names. No
+spool ever writes its own usage strings or dispatch errors. Contracts: SPEC-002.C39 and the
+discovery-tier deltas.
+
+**`about` is the op's manual.** `strand about <op>` returns the op's authored `:about` prose: purpose,
+conventions, attribute contracts, and how it relates to its sibling verbs, as a small JSON object.
+Think man page, machine-readable, distinct from the arg-spec facts `help` already carries. An op that
+declares no `:about` prose returns a loud `discovery/unavailable` rather than empty success; purely
+structural ops (batteries `add`/`list`/...) need none, since their arg-spec already says everything.
+Some spool ops instead declare their own `about` subcommand, and for those the resolving form is
+`strand <op> about`: `strand kanban about`, `strand land about`, `strand spool
+about`.
 
 **`prime` is run-first context priming for agents.** A `prime` command prints the working discipline
-for an area — the conventions an agent must load *before* acting, with pointers to deeper docs.
-`mill strand prime` (the day-to-day strand workflow) and `mill skein prime` (building on `.skein`
-and the source docs, read on demand) need no
-running weaver: `mill` resolves the Skein source checkout and renders the topic file the manifest at
-`docs/prime/index.json` names, so an already-installed `mill` prints current orientation text from a
-newer checkout. Spool-level primes like `strand kanban prime` are spool-generated so they can never
-drift from the installed surface. Repo-world `mill init` seeds a marker-guarded section into
-`AGENTS.md`/`CLAUDE.md` pointing fresh agents at the prime commands (see "Agent guidance files").
+for an area: the conventions an agent must load *before* acting, with pointers to deeper docs. `mill
+strand prime` (the day-to-day strand workflow) and `mill skein prime` (building on `.skein` and the
+source docs, read on demand) need no running weaver: `mill` resolves the Skein source checkout and
+renders the topic file the manifest at `docs/prime/index.json` names, so an already-installed `mill`
+prints current orientation text from a newer checkout. Op-level primes are spool-authored prose
+projected through the builtin `prime` meta-verb (`strand prime agent`), so they can never drift from
+the installed surface; spool ops that declare their own `prime` subcommand answer `strand <op> prime`,
+such as `strand kanban prime`. Repo-world `mill init` seeds a marker-guarded
+section into `AGENTS.md`/`CLAUDE.md` pointing fresh agents at the prime commands (see "Agent guidance
+files").
 
 Spool authors: the authoring rules for this surface live in [`docs/spools/writing-shared-spools.md`](./spools/writing-shared-spools.md).
 
@@ -479,6 +499,8 @@ A query definition is either a bare where expression, or a map with `:where` and
 
 A where expression is an EDN vector of `[operator & args]`:
 
+The grammar is a deliberately narrow boundary surface. New forms must meet the [SPEC-001.P9 acceptance criteria](../devflow/specs/strand-model.md); a selection the grammar cannot express belongs in a registered read op — an op registered with `:hook-class :read` that composes registered queries and extra filtering in Clojure through the `skein.api.graph.alpha` helpers ([Graph helpers](#graph-helpers)) — which CLI callers invoke like any other op.
+
 | Form | Meaning |
 | --- | --- |
 | `[:= f v]` `[:!= f v]` `[:< f v]` `[:<= f v]` `[:> f v]` `[:>= f v]` | compare field `f` against value `v` |
@@ -600,6 +622,8 @@ Two caveats. The recovered strand gets a new id, so anything that referenced the
 re-pointed. And only the edges the tombstone recorded are available to replay — inbound edges from
 strands that were never burned are not restored, so re-create them explicitly against the new id.
 
+The same `:edges` vector accepts `{:op :remove :from :to :type}` to delete one exact `(from, to, type)` edge, using pre-bound `:refs` for both endpoints. Removal is strict: an absent edge fails the whole batch loudly rather than succeeding silently, so a stale remover must reread and reconcile. Core deletes only that row and adds no graph guard — whether a removal may strand a node or unblock work is caller and hook policy, not an engine promise.
+
 ## Startup config and customisation
 
 The weaver loads trusted startup files from the selected workspace in order — `init.clj`, then
@@ -664,7 +688,7 @@ fail loudly and leave no partial batch writes.
 
 `weave --pattern` is the CLI-safe, named, spec-checked, create-only front door over the same
 transactional batch engine as REPL-only `skein.api.batch.alpha/apply!`. Raw batch is the trusted
-loading-dock door: it can create, update, burn, and upsert edges, so it remains a Clojure
+loading-dock door: it can create, update, burn, and upsert or remove edges, so it remains a Clojure
 config/REPL workflow instead of a public CLI command.
 
 Like queries, patterns are weaver-lifetime runtime state. Register them from startup config if they should always exist after restart or reload.
@@ -674,8 +698,12 @@ Like queries, patterns are weaver-lifetime runtime state. Register them from sta
 Skein ships built-in privileged alpha namespaces for trusted runtime transformations. They are
 source-visible helper namespaces from the Skein checkout/classpath, not user/community spools that
 need `spools.edn` approval — `skein.api.spool.alpha` (the spool-authoring helpers `fail!`,
-`reject-unknown-keys!`, `require-valid!`, `attr-key->str`, `attr-get`, `poll-until-deadline!`) is
+`reject-unknown-keys!`, `require-valid!`, `attr-key->str`, `attr-get`, `poll-until!`) is
 one of them, the blessed home every reference spool builds on:
+
+`poll-until!` takes a Clock and a relative timeout. Runtime-owned callers pass
+`(skein.api.runtime.alpha/clock runtime)`, keeping time reads and sleeps on one
+authority; tests can install `skein.test.alpha/manual-clock` to avoid wall-time waits.
 
 ```clojure
 (require '[skein.api.graph.alpha :as graph])

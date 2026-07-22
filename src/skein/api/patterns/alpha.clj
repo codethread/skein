@@ -38,7 +38,10 @@
   (mapv val (sort-by key @(pattern-registry runtime))))
 
 (defn resolve-pattern
-  "Return the registered weave pattern for a simple symbol or keyword name.
+  "Return the registered weave pattern for a name.
+
+  Accepts a simple symbol, keyword, or raw CLI string (trimmed, optional leading
+  colon), matching `skein.api.graph.alpha/resolve-query` string handling.
 
   Missing patterns fail loudly."
   [runtime pattern-name]
@@ -105,7 +108,9 @@
 ;; --- Registry entry construction ---
 
 (defn- canonical-pattern-name [pattern-name]
-  (query/canonical-query-name pattern-name))
+  ;; query-lookup-name, not canonical-query-name: pattern lookups accept the same
+  ;; raw CLI string forms (trimmed, optional leading colon) as query lookups.
+  (query/query-lookup-name pattern-name))
 
 (defn- validate-pattern-spec! [spec-name]
   (when-not (or (keyword? spec-name) (symbol? spec-name))

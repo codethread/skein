@@ -66,7 +66,7 @@ Render `arg-spec` as JSON-safe help data.
 
   Includes arguments, types, docs, required flags, subcommands, and payload-parse
   declarations for the `help <op>` projection.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/cli/alpha.clj#L121-L133">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/cli/alpha.clj#L138-L150">Source</a></sub></p>
 
 ## <a name="skein.api.cli.alpha/parse">`parse`</a>
 ``` clojure
@@ -85,18 +85,21 @@ Parse `argv` against `arg-spec`, resolving payload references from `payloads`.
   malformed key=value tokens, trailing unconsumed tokens, missing/unknown
   subcommands, dangling or unused payload references, and malformed
   :json/:jsonl payloads.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/cli/alpha.clj#L84-L119">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/cli/alpha.clj#L101-L136">Source</a></sub></p>
 
 ## <a name="skein.api.cli.alpha/reserved-subcommand-names">`reserved-subcommand-names`</a>
 
 
 
 
-Subcommand names reserved for dispatch-level help aliases.
+Subcommand names reserved from op declaration for the help grammar.
 
-  The single source of truth: registration/parse/explain validation here and
-  the weaver's dispatch-time help alias must agree on this set.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/cli/alpha.clj#L58-L63">Source</a></sub></p>
+  The single source of truth for the reserved set: registration/parse/explain
+  validation here blocks any op from declaring these as subcommands. The weaver
+  rewrites only the dash-prefixed flag forms (`--help`/`-h`) of a trailing token
+  to the `help` op (DELTA-Dtf-002.CC3); the bare word `help` stays reserved but
+  is the retired sugar that flows to normal parsing.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/cli/alpha.clj#L58-L66">Source</a></sub></p>
 
 ## <a name="skein.api.cli.alpha/validate!">`validate!`</a>
 ``` clojure
@@ -110,4 +113,20 @@ Validate any parser arg-spec shape, returning it unchanged on success.
   arg-specs additionally enforce the one-level subcommand contract and reserved
   `:subcommand` result key. Throws structured `ex-info` on malformed specs so
   op registration fails before help or invocation can drift from the contract.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/cli/alpha.clj#L65-L82">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/cli/alpha.clj#L68-L86">Source</a></sub></p>
+
+## <a name="skein.api.cli.alpha/validate-annotations!">`validate-annotations!`</a>
+``` clojure
+(validate-annotations! op annotations)
+```
+Function.
+
+Structurally validate a standalone annotation sub-map for `op`, returning it.
+
+  The same closed-shape check `validate!` applies to an arg-spec node's
+  `:annotations` (closed `use-when`/`notes`/`failure-modes` keys, each an array of
+  non-blank strings), exposed for the raw-envelope root annotation surface an op
+  declares outside any arg-spec (DELTA-Dtf-002.MI1a). Purely structural: the
+  glossary-ref existence check for `failure-modes` names runs at registration
+  (DELTA-Dtf-003.CC2).
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/cli/alpha.clj#L88-L99">Source</a></sub></p>

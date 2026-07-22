@@ -10,7 +10,8 @@
 ;; Gitignored init.local.clj binds each developer's notifier. Read docs/reference.md
 ;; before changing this config; smoke-test changes in a disposable world first.
 (require '[skein.api.current.alpha :as current]
-         '[skein.api.runtime.alpha :as runtime])
+         '[skein.api.runtime.alpha :as runtime]
+         '[skein.api.runtime.help-transform.alpha :as help-transform])
 
 (def runtime (current/runtime))
 
@@ -23,14 +24,21 @@
 (runtime/use! runtime :skein/spools-batteries
               {:ns 'skein.spools.batteries
                :call 'skein.spools.batteries/install!})
+;; Elect the batteries reference help transform (DELTA-Dtf-002.CC1): batteries
+;; EXPORTS it but never auto-registers from install!, so the canonical world opts
+;; in here as trusted config (config-election-only, the deliberate contrast with
+;; the glossary registry). The slot is reload-cleared and re-established when this
+;; config re-runs; `--json` always bypasses it, so a broken transform never bricks
+;; help (DELTA-Dtf-001.CC4). Batteries owns its glossary outcomes from its own
+;; install! above; this repo's config ops reference none of their own.
+(help-transform/register-default-help-transform!
+ runtime
+ {:transform skein.spools.batteries/default-help-transform
+  :owner 'skein.spools.batteries})
 (runtime/use! runtime :skein/spools-workflow
               {:ns 'skein.spools.workflow
                :spools ['skein.spools/workflow]
                :call 'skein.spools.workflow/install!})
-(runtime/use! runtime :skein/spools-roster
-              {:ns 'skein.spools.roster
-               :spools ['skein.spools/roster]
-               :call 'skein.spools.roster/install!})
 ;; The shell executor ships in the workflow spool root and fulfils :shell workflow
 ;; gates by running the gate command directly. Its install! runs an initial
 ;; scan, so it is ordered after workflow (which owns the executor registry it
@@ -64,7 +72,6 @@
 (runtime/module! runtime :macros/demo
                  {:ns 'skein.macros.demo
                   :spools ['skein.macros/macros]
-                  :after [:macros/patterns]
                   :required? true})
 (runtime/use! runtime :skein/spools-shuttle
               {:ns 'ct.spools.agent-run
@@ -120,7 +127,7 @@
 (runtime/module! runtime :attention
                  {:file "attention.clj"
                   :spools ['skein.macros/macros 'ct.spools/agent-run]
-                  :after [:skein/spools-chime :skein/spools-shuttle :macros/patterns]
+                  :after [:skein/spools-chime]
                   :required? true})
 ;; kanban is an external git-distributed spool (codethread/kanban.spool). The
 ;; board loads independently; the repo-specific tracker binding below joins it
@@ -148,8 +155,6 @@
                  {:file "config.clj"
                   :spools ['skein.spools/workflow 'ct.spools/agent-run
                            'codethread/devflow 'skein.macros/macros]
-                  :after [:skein/spools-workflow :skein/spools-devflow
-                          :skein/spools-shuttle :macros/patterns]
                   :required? true})
 ;; Analytics is a read-only rollup surface over agent-run usage stamps; it
 ;; only needs the defop macro (macros spool) and the shuttle vocabulary the
@@ -157,14 +162,14 @@
 (runtime/module! runtime :analytics
                  {:file "analytics.clj"
                   :spools ['skein.macros/macros]
-                  :after [:skein/spools-shuttle :macros/patterns]
                   :required? true})
-;; workflows.clj reuses config.clj's public CLI-tail helpers, so it loads after
-;; the :config module.
+;; workflows.clj requires config.clj for its public CLI-tail helpers. While the
+;; two files straddle the temporary use!/module! boundary, :config cannot be an
+;; :after key in the legacy use registry; Task 11 moves both into one graph.
 (runtime/use! runtime :workflows
               {:file "workflows.clj"
                :spools ['skein.spools/workflow 'ct.spools/delegation]
-               :after [:skein/spools-workflow :skein/spools-delegation :config]
+               :after [:skein/spools-workflow :skein/spools-delegation]
                :call 'workflows/install!
                :required? true})
 ;; The NVD scan job is its own module (not part of config.clj) so config_test's
@@ -182,6 +187,6 @@
 (runtime/use! runtime :skein/spools-treadle
               {:ns 'ct.spools.executors.subagent
                :spools ['ct.spools/agent-run]
-               :after [:skein/spools-shuttle :skein/spools-workflow :harnesses :config :workflows]
+               :after [:skein/spools-shuttle :skein/spools-workflow :harnesses :workflows]
                :call 'ct.spools.executors.subagent/install!
                :required? true})

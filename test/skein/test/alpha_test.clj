@@ -3,8 +3,73 @@
   (:require [clojure.java.io :as io]
             [clojure.test :refer [deftest is testing]]
             [skein.api.graph.alpha :as graph]
+            [skein.api.clock.alpha :as clock]
+            [skein.api.runtime.alpha :as runtime]
             [skein.api.weaver.alpha :as weaver]
-            [skein.test.alpha :as t]))
+            [skein.core.weaver.runtime :as weaver-runtime]
+            [skein.test.alpha :as t])
+  (:import [java.time Duration Instant]))
+
+(deftest manual-clock-advances-while-uninstalled
+  (let [start (Instant/parse "2026-01-01T00:00:00Z")
+        manual (t/manual-clock start)]
+    (is (= start (clock/now manual)))
+    (is (nil? (clock/sleep! manual (Duration/ofMillis 250))))
+    (is (= (.plusMillis start 250) (clock/now manual)))
+    (is (nil? (clock/sleep! manual Duration/ZERO)))
+    (is (= (.plusMillis start 250) (clock/now manual)))))
+
+(deftest installed-manual-clock-drives-runtime-time-and-pumps
+  (t/with-weaver-world [ctx {:storage :sqlite-memory}]
+    (let [rt (:runtime ctx)
+          start (Instant/parse "2026-01-01T00:00:00Z")
+          manual (t/manual-clock start)
+          pump-count (atom 0)]
+      (weaver-runtime/register-clock-pump! rt ::test-pump
+                                           (fn [_] (swap! pump-count inc)))
+      (is (nil? (t/set-clock! rt manual)))
+      (is (identical? manual (runtime/clock rt)))
+      (is (= start (runtime/now rt)))
+      (is (nil? (clock/sleep! manual Duration/ZERO)))
+      (is (= 1 @pump-count) "zero sleep still gives due consumers a pump")
+      (is (nil? (clock/sleep! manual (Duration/ofSeconds 2))))
+      (is (= (.plusSeconds start 2) (runtime/now rt)))
+      (is (= 2 @pump-count))
+      (is (= (.plusSeconds start 5) (t/advance! rt (Duration/ofSeconds 3))))
+      (is (= 3 @pump-count)))))
+
+(deftest manual-clock-installation-and-advance-fail-loudly
+  (t/with-weaver-world [outer {:storage :sqlite-memory}]
+    (t/with-weaver-world [inner {:storage :sqlite-memory}]
+      (let [outer-rt (:runtime outer)
+            inner-rt (:runtime inner)
+            manual (t/manual-clock Instant/EPOCH)]
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Clock"
+                              (t/set-clock! outer-rt (constantly Instant/EPOCH))))
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"manual Clock"
+                              (t/advance! outer-rt (Duration/ofSeconds 1))))
+        (t/set-clock! outer-rt manual)
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"only one runtime"
+                              (t/set-clock! inner-rt manual)))
+        (doseq [duration [nil Duration/ZERO (Duration/ofSeconds -1)]]
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"strictly positive"
+                                (t/advance! outer-rt duration))))))))
+
+(deftest replacing-a-manual-clock-detaches-the-old-clock
+  (t/with-weaver-world [ctx {:storage :sqlite-memory}]
+    (let [rt (:runtime ctx)
+          old-clock (t/manual-clock Instant/EPOCH)
+          new-clock (t/manual-clock (Instant/ofEpochSecond 10))
+          pump-count (atom 0)]
+      (weaver-runtime/register-clock-pump! rt ::test-pump
+                                           (fn [_] (swap! pump-count inc)))
+      (t/set-clock! rt old-clock)
+      (t/set-clock! rt new-clock)
+      (clock/sleep! old-clock (Duration/ofSeconds 1))
+      (is (zero? @pump-count))
+      (is (= (Instant/ofEpochSecond 10) (runtime/now rt)))
+      (clock/sleep! new-clock Duration/ZERO)
+      (is (= 1 @pump-count)))))
 
 (deftest check-op-return-selects-declared-return-leaves
   (t/with-weaver-world [ctx {:storage :sqlite-memory}]

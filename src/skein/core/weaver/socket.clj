@@ -4,8 +4,11 @@
   The socket exposes exactly two operations: `invoke`, which carries an op
   envelope (SPEC-004-D003.C1) and dispatches to the runtime op registry, and a
   minimal `status` health/identity check. Responses self-describe as a single
-  one-frame result or as a header/NDJSON-lines/terminator stream (C2). Weaver
-  shutdown is signal-driven (C3); there is no socket `stop` operation."
+  one-frame result or as a header/NDJSON-lines/terminator stream (C2); a
+  single-result frame carrying a default help transform's output adds a
+  `verbatim` flag so the client relays the string byte-for-byte
+  (DELTA-Dtf-002.CC1). Weaver shutdown is signal-driven (C3); there is no socket
+  `stop` operation."
   (:require [clojure.data.json :as json]
             [clojure.string :as str]
             [clojure.java.io :as io]
@@ -51,7 +54,15 @@
     :else (pr-str value)))
 
 (defn- success [request-id result]
-  {"protocol_version" protocol/version "request_id" request-id "ok" true "result" result "error" nil})
+  ;; A default help transform's output rides back as a verbatim marker
+  ;; (`help/verbatim-result?`, DELTA-Dtf-002.CC1): unwrap it to the raw string and
+  ;; flag the frame `verbatim` so the thin client relays it byte-for-byte instead
+  ;; of re-encoding it as a JSON-quoted string. Every other result is an ordinary
+  ;; single-result JSON payload.
+  (if (help/verbatim-result? result)
+    {"protocol_version" protocol/version "request_id" request-id "ok" true
+     "result" (help/verbatim-text result) "error" nil "verbatim" true}
+    {"protocol_version" protocol/version "request_id" request-id "ok" true "result" result "error" nil}))
 
 (defn- error-envelope [e]
   (let [message (ex-message e)
@@ -280,12 +291,17 @@
     (if-let [err (:error entry)]
       (write-frame! err)
       (let [entry (:ok entry)
-            envelope (invoke-envelope args)]
-        (if-let [alias (help/help-alias-result entry (get args "argv") envelope)]
-          (write-frame! (success request-id alias))
-          (if (:stream? entry)
-            (handle-stream-invoke! runtime request-id args entry envelope write-frame!)
-            (handle-single-invoke! runtime request-id args entry envelope write-frame!)))))))
+            envelope (invoke-envelope args)
+            ;; The `--help` rewrite is a read-class projection consulted before
+            ;; hook gating; a retired-sugar or malformed shape redirects loudly
+            ;; here (DELTA-Dtf-002.CC3) rather than reaching the handler.
+            alias (try {:result (help/help-alias-result runtime entry (get args "argv") envelope)}
+                       (catch Exception e {:error (error-frame request-id e)}))]
+        (cond
+          (:error alias) (write-frame! (:error alias))
+          (some? (:result alias)) (write-frame! (success request-id (:result alias)))
+          (:stream? entry) (handle-stream-invoke! runtime request-id args entry envelope write-frame!)
+          :else (handle-single-invoke! runtime request-id args entry envelope write-frame!))))))
 
 (defn handle-request!
   "Handle one newline-delimited JSON protocol request, writing one or more

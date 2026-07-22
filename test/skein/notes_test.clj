@@ -11,11 +11,10 @@
             [skein.test.alpha :as test-alpha])
   (:import (java.time Instant)))
 
-(defn- fixed-clock!
-  "Pin `rt`'s clock to `clock` so `note/at` is deterministic; reset `clock` to
-  advance test time before each `note!`."
-  [rt clock]
-  (test-alpha/set-clock! rt (fn [] @clock)))
+(defn- set-time!
+  "Install a manual clock at `instant` so `note/at` is deterministic."
+  [rt instant]
+  (test-alpha/set-clock! rt (test-alpha/manual-clock instant)))
 
 (defn- target! [rt]
   (:id (weaver/add! rt {:title "target" :state "active"})))
@@ -23,8 +22,7 @@
 (deftest note!-writes-content-attrs-and-edge-not-note-for
   (with-runtime
     (fn [rt _config-dir]
-      (let [clock (atom (Instant/parse "2026-01-01T00:00:00.500Z"))
-            _ (fixed-clock! rt clock)
+      (let [_ (set-time! rt (Instant/parse "2026-01-01T00:00:00.500Z"))
             target (target! rt)
             {note-id :id target-out :target} (notes/note! rt target "remember this" {:by "alice" :round 3})
             note (weaver/show rt note-id)]
@@ -52,18 +50,16 @@
 (deftest notes-orders-by-note-at-across-writers-and-filters-by-round
   (with-runtime
     (fn [rt _config-dir]
-      (let [clock (atom nil)
-            _ (fixed-clock! rt clock)
-            target (target! rt)]
+      (let [target (target! rt)]
         ;; Created out of note/at order and by different writers with divergent
         ;; decorating attrs: creation/id order (A, B, C) disagrees with note/at
         ;; order (B, C, A), so a green read proves the sort keys on note/at and
         ;; the walk ignores decorating attrs rather than filtering on note/for.
-        (reset! clock (Instant/parse "2026-01-01T00:00:00.300Z"))
+        (set-time! rt (Instant/parse "2026-01-01T00:00:00.300Z"))
         (notes/note! rt target "third by at" {:by "alice"})
-        (reset! clock (Instant/parse "2026-01-01T00:00:00.100Z"))
+        (set-time! rt (Instant/parse "2026-01-01T00:00:00.100Z"))
         (notes/note! rt target "first by at" {:by "bob" :round 2})
-        (reset! clock (Instant/parse "2026-01-01T00:00:00.200Z"))
+        (set-time! rt (Instant/parse "2026-01-01T00:00:00.200Z"))
         (notes/note! rt target "second by at" {:kanban/card "true"})
         (testing "every writer's note returns, ordered by note/at"
           (is (= ["first by at" "second by at" "third by at"]
@@ -82,11 +78,9 @@
   ;; (Instant/toString drops trailing zero fraction digits).
   (with-runtime
     (fn [rt _config-dir]
-      (let [clock (atom nil)
-            _ (fixed-clock! rt clock)
-            target (target! rt)]
+      (let [target (target! rt)]
         (testing "a non-integer round fails loudly on write and on read"
-          (reset! clock (Instant/parse "2026-01-01T00:00:00.100Z"))
+          (set-time! rt (Instant/parse "2026-01-01T00:00:00.100Z"))
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"integer"
                                 (notes/note! rt target "typed" {:round "2"})))
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"integer"
@@ -97,9 +91,9 @@
           ;; "...:01Z" vs "...:01.100Z": 'Z' (0x5A) > '.' (0x2E), so the
           ;; fraction-less earlier-written 01Z would sort AFTER 01.100Z only
           ;; chronologically-wrongly under string compare when it is earlier.
-          (reset! clock (Instant/parse "2026-01-01T00:00:01.100Z"))
+          (set-time! rt (Instant/parse "2026-01-01T00:00:01.100Z"))
           (notes/note! rt target "later with fraction" {})
-          (reset! clock (Instant/parse "2026-01-01T00:00:01Z"))
+          (set-time! rt (Instant/parse "2026-01-01T00:00:01Z"))
           (notes/note! rt target "earlier without fraction" {})
           (is (= ["earlier without fraction" "later with fraction"]
                  (mapv :note (notes/notes rt target {})))))))))

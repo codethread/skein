@@ -695,7 +695,8 @@
      :write-amp-payload-independence (<= (:eav-256kb-vs-free-patch-bytes w) 1.5)
      :filtered-scan (<= (get-in filtered [:eav :median-ms])
                         (get-in filtered [:document :median-ms]))
-     ;; Accepted 1.69x in EAS plan P7/BG2; ncso4 tracks bounded frontier queries.
+     ;; 1.7x rounds up the accepted 1.69x in EAS plan P7/BG2; ncso4 tracks bounded
+     ;; frontier queries.
      :ready (<= (get-in ready [:eav :median-ms])
                 (* 1.7 (get-in ready [:document :median-ms])))
      :list-assembly-500 (<= (get-in assembly [:eav :median-ms])

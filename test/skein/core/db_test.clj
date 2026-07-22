@@ -519,7 +519,7 @@
                [[:and [:= [:attr :owner] "agent"] [:= [:attr :kind] "impl"]] ["Agent"]]]]
         (is (= titles (sort (mapv :title (db/all-strands ds query)))) (pr-str query))))))
 
-(deftest row-backed-attr-query-plans-use-shape-appropriate-indexes
+(deftest row-backed-attr-query-plans-use-correlated-exists-probes
   (with-db
     (fn [ds]
       (db/add-strand! ds {:title "Agent" :attributes {:owner "agent"}})
@@ -529,9 +529,9 @@
             eq-plan (db/execute! ds (into [(str "EXPLAIN QUERY PLAN SELECT t.id FROM strands t WHERE " eq-sql)] eq-params))
             {exists-sql :sql exists-params :params} (query/compile-query [:exists [:attr :owner]] {})
             exists-plan (db/execute! ds (into [(str "EXPLAIN QUERY PLAN SELECT t.id FROM strands t WHERE " exists-sql)] exists-params))]
-        (is (= "t.id IN (SELECT a.strand_id FROM attributes AS a WHERE a.archived = 0 AND a.key = ? AND json_extract(a.value, ?) = ?)" eq-sql))
+        (is (= "EXISTS (SELECT 1 FROM attributes AS a WHERE a.strand_id = t.id AND a.archived = 0 AND a.key = ? AND json_extract(a.value, ?) = ?)" eq-sql))
         (is (= ["owner" "$" "agent"] eq-params))
-        (is (some #(str/includes? (:detail %) "idx_attributes_key_value_hot") eq-plan))
+        (is (some #(str/includes? (:detail %) "sqlite_autoindex_attributes_1") eq-plan))
         (is (= "EXISTS (SELECT 1 FROM attributes AS a WHERE a.strand_id = t.id AND a.archived = 0 AND a.key = ? AND json_extract(a.value, ?) IS NOT NULL)" exists-sql))
         (is (= ["owner" "$"] exists-params))
         (is (some #(str/includes? (:detail %) "sqlite_autoindex_attributes_1") exists-plan))))))
@@ -909,6 +909,264 @@
                                               :strands [{:ref :a :title "Changed before failure"}
                                                         {:ref :new :title "Created before failure"}]
                                               :edges [{:op :upsert :from :c :to :b :type "depends-on"}]})))))
+
+;; ---------------------------------------------------------------------------
+;; Exact batch edge removal (PROP-Xer-001): the closed `:remove` op, its exact
+;; identity and fail-loud-on-absence contract, submitted-order execution, and
+;; the uniform before/after transition outcome shared by every edge op.
+;; ---------------------------------------------------------------------------
+
+(def ^:private transition-keys #{:op :from :to :type :before :after})
+(def ^:private storage-edge-keys #{:from_strand_id :to_strand_id :edge_type :attributes})
+
+(defn- batch-error-data
+  "Return the ex-data of the ExceptionInfo apply-batch! throws for payload."
+  [ds payload]
+  (try
+    (db/apply-batch! ds payload)
+    (is false "expected apply-batch! to throw")
+    (catch clojure.lang.ExceptionInfo e
+      (ex-data e))))
+
+(deftest remove-is-monotone-and-returns-the-storage-shaped-removed-row
+  ;; PROP-Xer-001.PO1, PO6: one present removal deletes only that row, leaves
+  ;; every other strand and edge untouched, and reports the exact removed row
+  ;; in a raw storage-shaped :before with a nil :after.
+  (with-db
+    (fn [ds]
+      (let [a (:id (db/add-strand! ds {:title "A"}))
+            b (:id (db/add-strand! ds {:title "B"}))
+            c (:id (db/add-strand! ds {:title "C"}))]
+        (db/add-edge! ds {:from a :to b :type "depends-on" :attributes {:reason "stale"}})
+        (db/add-edge! ds {:from b :to c :type "depends-on" :attributes {}})
+        (let [result (db/apply-batch! ds {:refs {:a a :b b}
+                                          :edges [{:op :remove :from :a :to :b :type "depends-on"}]})
+              [transition] (:edges result)
+              before (:before transition)]
+          (is (= {:op :remove :from :a :to :b :type "depends-on" :after nil}
+                 (dissoc transition :before)))
+          (is (= transition-keys (set (keys transition))))
+          (is (not (contains? transition :edge)))
+          (is (= storage-edge-keys (set (keys before))))
+          (is (= {:from_strand_id a :to_strand_id b :edge_type "depends-on"}
+                 (dissoc before :attributes)))
+          (is (string? (:attributes before)) "core :before carries raw JSON text, not a decoded map")
+          (is (= {:reason "stale"} (db/<-json (:attributes before))))
+          (is (= [{:from_strand_id b :to_strand_id c :edge_type "depends-on" :attributes {}}]
+                 (edge-rows ds)))
+          (is (= #{a b c} (set (map :id (db/all-strands ds))))))))))
+
+(deftest remove-absence-fails-loud-with-exact-ex-data-and-no-mutation
+  ;; PROP-Xer-001.PO2, C2: an absent edge, a wrong direction, and a wrong
+  ;; relation type each roll back with ex-data carrying the submitted refs and
+  ;; the resolved durable ids as distinct values.
+  (with-db
+    (fn [ds]
+      (let [a (:id (db/add-strand! ds {:title "A"}))
+            b (:id (db/add-strand! ds {:title "B"}))]
+        (db/add-edge! ds {:from a :to b :type "depends-on" :attributes {}})
+        (let [before (graph-snapshot ds)]
+          (testing "no edge at all for that identity"
+            (is (= {:from :b :to :a :from-id b :to-id a :type "depends-on"}
+                   (batch-error-data ds {:refs {:a a :b b}
+                                         :edges [{:op :remove :from :b :to :a :type "depends-on"}]}))))
+          (testing "wrong relation type on an existing pair"
+            (is (= {:from :a :to :b :from-id a :to-id b :type "parent-of"}
+                   (batch-error-data ds {:refs {:a a :b b}
+                                         :edges [{:op :remove :from :a :to :b :type "parent-of"}]}))))
+          (is (= before (graph-snapshot ds)) "every absent-remove rolled back"))))))
+
+(deftest remove-rejects-malformed-shape-and-non-pre-bound-refs-without-mutation
+  ;; PROP-Xer-001.PO2 shape matrix and DELTA-Xer-001.D2: closed grammar, no
+  ;; attributes, no unknown keys, and both endpoints must be top-level refs.
+  (with-db
+    (fn [ds]
+      (let [a (:id (db/add-strand! ds {:title "A"}))
+            b (:id (db/add-strand! ds {:title "B"}))]
+        (db/add-edge! ds {:from a :to b :type "depends-on" :attributes {}})
+        (doseq [[message payload]
+                [[#"must be a map" {:refs {:a a :b b} :edges [nil]}]
+                 [#"must be a map" {:refs {:a a :b b} :edges [[:op :remove]]}]
+                 [#"Unsupported batch edge operation" {:refs {:a a :b b}
+                                                       :edges [{:from :a :to :b :type "depends-on"}]}]
+                 [#"Unknown keys" {:refs {:a a :b b}
+                                   :edges [{:op :remove :from :a :to :b :type "depends-on" :extra 1}]}]
+                 [#"Unknown keys" {:refs {:a a :b b}
+                                   :edges [{:op :remove :from :a :to :b :type "depends-on" :attributes {}}]}]
+                 [#"endpoint is required" {:refs {:a a :b b}
+                                           :edges [{:op :remove :to :b :type "depends-on"}]}]
+                 [#"valid relation name" {:refs {:a a :b b}
+                                          :edges [{:op :remove :from :a :to :b :type "Bad Relation"}]}]
+                 [#"pre-bound" {:refs {:a a}
+                                :strands [{:ref :new :title "New"}]
+                                :edges [{:op :upsert :from :a :to :new :type "depends-on"}
+                                        {:op :remove :from :a :to :new :type "depends-on"}]}]
+                 [#"burned ref" {:refs {:a a :b b} :burn [:b]
+                                 :edges [{:op :remove :from :a :to :b :type "depends-on"}]}]]]
+          (assert-batch-fails-without-mutation ds message payload))))))
+
+(deftest remove-tolerates-a-raw-invalid-self-edge
+  ;; PROP-Xer-001.PO2, TC4: removal runs no insertion-only check, so it retires
+  ;; a self-edge that a privileged raw write left behind and reduces the
+  ;; violation rather than rejecting it.
+  (with-db
+    (fn [ds]
+      (let [a (:id (db/add-strand! ds {:title "A"}))]
+        (db/execute! ds ["INSERT INTO strand_edges (from_strand_id, to_strand_id, edge_type, attributes)
+                          VALUES (?, ?, 'depends-on', json('{}'))" a a])
+        (let [result (db/apply-batch! ds {:refs {:a a}
+                                          :edges [{:op :remove :from :a :to :a :type "depends-on"}]})]
+          (is (= a (get-in result [:edges 0 :before :from_strand_id])))
+          (is (= [] (edge-rows ds))))))))
+
+(deftest serves-swap-commits-in-submitted-order-and-rolls-back-reversed
+  ;; PROP-Xer-001.T1/PO3: the single-serves rule forces remove-before-upsert; the
+  ;; reversed order trips the cardinality guard with the prestate unchanged.
+  (with-db
+    (fn [ds]
+      (let [run (:id (db/add-strand! ds {:title "Run"}))
+            old-target (:id (db/add-strand! ds {:title "Old target"}))
+            new-target (:id (db/add-strand! ds {:title "New target"}))]
+        (db/add-edge! ds {:from run :to old-target :type "serves" :attributes {}})
+        (assert-batch-fails-without-mutation
+         ds (re-pattern old-target)
+         {:refs {:run run :old-target old-target :new-target new-target}
+          :edges [{:op :upsert :from :run :to :new-target :type "serves" :attributes {}}
+                  {:op :remove :from :run :to :old-target :type "serves"}]})
+        (db/apply-batch! ds {:refs {:run run :old-target old-target :new-target new-target}
+                             :edges [{:op :remove :from :run :to :old-target :type "serves"}
+                                     {:op :upsert :from :run :to :new-target :type "serves" :attributes {}}]})
+        (is (= [{:from_strand_id run :to_strand_id new-target :edge_type "serves" :attributes {}}]
+               (edge-rows ds)))))))
+
+(deftest dag-reversal-commits-in-submitted-order-and-rolls-back-reversed
+  ;; PROP-Xer-001.T2/PO3: reversing a depends-on edge only commits when the
+  ;; remove precedes the upsert; the reversed order rejects the transient cycle.
+  (with-db
+    (fn [ds]
+      (let [a (:id (db/add-strand! ds {:title "A"}))
+            b (:id (db/add-strand! ds {:title "B"}))]
+        (db/add-edge! ds {:from a :to b :type "depends-on" :attributes {}})
+        (assert-batch-fails-without-mutation
+         ds #"create a cycle"
+         {:refs {:a a :b b}
+          :edges [{:op :upsert :from :b :to :a :type "depends-on" :attributes {}}
+                  {:op :remove :from :a :to :b :type "depends-on"}]})
+        (db/apply-batch! ds {:refs {:a a :b b}
+                             :edges [{:op :remove :from :a :to :b :type "depends-on"}
+                                     {:op :upsert :from :b :to :a :type "depends-on" :attributes {}}]})
+        (is (= [{:from_strand_id b :to_strand_id a :edge_type "depends-on" :attributes {}}]
+               (edge-rows ds)))))))
+
+(deftest repeated-identity-in-one-batch-is-a-deterministic-ordered-program
+  ;; PROP-Xer-001.PO4: remove/remove of one identity fails at the second op by
+  ;; exact presence; remove-then-upsert and upsert-then-remove are deterministic.
+  (with-db
+    (fn [ds]
+      (let [a (:id (db/add-strand! ds {:title "A"}))
+            b (:id (db/add-strand! ds {:title "B"}))]
+        (db/add-edge! ds {:from a :to b :type "depends-on" :attributes {:v 1}})
+        (testing "the second remove of one identity fails on absence and rolls back"
+          (is (= {:from :a :to :b :from-id a :to-id b :type "depends-on"}
+                 (batch-error-data ds {:refs {:a a :b b}
+                                       :edges [{:op :remove :from :a :to :b :type "depends-on"}
+                                               {:op :remove :from :a :to :b :type "depends-on"}]})))
+          (is (= [{:from_strand_id a :to_strand_id b :edge_type "depends-on" :attributes {:v 1}}]
+                 (edge-rows ds))))
+        (testing "remove then upsert of one identity ends present with the new attributes"
+          (db/apply-batch! ds {:refs {:a a :b b}
+                               :edges [{:op :remove :from :a :to :b :type "depends-on"}
+                                       {:op :upsert :from :a :to :b :type "depends-on" :attributes {:v 2}}]})
+          (is (= [{:from_strand_id a :to_strand_id b :edge_type "depends-on" :attributes {:v 2}}]
+                 (edge-rows ds))))
+        (testing "upsert then remove of one identity ends absent"
+          (db/apply-batch! ds {:refs {:a a :b b}
+                               :edges [{:op :upsert :from :a :to :b :type "depends-on" :attributes {:v 3}}
+                                       {:op :remove :from :a :to :b :type "depends-on"}]})
+          (is (= [] (edge-rows ds))))))))
+
+(deftest multi-op-batches-are-all-or-none
+  ;; PROP-Xer-001.PO5: three obsolete depends-on removals commit together (the
+  ;; 4cdsu case); a later absent remove restores the whole graph.
+  (with-db
+    (fn [ds]
+      (let [dependent (:id (db/add-strand! ds {:title "Dependent"}))
+            x (:id (db/add-strand! ds {:title "X"}))
+            y (:id (db/add-strand! ds {:title "Y"}))
+            z (:id (db/add-strand! ds {:title "Z"}))]
+        (doseq [t [x y z]]
+          (db/add-edge! ds {:from dependent :to t :type "depends-on" :attributes {}}))
+        (testing "an absent remove after two valid removes rolls the batch back"
+          (let [before (graph-snapshot ds)]
+            (is (= {:from :dependent :to :z :from-id dependent :to-id z :type "parent-of"}
+                   (batch-error-data ds {:refs {:dependent dependent :x x :y y :z z}
+                                         :edges [{:op :remove :from :dependent :to :x :type "depends-on"}
+                                                 {:op :remove :from :dependent :to :y :type "depends-on"}
+                                                 {:op :remove :from :dependent :to :z :type "parent-of"}]})))
+            (is (= before (graph-snapshot ds)))))
+        (testing "all three obsolete edges retire atomically"
+          (db/apply-batch! ds {:refs {:dependent dependent :x x :y y :z z}
+                               :edges [{:op :remove :from :dependent :to :x :type "depends-on"}
+                                       {:op :remove :from :dependent :to :y :type "depends-on"}
+                                       {:op :remove :from :dependent :to :z :type "depends-on"}]})
+          (is (= [] (edge-rows ds))))))))
+
+(deftest edge-transitions-are-uniform-across-new-replaced-and-removed
+  ;; PROP-Xer-001.PO6: every outcome shares the transition key set; a new upsert
+  ;; has nil :before, a replacement upsert carries its actual pre-image, and a
+  ;; remove carries the removed row. Outcomes stay aligned to submitted order.
+  (with-db
+    (fn [ds]
+      (let [a (:id (db/add-strand! ds {:title "A"}))
+            b (:id (db/add-strand! ds {:title "B"}))
+            c (:id (db/add-strand! ds {:title "C"}))]
+        (db/add-edge! ds {:from a :to b :type "references" :attributes {:v "old"}})
+        (db/add-edge! ds {:from b :to c :type "references" :attributes {}})
+        (let [result (db/apply-batch! ds {:refs {:a a :b b :c c}
+                                          :edges [{:op :upsert :from :a :to :c :type "references" :attributes {:v "new-edge"}}
+                                                  {:op :upsert :from :a :to :b :type "references" :attributes {:v "replaced"}}
+                                                  {:op :remove :from :b :to :c :type "references"}]})
+              [new-upsert replacement removal] (:edges result)]
+          (is (every? #(= transition-keys (set (keys %))) (:edges result)))
+          (is (every? #(not (contains? % :edge)) (:edges result)))
+          (testing "a new upsert has a nil pre-image"
+            (is (= {:op :upsert :from :a :to :c :type "references" :before nil}
+                   (dissoc new-upsert :after)))
+            (is (= {:from_strand_id a :to_strand_id c :edge_type "references"}
+                   (dissoc (:after new-upsert) :attributes)))
+            (is (= {:v "new-edge"} (db/<-json (:attributes (:after new-upsert))))))
+          (testing "a replacement upsert reports its actual pre-image, not the submitted op"
+            (is (= {:v "old"} (db/<-json (:attributes (:before replacement)))))
+            (is (= {:v "replaced"} (db/<-json (:attributes (:after replacement))))))
+          (testing "a remove reports the removed row and a nil after"
+            (is (nil? (:after removal)))
+            (is (= {:from_strand_id b :to_strand_id c :edge_type "references"}
+                   (dissoc (:before removal) :attributes)))))))))
+
+(deftest removing-depends-on-or-parent-of-commits-without-core-rejection
+  ;; PROP-Xer-001.PO7: a depends-on removal that unblocks work and a parent-of
+  ;; removal that creates a root are legal domain policy, not engine corruption.
+  (with-db
+    (fn [ds]
+      (testing "removing depends-on makes previously blocked work ready"
+        (let [blocker (:id (db/add-strand! ds {:title "Blocker"}))
+              blocked (:id (db/add-strand! ds {:title "Blocked"}))]
+          (db/add-edge! ds {:from blocked :to blocker :type "depends-on" :attributes {}})
+          (is (not (contains? (set (map :id (db/ready-strands ds))) blocked)))
+          (db/apply-batch! ds {:refs {:blocked blocked :blocker blocker}
+                               :edges [{:op :remove :from :blocked :to :blocker :type "depends-on"}]})
+          (is (contains? (set (map :id (db/ready-strands ds))) blocked))))
+      (testing "removing parent-of leaves the former child a parent-of root"
+        (let [parent (:id (db/add-strand! ds {:title "Parent"}))
+              child (:id (db/add-strand! ds {:title "Child"}))]
+          (db/add-edge! ds {:from parent :to child :type "parent-of" :attributes {}})
+          (is (empty? (db/all-strands ds [:and [:= :id child]
+                                          [:not [:edge/in "parent-of" [:exists :id]]]])))
+          (db/apply-batch! ds {:refs {:parent parent :child child}
+                               :edges [{:op :remove :from :parent :to :child :type "parent-of"}]})
+          (is (= [child]
+                 (mapv :id (db/all-strands ds [:and [:= :id child]
+                                               [:not [:edge/in "parent-of" [:exists :id]]]])))))))))
 
 (deftest memory-storage-runs-schema-crud-and-transactions-on-held-connection
   (let [{:keys [connectable close-fn] :as storage} (db/memory-storage)]

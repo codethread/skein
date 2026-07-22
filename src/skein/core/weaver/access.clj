@@ -59,6 +59,16 @@
   [runtime]
   (:op-store runtime))
 
+(defn glossary-registry
+  "Return the runtime's reload-cleared glossary-outcome registry atom."
+  [runtime]
+  (:glossary-registry runtime))
+
+(defn help-transform-slot
+  "Return the runtime's reload-cleared default-help-transform slot atom."
+  [runtime]
+  (:help-transform-slot runtime))
+
 (defn hook-registry
   "Return the runtime's lifecycle-hook effective-projection atom."
   [runtime]

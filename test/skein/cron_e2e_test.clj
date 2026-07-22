@@ -87,7 +87,7 @@
       ;; pending before the weaver stops.
       (let [rt1 (weaver-runtime/start! db-file {:world world :publish? false})]
         (try
-          (test-alpha/set-clock! rt1 (constantly (Instant/ofEpochSecond 0)))
+          (test-alpha/set-clock! rt1 (test-alpha/manual-clock (Instant/ofEpochSecond 0)))
           (cron/register! rt1 job)
           (is (some? (cron-wake rt1 "cron/survivor"))
               "the cron wake is durably pending in the first weaver")
@@ -105,7 +105,7 @@
       ;; the pending wake (.A4) rather than resetting its countdown.
       (let [rt2 (weaver-runtime/start! db-file {:world world :publish? false})]
         (try
-          (test-alpha/set-clock! rt2 (constantly (.plusSeconds seed-at 1)))
+          (test-alpha/set-clock! rt2 (test-alpha/manual-clock (.plusSeconds seed-at 1)))
           (cron/register! rt2 job)
           (is (= seed-ms (:wake_at (cron-wake rt2 "cron/survivor")))
               "the equal config tuple adopts the overdue wake instead of resetting it")
@@ -129,7 +129,7 @@
       (reset! run-started (promise))
       (reset! run-release (promise))
       (reset! marker-fired (promise))
-      (test-alpha/set-clock! rt (constantly (Instant/ofEpochSecond 0)))
+      (test-alpha/set-clock! rt (test-alpha/manual-clock (Instant/ofEpochSecond 0)))
       (events/register-handler! rt :marker #{:test/marker}
                                 'skein.cron-e2e-test/marker-handler {})
       (cron/register! rt {:id :blocker :interval-ms 1000 :jitter-ms 0

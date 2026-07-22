@@ -43,7 +43,7 @@
 (deftest schedule-persists-and-reads-back-decoded-shape
   (wt/with-runtime
     (fn [rt _db-file]
-      (test-alpha/set-clock! rt (constantly (Instant/ofEpochSecond 0)))
+      (test-alpha/set-clock! rt (test-alpha/manual-clock (Instant/ofEpochSecond 0)))
       (let [far-future (Instant/ofEpochSecond 100000)
             created (scheduler/schedule! rt {:key "far-future"
                                              :wake-at far-future
@@ -61,7 +61,7 @@
 (deftest schedule-replaces-existing-key-and-resets-attempts
   (wt/with-runtime
     (fn [rt _db-file]
-      (test-alpha/set-clock! rt (constantly (Instant/ofEpochSecond 0)))
+      (test-alpha/set-clock! rt (test-alpha/manual-clock (Instant/ofEpochSecond 0)))
       (let [far-future (Instant/ofEpochSecond 100000)]
         (scheduler/schedule! rt {:key "k" :wake-at far-future :handler `deliver-fire-handler})
         (db/mark-wake-attempt! (:datasource rt) "k" (.toEpochMilli far-future))
