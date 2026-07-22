@@ -5,67 +5,29 @@
 **Feature:** [../proposal.md](../proposal.md) (`PROP-Sss-001`)
 **Status:** Merged
 **Last Updated:** 2026-07-22
-**Configuration identification:** Document IDs must be ordered as document type, short name, sequential id, then optional version:
-`DELTA-Dwr-001` for v1 and `DELTA-Dwr-001@2` for v2. Omit `@1`; append `@2`, `@3`, etc. only when a new version supersedes an externally
-referenced document. Prefix every nested point ID with the full document ID so references are globally grepable and do not clash across documents.
+**Configuration identification:** Document IDs must be ordered as document type, short name, sequential id, then optional version: `DELTA-Dwr-001` for v1 and `DELTA-Dwr-001@2` for v2. Omit `@1`; append `@2`, `@3`, etc. only when a new version supersedes an externally referenced document. Prefix every nested point ID with the full document ID so references are globally grepable and do not clash across documents.
 
 ## DELTA-Sss-002.P1 Summary
 
-Storage initialization becomes generation-aware. `SPEC-004.C91b` grows from "validate structure, throw on mismatch" to a stamped
-compatibility contract: read the schema generation, refuse newer generations, adopt unstamped current-shape databases as generation 1
-after a canonical structural comparison, and point older generations at the maintained migration path. `SPEC-004.C16b`'s "no in-tree
-migration path" stance is superseded by the migration-ladder contract for the stamped era.
+Storage initialization becomes generation-aware. `SPEC-004.C91b` grows from "validate structure, throw on mismatch" to a stamped compatibility contract: read the schema generation, refuse newer generations, adopt unstamped current-shape databases as generation 1 after a canonical structural comparison, and point older generations at the maintained migration path. `SPEC-004.C16b`'s "no in-tree migration path" stance is superseded by the migration-ladder contract for the stamped era.
 
 ## DELTA-Sss-002.P2 Contract changes
 
-- **DELTA-Sss-002.CC1 (generation check, amends `SPEC-004.C91b`):** Storage initialization reads `PRAGMA user_version` before any DDL
-  and classifies the database: **newer** than the binary's generation → refused without modification; **older** stamped generation
-  (`>= 1`) → refused with a pointer to the maintained forward-migration path; **at the binary's generation** → pre-DDL screening (CC2a),
-  then the `IF NOT EXISTS` DDL (which fills in any additive auxiliary objects), then full canonical validation; **unstamped and empty**
-  (no Skein-owned objects) → bootstrapped with the full schema, validated, and stamped with the binary's generation; **unstamped and
-  non-empty** → the adoption path (CC2).
-- **DELTA-Sss-002.CC2 (adoption):** A non-empty database with no stamp (`user_version` 0) that passes pre-DDL screening (CC2a) against
-  the generation-1 reference is adopted by stamping `user_version = 1` in place at initialization; no row data is touched and adoption
-  is idempotent. The canonical validator compares Skein-owned tables and indexes against the reference schema: exact columns, order,
-  declared types, nullability, defaults, primary keys, foreign keys, CHECK constraints, index columns and order, uniqueness, and
-  partial-index predicates, rejecting extra columns on managed tables. The stamp is written only after the post-DDL full validation
-  passes.
-- **DELTA-Sss-002.CC2a (baseline and pre-DDL screening):** A generation's **baseline** is its frozen reference schema; objects
-  introduced additively within a generation (`DELTA-Sss-001.CC2` ii) sit outside the baseline until the next bump folds them in.
-  Pre-DDL screening — applied to unstamped-adoption and stamped-current databases alike — requires every baseline object of the target
-  generation to be present and match the reference exactly; only additive-since-baseline objects may be absent, and any present
-  Skein-owned object must match exactly. Any screening failure refuses initialization without writing anything, so a missing or
-  malformed baseline object can never be silently recreated by the `IF NOT EXISTS` DDL and then pass full validation.
-- **DELTA-Sss-002.CC3 (migration ladder):** Every generation bump adds a maintained, versioned migration step, freezes the outgoing
-  generation's reference schema into the dedicated migration space, and folds objects added additively since that baseline into the new
-  generation's baseline — while the current generation is 1, the generation-1 reference is the live schema DDL itself, so the first
-  bump must snapshot it before the live DDL evolves. Steps remain available in later releases
-  and compose in order, so a user can migrate from any released generation to the current one. Each step applies its DDL, data changes,
-  and `user_version` update in one SQLite transaction so failure rolls the whole step back; a step that cannot be transactional must
-  define durable resume or rollback semantics with failure-injection tests proving recovery from every persisted checkpoint before it
-  can ship. The migration space is also the readable history of physical schema changes.
-- **DELTA-Sss-002.CC4 (error contract):** Incompatible-generation failures report both the found and the expected generation. The
-  newer-generation refusal names the binary as too old for the database; the older-generation refusal names the maintained migration
-  path, replacing today's bare "use a new database or migrate it explicitly".
-- **DELTA-Sss-002.CC5 (scope of guarantee):** The two-sided skew guarantee holds between generation-aware binaries and stamped
-  databases. Binaries released before schema stamps cannot retroactively inspect `user_version` and stay outside it; `SPEC-004.C16b`'s
-  pre-EAV worlds remain historical (reinitialize, or check out merge `c77332a` whose tree carries the verified migrate op) and are not
-  folded into the ladder.
+- **DELTA-Sss-002.CC1 (generation check, amends `SPEC-004.C91b`):** Storage initialization reads `PRAGMA user_version` before any DDL and classifies the database: **newer** than the binary's generation → refused without modification; **older** stamped generation (`>= 1`) → refused with a pointer to the maintained forward-migration path; **at the binary's generation** → pre-DDL screening (CC2a), then the `IF NOT EXISTS` DDL (which fills in any additive auxiliary objects), then full canonical validation; **unstamped and empty** (no Skein-owned objects) → bootstrapped with the full schema, validated, and stamped with the binary's generation; **unstamped and non-empty** → the adoption path (CC2).
+- **DELTA-Sss-002.CC2 (adoption):** A non-empty database with no stamp (`user_version` 0) that passes pre-DDL screening (CC2a) against the generation-1 reference is adopted by stamping `user_version = 1` in place at initialization; no row data is touched and adoption is idempotent. The canonical validator compares Skein-owned tables and indexes against the reference schema: exact columns, order, declared types, nullability, defaults, primary keys, foreign keys, CHECK constraints, index columns and order, uniqueness, and partial-index predicates, rejecting extra columns on managed tables. The stamp is written only after the post-DDL full validation passes.
+- **DELTA-Sss-002.CC2a (baseline and pre-DDL screening):** A generation's **baseline** is its frozen reference schema; objects introduced additively within a generation (`DELTA-Sss-001.CC2` ii) sit outside the baseline until the next bump folds them in. Pre-DDL screening — applied to unstamped-adoption and stamped-current databases alike — requires every baseline object of the target generation to be present and match the reference exactly; only additive-since-baseline objects may be absent, and any present Skein-owned object must match exactly. Any screening failure refuses initialization without writing anything, so a missing or malformed baseline object can never be silently recreated by the `IF NOT EXISTS` DDL and then pass full validation.
+- **DELTA-Sss-002.CC3 (migration ladder):** Every generation bump adds a maintained, versioned migration step, freezes the outgoing generation's reference schema into the dedicated migration space, and folds objects added additively since that baseline into the new generation's baseline — while the current generation is 1, the generation-1 reference is the live schema DDL itself, so the first bump must snapshot it before the live DDL evolves. Steps remain available in later releases and compose in order, so a user can migrate from any released generation to the current one. Each step applies its DDL, data changes, and `user_version` update in one SQLite transaction so failure rolls the whole step back; a step that cannot be transactional must define durable resume or rollback semantics with failure-injection tests proving recovery from every persisted checkpoint before it can ship. The migration space is also the readable history of physical schema changes.
+- **DELTA-Sss-002.CC4 (error contract):** Incompatible-generation failures report both the found and the expected generation. The newer-generation refusal names the binary as too old for the database; the older-generation refusal names the maintained migration path, replacing today's bare "use a new database or migrate it explicitly".
+- **DELTA-Sss-002.CC5 (scope of guarantee):** The two-sided skew guarantee holds between generation-aware binaries and stamped databases. Binaries released before schema stamps cannot retroactively inspect `user_version` and stay outside it; `SPEC-004.C16b`'s pre-EAV worlds remain historical (reinitialize, or check out merge `c77332a` whose tree carries the verified migrate op) and are not folded into the ladder.
 
 ## DELTA-Sss-002.P3 Design decisions
 
 ### DELTA-Sss-002.D1 Adoption stamps at initialization, not via a trusted op
 
-- **Decision:** The generation-1 stamp of an unstamped current-shape database is written during ordinary storage initialization, gated
-  on the full canonical comparison of CC2.
-- **Rationale:** The write is metadata-only, idempotent, and provably safe when the comparison passes; requiring a manual op would strand
-  every existing world on first upgrade for no added safety.
+- **Decision:** The generation-1 stamp of an unstamped current-shape database is written during ordinary storage initialization, gated on the full canonical comparison of CC2.
+- **Rationale:** The write is metadata-only, idempotent, and provably safe when the comparison passes; requiring a manual op would strand every existing world on first upgrade for no added safety.
 - **Rejected:** Explicit trusted adoption op — ceremony without protection, since the validator is the protection either way.
 
 ## DELTA-Sss-002.P4 Open questions
 
-- **DELTA-Sss-002.Q1:** Migration-code home and invocation surface (automatic vs explicit) are deliberately deferred until the first
-  real migration makes the runtime constraints concrete (`PROP-Sss-001.Q3`/`NG1`). The leading candidate is mill-side Go: it can migrate
-  a stopped weaver's database with no running JVM and supports a clean `mill weaver migrate` surface that can migrate everything in one
-  pass, explicitly or automatically; JVM-side code remains an option. Not blocking: generation 1 ships no executable ladder machinery —
-  only the generation constant, the gate, and the stamp.
+- **DELTA-Sss-002.Q1:** Migration-code home and invocation surface (automatic vs explicit) are deliberately deferred until the first real migration makes the runtime constraints concrete (`PROP-Sss-001.Q3`/`NG1`). The leading candidate is mill-side Go: it can migrate a stopped weaver's database with no running JVM and supports a clean `mill weaver migrate` surface that can migrate everything in one pass, explicitly or automatically; JVM-side code remains an option. Not blocking: generation 1 ships no executable ladder machinery — only the generation constant, the gate, and the stamp.
