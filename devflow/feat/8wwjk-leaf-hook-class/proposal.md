@@ -12,13 +12,22 @@ are classified wholesale: `kanban` registers `:mutating` while `board`/`about`/`
 are pure reads (mutation-gating read-only and offline projections); `agent` registers
 an unbounded deadline for one awaiting verb; `spool` exiles its reads to a separate
 `spool-status` op solely to escape the op-wide class. The registration-time
-`:mutating` default silently misclassifies read ops (`vocab`, `query`, `pattern`) —
-a sensible-default violation of TEN-003. Independently, SPEC-003.C64 caps
-subcommands at one level; the cap was a v1 scope cut with no technical constraint
-behind it (2026-07-22 audit: a single validator guard; parser routing, returns
-routing, and the help node schema all generalize mechanically; the Go CLI forwards
-argv untouched), and it forces nested verb grammars into positional-action hacks
-(`kanban task <action> …`).
+`:mutating` default is a sensible-default violation of TEN-003: today's read ops
+are read-class only because each registrant remembered to declare it (batteries
+declares its reads explicitly), and the default is re-created independently
+outside `register-op!` by the module-publication path (whose entry spec validates
+only `map?`) and the workspace `defop` macro — so the misclassification hazard is
+structural, not hypothetical. Independently, SPEC-003.C64 caps subcommands at one
+level; the cap was a v1 scope cut with no technical constraint behind it
+(2026-07-22 audit, sharpened by proposal review e8zr7: no blocker exists, but the
+one-level assumption is encoded at several seams — the validator guard, the parse
+pipeline's flat-only switch after the first token, terminal first-level returns
+alignment, the one-verb help-path cap, and the dispatch label's positional
+special-case — each of which generalizes mechanically; scope enumerates them).
+The cap forces nested verb grammars into positional-action hacks
+(`kanban task <action> …`). The Go CLI needs no changes: post-op argv is opaque
+to it; its one pre-op behavior (the help alias) is verified against deeper paths
+in the sweep.
 
 ## PROP-Lhc-001.P2 Goals
 
@@ -54,23 +63,41 @@ argv untouched), and it forces nested verb grammars into positional-action hacks
 - **PROP-Lhc-001.S1:** Arg-spec nodes gain `:hook-class`/`:deadline-class` as
   leaf-only, mandatory metadata; interior nodes and subcommand-op registration opts
   reject them loudly. Flat/raw-envelope registration requires both explicitly; the
-  `:mutating`/implicit defaults are deleted.
-- **PROP-Lhc-001.S2:** The one-level `:subcommands` cap is lifted: validation,
-  parse routing (first-token recursion, reserved names per level), returns
-  `:subcommands` mirror-routing, help verb-path slicing, and error contexts all
-  become depth-uniform; the reserved `:subcommand` result key carries the full path.
+  `:mutating`/implicit defaults are deleted. An empty `:subcommands {}` map is
+  invalid (an op must have at least one invocable leaf). A streaming leaf must
+  declare `:deadline-class :unbounded` — streams stay explicitly unbounded; no new
+  streaming-timeout machinery is introduced.
+- **PROP-Lhc-001.S2:** The one-level `:subcommands` cap is lifted everywhere the
+  assumption is encoded: the structural validator's nesting guard, the parse
+  pipeline (first-token recursion with reserved names per level), returns
+  `:subcommands` mirror-routing including the return-shape validator's nested-case
+  rejection and the terminal first-level alignment check, annotation/glossary
+  collection (today one level deep — deeper `failure-modes` must not evade
+  registration validation), the one-verb help-path cap, the test helper's
+  scalar-subcommand return selector, and the dispatch label's positional
+  special-case. The reserved `:subcommand` result key carries the full path;
+  error contexts carry the node path.
 - **PROP-Lhc-001.S3:** The socket payload-hook gate and deadline resolution resolve
-  from the invoked leaf; unresolvable verbs fail loudly pre-hook.
-- **PROP-Lhc-001.S4:** Help renders classes per leaf node; op-wide `hook-class`/
-  `deadline-class` leave the envelope's operation facts (help `schema-version`
-  bumps).
-- **PROP-Lhc-001.S5:** Root specs SPEC-003.C64/C65/C66/C68, SPEC-004.C63a/C80, and
-  SPEC-002.C44 are updated via feature-local deltas; the owned op surface and all
-  sibling spools adopt in the same queue, folding split read ops (`spool-status`)
-  back in as verbs where the surface reads better.
+  from the invoked leaf; unresolvable verbs fail loudly pre-hook. Enforcement
+  covers **every registration route**, not just `register-op!`: the
+  module-publication entry seam (today validated only as `map?`) gains the same
+  leaf-class structural validation, and hand-assembled entry constructors (guild,
+  text-search, workspace `workflows.clj`, the `defop` macro, test fixtures) are
+  swept onto it.
+- **PROP-Lhc-001.S4:** Help renders classes per node with defined semantics for
+  every node kind — leaf, interior, raw-envelope root, verb-sliced node, and
+  catalog summary — and op-wide `hook-class`/`deadline-class` leave the envelope's
+  operation facts (help `schema-version` bumps). Downstream renderers of op-wide
+  classes (the batteries reference renderer) update with it.
+- **PROP-Lhc-001.S5:** Root specs SPEC-003.C64/C65/C66/C68 plus the recursion-
+  and registration-adjacent clauses SPEC-003.C28/C60b/C67, SPEC-004.C63a/C63b/
+  C63d/C80/C108, and SPEC-002.C44 are updated via feature-local deltas; the owned
+  op surface and all sibling spools adopt in the same queue, folding split read
+  ops (`spool-status`) back in as verbs where the surface reads better.
 
 ## PROP-Lhc-001.P5 Open questions
 
 - **PROP-Lhc-001.Q1:** Exact shape of the `:subcommand` path value (vector of
   tokens vs joined string) and of path-carrying error contexts — owned by the
-  design thin-slice (first implementation task), not by this proposal.
+  design thin-slice (the first implementation task); its outcome is recorded in
+  the feature spec deltas before the mechanical fan-out begins.

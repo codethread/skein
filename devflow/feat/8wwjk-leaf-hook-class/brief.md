@@ -9,12 +9,14 @@ which supersedes mnl04 and the card's original convention+lint framing entirely)
 misclassified wholesale: `kanban` registers `:mutating` while `board`/`about`/`card`
 are pure reads; `agent` registers an unbounded deadline for one awaiting verb; the
 `spool` op exiles its reads to a separate `spool-status` op just to escape mutation
-gating. The `:mutating` default on registration silently misclassifies read ops
-(`vocab`, `query`, `pattern`). Separately, SPEC-003.C64 caps subcommands at one
-level — a v1 scope cut with no technical constraint behind it (audit 2026-07-22:
-the cap is a single guard in `skein.api.cli.internal.validation`; parser, returns
-routing, and the help node schema all recurse mechanically; the Go CLI is a pure
-argv forwarder).
+gating. The `:mutating` default on registration violates TEN-003: reads are only
+read-class where a registrant remembered to declare it, and the default is
+re-created outside `register-op!` by the module-publication path and the `defop`
+macro. Separately, SPEC-003.C64 caps subcommands at one level — a v1 scope cut
+with no technical constraint behind it (audit 2026-07-22, sharpened by review
+e8zr7: no blocker, but the one-level assumption is encoded at several seams the
+proposal's scope enumerates; the Go CLI needs no changes — post-op argv is opaque
+to it, with only its pre-op help alias to verify against deeper paths).
 
 ## Decision
 
