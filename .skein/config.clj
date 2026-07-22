@@ -200,10 +200,11 @@
   the collapsible board without a round trip per feature. Read-only; mirrors the
   `kanban-cards` query's active-by-default scope, widened with `--all true`."
   {:returns stamped-op-return :arg-spec {:op "kanban-tree"
+                                         :hook-class :read
+                                         :deadline-class :standard
                                          :doc "Project the epic -> feature -> task kanban hierarchy with derived task status."
                                          :flags {:all {:type :boolean-token
-                                                       :doc "Include closed cards and tasks: true or false (default false)."}}}
-   :hook-class :read}
+                                                       :doc "Include closed cards and tasks: true or false (default false)."}}}}
   [ctx]
   (let [{:keys [all]} (:op/args ctx)]
     (kanban-tree-projection (current/runtime) (boolean all))))
@@ -274,6 +275,8 @@
   The feature name is the workflow run-id for all other devflow ops;
   worktree-check is `required` (default) or `already-in-worktree-ok`."
   {:returns stamped-op-return :arg-spec {:op "devflow-start"
+                                         :hook-class :mutating
+                                         :deadline-class :standard
                                          :doc "Start the devflow lifecycle for a feature."
                                          :positionals [feature-positional
                                                        {:name :worktree-check
@@ -292,6 +295,8 @@
 (defop devflow-ready
   "Return the ready devflow step views for a feature."
   {:returns stamped-op-return :arg-spec {:op "devflow-ready"
+                                         :hook-class :read
+                                         :deadline-class :standard
                                          :doc "Show the ready devflow step views for a feature."
                                          :positionals [feature-positional]}}
   [ctx]
@@ -303,6 +308,8 @@
 (defop devflow-choices
   "Return choice explanations for the feature's current checkpoint."
   {:returns stamped-op-return :arg-spec {:op "devflow-choices"
+                                         :hook-class :read
+                                         :deadline-class :standard
                                          :doc "Explain the current devflow checkpoint choices for a feature."
                                          :positionals [feature-positional
                                                        {:name :step-selector
@@ -325,6 +332,8 @@
   `json-input` must be a JSON object; routed choices merge it into the next
   stage's params (an abort requires `{\"reason\":\"...\"}`)."
   {:returns stamped-op-return :arg-spec {:op "devflow-choose"
+                                         :hook-class :mutating
+                                         :deadline-class :standard
                                          :doc "Record a devflow checkpoint choice for a feature, optionally with JSON input."
                                          :positionals [feature-positional
                                                        {:name :choice
@@ -351,6 +360,8 @@
 (defop devflow-complete
   "Close the feature's current non-checkpoint devflow step."
   {:returns stamped-op-return :arg-spec {:op "devflow-complete"
+                                         :hook-class :mutating
+                                         :deadline-class :standard
                                          :doc "Close the current non-checkpoint devflow step for a feature."
                                          :positionals [feature-positional
                                                        {:name :tail
@@ -420,6 +431,8 @@
 (defop devflow-advance
   "Advance the current devflow step or checkpoint for a feature."
   {:returns stamped-op-return :arg-spec {:op "devflow-advance"
+                                         :hook-class :mutating
+                                         :deadline-class :standard
                                          :doc "Advance the current devflow step or checkpoint for a feature."
                                          :positionals [feature-positional
                                                        {:name :tail
@@ -438,6 +451,8 @@
 
   stage-key is a stable devflow registry key such as `proposal` or `spec-plan`."
   {:returns stamped-op-return :arg-spec {:op "devflow-describe"
+                                         :hook-class :read
+                                         :deadline-class :standard
                                          :doc "Describe the devflow cycle or one registered stage."
                                          :positionals [{:name :stage-key
                                                         :type :string
@@ -451,6 +466,8 @@
 (defop devflow-run-history
   "Return ordered devflow run history for a feature."
   {:returns stamped-op-return :arg-spec {:op "devflow-run-history"
+                                         :hook-class :read
+                                         :deadline-class :standard
                                          :doc "Show ordered devflow run history for a feature."
                                          :positionals [feature-positional]}}
   [ctx]
@@ -466,6 +483,8 @@
   This closes out the graph only; the workspace side of finishing a feature is
   devflow's separate `(guidance :finish-archive)` procedure."
   {:returns stamped-op-return :arg-spec {:op "devflow-squash-run"
+                                         :hook-class :mutating
+                                         :deadline-class :standard
                                          :doc "Squash a finished devflow run into one digest strand."
                                          :positionals [feature-positional]}}
   [ctx]
@@ -479,6 +498,8 @@
 
   Fails loudly for a feature that never started a devflow run."
   {:returns stamped-op-return :arg-spec {:op "devflow-status"
+                                         :hook-class :read
+                                         :deadline-class :standard
                                          :doc "Show the devflow root, ready steps, and done state for a feature."
                                          :positionals [feature-positional]}}
   [ctx]
@@ -492,6 +513,8 @@
 (defop workflow-runs
   "Return active workflow roots, optionally filtered by family."
   {:returns stamped-op-return :arg-spec {:op "workflow-runs"
+                                         :hook-class :read
+                                         :deadline-class :standard
                                          :doc "Show active workflow roots, optionally filtered by family."
                                          :positionals [{:name :family
                                                         :type :string
@@ -506,6 +529,8 @@
 (defop devflow-conventions
   "Return the blessed repo conventions installed by this config."
   {:returns stamped-op-return :arg-spec {:op "devflow-conventions"
+                                         :hook-class :read
+                                         :deadline-class :standard
                                          :doc "Show repo-local spools, ops, patterns, and queries."}}
   [_ctx]
   {:operation "devflow-conventions"
@@ -580,14 +605,15 @@
   executor registrations decide which ready gates can stay waiting silently and
   which stalled gates need coordinator attention."
   {:returns unstamped-op-return :arg-spec {:op "flow-await"
+                                           :hook-class :mutating
+                                           :deadline-class :unbounded
                                            :doc "Block until a workflow run needs coordinator attention."
                                            :flags {:timeout-secs {:type :int
                                                                   :doc "Optional timeout in seconds. Cap blocking awaits at ~50 minutes and re-issue, so provider prompt caches don't expire while idle."}}
                                            :positionals [{:name :workflow-run-id
                                                           :type :string
                                                           :required? true
-                                                          :doc "Workflow run id."}]}
-   :deadline-class :unbounded}
+                                                          :doc "Workflow run id."}]}}
   [ctx]
   (let [{:keys [workflow-run-id timeout-secs]} (:op/args ctx)]
     (workflow/await! workflow-run-id (cond-> {}
@@ -637,6 +663,8 @@
   summary — `strand agent ps` carries the session name and attach command once
   the session is live."
   {:returns stamped-op-return :arg-spec {:op "hitl"
+                                         :hook-class :mutating
+                                         :deadline-class :standard
                                          :doc "Open an interactive HITL session: tracking strand + multiplexer run."
                                          :positionals [{:name :parent-id
                                                         :type :string
