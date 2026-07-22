@@ -31,11 +31,21 @@
                 (sort-by key (:flags arg-spec)))
    :positionals (mapv render-positional (:positionals arg-spec))})
 
+(declare render-subcommand)
+
+(defn explain-node
+  "Render one arg-spec node as JSON-safe help data, recursing over any
+  declared subcommands to their full depth (DELTA-Lhc-001.CC3)."
+  [node]
+  (if (contains? node :subcommands)
+    (assoc (explain-flat (dissoc node :subcommands))
+           :subcommands
+           (mapv render-subcommand (sort-by key (:subcommands node))))
+    (explain-flat node)))
+
 (defn render-subcommand
-  "Render one named subcommand and its nested flat arg-spec."
+  "Render one named subcommand node, recursing into nested subcommands."
   [[subcommand nested]]
-  (let [rendered (explain-flat nested)]
-    {:name subcommand
-     :doc (:doc rendered)
-     :flags (:flags rendered)
-     :positionals (:positionals rendered)}))
+  (-> (explain-node nested)
+      (dissoc :op)
+      (assoc :name subcommand)))

@@ -8,25 +8,37 @@
   `help <op>` projection. The namespace is pure: no registry, socket, or runtime
   coupling and no module-level state.
 
-  Arg-spec shape:
+  An arg-spec is a fractal node tree (DELTA-Lhc-001.CC1). A **leaf** node
+  declares no `:subcommands`; its `:flags`/`:positionals` are optional (a
+  doc-only leaf is valid) and it may carry `:hook-class`/`:deadline-class`
+  metadata as peers of `:doc` (DELTA-Lhc-001.CC2):
 
     {:op <keyword-or-string> ; optional, echoed into errors and help
-     :doc <string>           ; optional op summary
+     :doc <string>           ; optional summary
+     :hook-class :read | :mutating          ; optional leaf metadata
+     :deadline-class :standard | :unbounded ; optional leaf metadata
      :flags {<name-kw> <flag-spec>}
      :positionals [<positional-spec> ...]} ; trailing may be variadic
 
-  Multi-verb ops may instead declare one level of subcommands:
+  An **interior** node instead declares `:subcommands`, mapping non-blank name
+  strings to nested nodes of the same shape at any depth; it may not also
+  declare `:flags`/`:positionals` or class metadata, and an empty
+  `:subcommands {}` is invalid:
 
     {:op <keyword-or-string>
      :doc <string>
-     :subcommands {<name-string> {:doc <string>
-                                  :flags {<name-kw> <flag-spec>}
-                                  :positionals [<positional-spec> ...]}}}
+     :subcommands {<name-string> <node> ...}}
 
-  Subcommand arg-specs route on the first argv token and return the nested
-  parsed args merged with `:subcommand` set to the matched subcommand name.
-  `:subcommand` is reserved and may not be declared as a nested flag or
-  positional name.
+  Parsing a subcommand arg-spec routes on argv tokens recursively: each token
+  selects a child node until a leaf is reached, and the remaining argv parses
+  against the leaf. The result merges the leaf's parsed args with `:subcommand`
+  bound to the full routing path as a vector of name strings (always a vector,
+  at every depth; DELTA-Lhc-001.CC3). Missing or unknown routing tokens — and
+  structural failures at depth — carry the canonical error context: `:op`
+  (string), `:path` (tokens successfully walked, `[]` at the root), `:token`
+  (the offending token, nil when missing), and `:available` (child names at the
+  failing node). The names in `reserved-subcommand-names` and the `subcommand`
+  arg name are rejected at every level.
 
   A flag-spec is a map with:
 
@@ -47,43 +59,43 @@
   value equal to `:stdin` or `:payload/<name>` resolves to the matching entry in
   the envelope payloads map. Matching is whole-value only (a value that merely
   contains `:stdin` as a substring is untouched). A reference with no matching
-  payload throws; an attached payload that no reference consumed throws."
+  payload throws; an attached payload that no reference consumed throws.
+  Payload references and `:parse` declarations apply unchanged inside every
+  nested level."
   (:require [skein.api.cli.internal.help :as help]
             [skein.api.cli.internal.parsing :as parsing]
             [skein.api.cli.internal.shared :as shared]
             [skein.api.cli.internal.validation :as validation]))
 
-(declare parse-selected)
+(declare parse-selected walk-to-leaf)
 
 (def reserved-subcommand-names
   "Subcommand names reserved from op declaration for the help grammar.
 
   The single source of truth for the reserved set: registration/parse/explain
-  validation here blocks any op from declaring these as subcommands. The weaver
-  rewrites only the dash-prefixed flag forms (`--help`/`-h`) of a trailing token
-  to the `help` op (DELTA-Dtf-002.CC3); the bare word `help` stays reserved but
-  is the retired sugar that flows to normal parsing."
+  validation here blocks any op from declaring these as subcommands at any
+  depth (DELTA-Lhc-001.CC1). The weaver rewrites only the dash-prefixed flag
+  forms (`--help`/`-h`) of a trailing token to the `help` op
+  (DELTA-Dtf-002.CC3); the bare word `help` stays reserved but is the retired
+  sugar that flows to normal parsing."
   #{"help" "-h" "--help"})
 
 (defn validate!
   "Validate any parser arg-spec shape, returning it unchanged on success.
 
-  Flat arg-specs validate their top-level flags and positionals. Subcommand
-  arg-specs additionally enforce the one-level subcommand contract and reserved
-  `:subcommand` result key. Throws structured `ex-info` on malformed specs so
-  op registration fails before help or invocation can drift from the contract."
+  Validates the fractal node tree recursively (DELTA-Lhc-001.CC1/CC2): interior
+  nodes may not declare `:flags`/`:positionals` or class metadata, leaves may
+  carry `:hook-class`/`:deadline-class`, reserved names are rejected at every
+  level, and an empty `:subcommands {}` is invalid. Throws structured `ex-info`
+  on malformed specs so op registration fails before help or invocation can
+  drift from the contract."
   [arg-spec]
   (when-not (map? arg-spec)
     (shared/fail! :invalid-arg-spec
                   "Arg-spec must be a map"
                   {:value arg-spec}))
-  (if (contains? arg-spec :subcommands)
-    (validation/validate-subcommands! arg-spec reserved-subcommand-names)
-    (let [op (:op arg-spec)]
-      (validation/validate-flags! op nil (:flags arg-spec))
-      (validation/validate-positionals! op nil (:positionals arg-spec))
-      (validation/validate-annotations! op nil (:annotations arg-spec))
-      arg-spec)))
+  (validation/validate-node! (:op arg-spec) [] arg-spec reserved-subcommand-names)
+  arg-spec)
 
 (defn validate-annotations!
   "Structurally validate a standalone annotation sub-map for `op`, returning it.
@@ -95,59 +107,83 @@
   glossary-ref existence check for `failure-modes` names runs at registration
   (DELTA-Dtf-003.CC2)."
   [op annotations]
-  (validation/validate-annotations! op nil annotations)
+  (validation/validate-annotations! op [] annotations)
   annotations)
 
 (defn parse
   "Parse `argv` against `arg-spec`, resolving payload references from `payloads`.
 
   Returns a map of keyword arg names to parsed values. For subcommand arg-specs,
-  the first argv token selects the nested spec and the result includes the
-  matched `:subcommand` string. Throws a structured `ex-info` (ex-data carries
-  `:reason` plus the offending token/flag and the op) on any violation: unknown
-  flags, missing required args, type violations, duplicate non-repeat flags,
-  malformed key=value tokens, trailing unconsumed tokens, missing/unknown
-  subcommands, dangling or unused payload references, and malformed
-  :json/:jsonl payloads."
+  argv tokens route recursively to the invoked leaf and the result includes
+  `:subcommand` bound to the full routing path vector (DELTA-Lhc-001.CC3).
+  Throws a structured `ex-info` (ex-data carries `:reason` plus the offending
+  token/flag and the op) on any violation: unknown flags, missing required args,
+  type violations, duplicate non-repeat flags, malformed key=value tokens,
+  trailing unconsumed tokens, missing/unknown subcommands (with the canonical
+  `:op`/`:path`/`:token`/`:available` context), dangling or unused payload
+  references, and malformed :json/:jsonl payloads."
   ([arg-spec argv]
    (parse arg-spec argv {}))
   ([arg-spec argv payloads]
    (let [arg-spec (validate! arg-spec)
-         argv (vec argv)]
+         {:keys [node path argv]} (walk-to-leaf arg-spec (vec argv))
+         parsed (parse-selected (assoc node :op (:op arg-spec)) argv payloads)]
      (if (contains? arg-spec :subcommands)
-       (let [op (:op arg-spec)
-             subcommands (:subcommands arg-spec)
-             available (vec (sort (keys subcommands)))
-             subcommand (first argv)]
-         (when-not subcommand
-           (shared/fail! :missing-subcommand
-                         "Missing subcommand"
-                         {:op op :available-subcommands available}))
-         (when-not (contains? subcommands subcommand)
-           (shared/fail! :unknown-subcommand
-                         (str "Unknown subcommand " (pr-str subcommand))
-                         {:op op
-                          :token subcommand
-                          :available-subcommands available}))
-         (assoc (parse-selected (assoc (get subcommands subcommand) :op op)
-                                (subvec argv 1)
-                                payloads)
-                :subcommand subcommand))
-       (parse-selected arg-spec argv payloads)))))
+       (assoc parsed :subcommand path)
+       parsed))))
+
+(defn resolve-leaf
+  "Walk `argv`'s routing tokens through `arg-spec` to the invoked leaf node.
+
+  Returns `{:node <leaf-node> :path <path-vector>}` without parsing the leaf's
+  flags or positionals: the walk consumes exactly the routing tokens, so
+  callers such as the socket payload-hook gate and deadline lookup
+  (DELTA-Lhc-002.CC3/CC4) can read leaf metadata before any hook runs. A flat
+  arg-spec resolves to its own root at path `[]`. Missing or unknown routing
+  tokens fail loudly with the canonical `:op`/`:path`/`:token`/`:available`
+  context."
+  [arg-spec argv]
+  (let [arg-spec (validate! arg-spec)]
+    (select-keys (walk-to-leaf arg-spec (vec argv)) [:node :path])))
 
 (defn explain
   "Render `arg-spec` as JSON-safe help data.
 
-  Includes arguments, types, docs, required flags, subcommands, and payload-parse
-  declarations for the `help <op>` projection."
+  Includes arguments, types, docs, required flags, and payload-parse
+  declarations for the `help <op>` projection; nested subcommands render
+  recursively to their declared depth (DELTA-Lhc-001.CC3)."
   [arg-spec]
-  (let [arg-spec (validate! arg-spec)]
-    (if (contains? arg-spec :subcommands)
-      (assoc (help/explain-flat (dissoc arg-spec :subcommands))
-             :subcommands
-             (mapv help/render-subcommand
-                   (sort-by key (:subcommands arg-spec))))
-      (help/explain-flat arg-spec))))
+  (help/explain-node (validate! arg-spec)))
+
+;; --- routing to the invoked leaf --------------------------------------
+
+(defn- walk-to-leaf
+  "Route `argv`'s leading tokens through a validated node tree to its leaf.
+
+  Returns `{:node <leaf> :path <tokens walked> :argv <remaining argv>}`,
+  failing loudly with the canonical error context on a missing or unknown
+  token at any depth (DELTA-Lhc-001.CC3)."
+  [arg-spec argv]
+  (let [op (some-> (:op arg-spec) name)]
+    (loop [node arg-spec
+           path []
+           argv argv]
+      (if-not (contains? node :subcommands)
+        {:node node :path path :argv argv}
+        (let [subcommands (:subcommands node)
+              available (vec (sort (keys subcommands)))
+              token (first argv)]
+          (when (nil? token)
+            (shared/fail! :missing-subcommand
+                          "Missing subcommand"
+                          {:op op :path path :token nil :available available}))
+          (when-not (contains? subcommands token)
+            (shared/fail! :unknown-subcommand
+                          (str "Unknown subcommand " (pr-str token))
+                          {:op op :path path :token token :available available}))
+          (recur (get subcommands token)
+                 (conj path token)
+                 (subvec argv 1)))))))
 
 ;; --- the selected-spec parse pipeline ---------------------------------
 
