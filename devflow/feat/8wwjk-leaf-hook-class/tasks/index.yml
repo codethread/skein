@@ -27,20 +27,20 @@ tasks:
   - id: 6
     description: Root spec promotion + docs sweep + api docs
     task_file: tasks/006-spec-promotion-and-docs.md
-    status: in_progress
+    status: complete
     blocked_by: [5]
   - id: 7
     description: kanban.spool adoption + v7 release tag
     task_file: tasks/007-kanban-spool-adoption.md
-    status: in_progress
+    status: complete
     blocked_by: [5]
   - id: 8
     description: agent-harness.spool adoption (agent-run/delegation/bench) + v12 release tag
     task_file: tasks/008-agent-harness-spool-adoption.md
-    status: in_progress
+    status: complete
     blocked_by: [5]
   - id: 9
     description: Pin bumps + full acceptance gates
     task_file: tasks/009-pin-bumps-and-acceptance.md
-    status: pending
+    status: in_progress
     blocked_by: [6, 7, 8]
