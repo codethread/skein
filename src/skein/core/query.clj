@@ -3,7 +3,15 @@
 
   Query definitions are data-shaped expressions used by the daemon and REPL query
   registry. Invalid query forms fail loudly with ex-info data rather than being
-  coerced into broad or empty SQL predicates."
+  coerced into broad or empty SQL predicates.
+
+  This compiler is the single grammar authority for the query DSL: its compile
+  path defines which expression shapes are valid, and callers reach it through
+  `skein.api.graph.alpha`, whose registration seam compiles definitions eagerly
+  so malformed data fails before it enters a registry. Per the api-form contract
+  (SPEC-003.C19a), the grammar is deliberately not mirrored into a clojure.spec —
+  a parallel spec would be a second source of truth that can drift from the
+  compiled semantics documented in strand-model.md P9."
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.spec.alpha :as s]
