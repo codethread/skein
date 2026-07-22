@@ -232,48 +232,246 @@
      )"]
    ["CREATE INDEX IF NOT EXISTS idx_burn_history_strand ON burn_history(strand_id, id)"]])
 
-(def ^:private required-strand-columns #{"id" "title" "state" "created_at" "updated_at"})
-(def ^:private forbidden-strand-columns #{"attributes"})
-(def ^:private required-attribute-columns #{"strand_id" "key" "value" "archived"})
-(def ^:private required-edge-columns #{"from_strand_id" "to_strand_id" "edge_type" "attributes"})
+(def ^:private current-generation 1)
+
+;; Objects that arrived additively after the EAV-era core and flow into
+;; existing worlds via IF NOT EXISTS without a generation bump: pre-DDL
+;; screening permits their absence, everything else in the reference schema is
+;; generation-1 baseline. The next generation bump folds these into its
+;; baseline (SPEC-004.C91c/C91d).
+(def ^:private additive-schema-objects
+  #{[:index "idx_strand_edges_single_serves"]
+    [:table "acyclic_relations"]
+    [:table "immutable_keys"]
+    [:table "scheduler_wakes"]
+    [:index "idx_scheduler_wakes_wake_at"]
+    [:table "scheduler_history"]
+    [:index "idx_scheduler_history_status"]
+    [:table "burn_history"]
+    [:index "idx_burn_history_strand"]})
+
 (def ^:private shipped-acyclic-relations #{"depends-on" "parent-of" "supersedes" "serves" "notes"})
 (def ^:private shipped-immutable-keys #{"note/text" "note/at"})
 
-(defn- missing-columns [ds table required]
-  (seq (remove (set (map :name (execute! ds [(str "PRAGMA table_info(" table ")")]))) required)))
+(defn- classify-generation
+  "Classify startup from the stored generation, binary generation, and emptiness."
+  [found-generation binary-generation empty?]
+  (when-not (and (int? found-generation)
+                 (not (neg? found-generation))
+                 (int? binary-generation)
+                 (pos? binary-generation)
+                 (boolean? empty?))
+    (throw (ex-info "Schema generation classification requires non-negative found and positive binary generations plus boolean emptiness"
+                    {:found-generation found-generation
+                     :binary-generation binary-generation
+                     :empty? empty?})))
+  (cond
+    (> found-generation binary-generation) :refuse-newer
+    (and (zero? found-generation) empty?) :bootstrap
+    (zero? found-generation) :adopt
+    (< found-generation binary-generation) :refuse-older
+    :else :proceed))
 
-(defn- table-exists? [ds table]
-  (boolean
-   (execute-one! ds ["SELECT 1 AS found FROM sqlite_master WHERE type = 'table' AND name = ?" table])))
+(defn- quote-sql-identifier [identifier]
+  (str "\"" (str/replace identifier "\"" "\"\"") "\""))
 
-(defn- table-columns [ds table]
-  (set (map :name (execute! ds [(str "PRAGMA table_info(" table ")")]))))
+(defn- normalize-sql-expression
+  "Normalize insignificant case and whitespace outside SQL string literals."
+  [expression]
+  (loop [remaining (seq expression)
+         quoted? false
+         normalized (StringBuilder.)]
+    (if-let [ch (first remaining)]
+      (let [next-ch (second remaining)]
+        (cond
+          (and (= ch \') quoted? (= next-ch \'))
+          (do (.append normalized ch)
+              (.append normalized next-ch)
+              (recur (nnext remaining) quoted? normalized))
 
-(defn- current-row-schema? [ds]
-  (and (table-exists? ds "strands")
-       (table-exists? ds "attributes")
-       (empty? (missing-columns ds "strands" required-strand-columns))
-       (empty? (missing-columns ds "attributes" required-attribute-columns))
-       (not (contains? (table-columns ds "strands") "attributes"))))
+          (= ch \')
+          (do (.append normalized ch)
+              (recur (next remaining) (not quoted?) normalized))
 
-(defn- ensure-current-schema! [ds]
-  (when-let [missing (missing-columns ds "strands" required-strand-columns)]
-    (throw (ex-info "Existing strands table is not compatible with the current schema; use a new database or migrate it explicitly."
-                    {:missing-columns (vec missing)})))
-  (when-let [present (seq (filter forbidden-strand-columns
-                                  (map :name (execute! ds ["PRAGMA table_info(strands)"]))))]
-    (throw (ex-info "Existing strands table is not compatible with the current schema; use a new database or migrate it explicitly."
-                    {:forbidden-columns (vec present)})))
-  (when-let [missing (missing-columns ds "attributes" required-attribute-columns)]
-    (throw (ex-info "Existing attributes table is not compatible with the current schema; use a new database or migrate it explicitly."
-                    {:missing-columns (vec missing)})))
-  (when-not (current-row-schema? ds)
-    (throw (ex-info "Existing attribute storage is not compatible with the current schema; use a new database."
-                    {})))
-  (let [edge-schema (:sql (execute-one! ds ["SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'strand_edges'"]))]
-    (when (or (missing-columns ds "strand_edges" required-edge-columns)
-              (str/includes? edge-schema "CHECK (edge_type IN"))
-      (throw (ex-info "Existing strand_edges table is not compatible with the current schema; use a new database or migrate it explicitly." {})))))
+          (and (not quoted?) (Character/isWhitespace ^char ch))
+          (recur (next remaining) quoted? normalized)
+
+          :else
+          (do (.append normalized (if quoted? ch (Character/toLowerCase ^char ch)))
+              (recur (next remaining) quoted? normalized))))
+      (str normalized))))
+
+(defn- parenthesized-expressions-after
+  "Return balanced parenthesized expressions following marker in SQL text."
+  [sql marker]
+  (let [^String sql (or sql "")
+        matcher (re-matcher marker sql)]
+    (loop [expressions []]
+      (if (.find matcher)
+        (let [start (.end matcher)
+              expression
+              (loop [idx start
+                     depth 1
+                     quoted? false]
+                (when (>= idx (count sql))
+                  (throw (ex-info "Unbalanced schema SQL expression" {:sql sql :offset start})))
+                (let [ch (.charAt sql idx)
+                      next-ch (when (< (inc idx) (count sql)) (.charAt sql (inc idx)))]
+                  (cond
+                    (and (= ch \') quoted? (= next-ch \'))
+                    (recur (+ idx 2) depth quoted?)
+
+                    (= ch \')
+                    (recur (inc idx) depth (not quoted?))
+
+                    quoted?
+                    (recur (inc idx) depth quoted?)
+
+                    (= ch \()
+                    (recur (inc idx) (inc depth) quoted?)
+
+                    (= ch \))
+                    (if (= depth 1)
+                      (subs sql start idx)
+                      (recur (inc idx) (dec depth) quoted?))
+
+                    :else
+                    (recur (inc idx) depth quoted?))))]
+          (recur (conj expressions expression)))
+        expressions))))
+
+(defn- schema-object-rows [ds]
+  (->> (execute! ds ["SELECT type, name, tbl_name, sql
+                      FROM sqlite_master
+                      WHERE type IN ('table', 'index')"])
+       (remove #(str/starts-with? (:name %) "sqlite_"))))
+
+(defn- pragma-rows [ds pragma object-name]
+  (execute! ds [(str "PRAGMA " pragma "(" (quote-sql-identifier object-name) ")")]))
+
+(defn- normalize-column [{:keys [cid name type notnull dflt_value pk]}]
+  {:position cid
+   :name name
+   :type (-> type str/trim str/upper-case)
+   :not-null (pos? notnull)
+   :default (some-> dflt_value normalize-sql-expression)
+   :primary-key-position pk})
+
+(defn- normalize-foreign-key [{:keys [id seq table from to on_update on_delete match]}]
+  {:id id
+   :position seq
+   :table table
+   :from from
+   :to to
+   :on-update on_update
+   :on-delete on_delete
+   :match match})
+
+(defn- table-shape [ds {:keys [name sql]}]
+  {:columns (mapv normalize-column (pragma-rows ds "table_info" name))
+   :foreign-keys (->> (pragma-rows ds "foreign_key_list" name)
+                      (map normalize-foreign-key)
+                      (sort-by (juxt :id :position))
+                      vec)
+   :checks (->> (parenthesized-expressions-after sql #"(?i)\bCHECK\s*\(")
+                (map normalize-sql-expression)
+                sort
+                vec)})
+
+(defn- partial-index-predicate [sql]
+  (some->> (re-find #"(?is)\bWHERE\b(.*)$" (or sql ""))
+           second
+           normalize-sql-expression))
+
+(defn- index-shape [ds {:keys [name tbl_name sql]}]
+  (let [index-listing (some #(when (= name (:name %)) %)
+                            (pragma-rows ds "index_list" tbl_name))]
+    {:table tbl_name
+     :unique (pos? (:unique index-listing))
+     :columns (->> (pragma-rows ds "index_info" name)
+                   (sort-by :seqno)
+                   (mapv #(select-keys % [:seqno :cid :name])))
+     :predicate (partial-index-predicate sql)}))
+
+(defn- schema-shapes [ds object-names]
+  (into {}
+        (keep (fn [{:keys [type name] :as row}]
+                (let [object-key [(keyword type) name]]
+                  (when (contains? object-names object-key)
+                    [object-key
+                     (case type
+                       "table" (table-shape ds row)
+                       "index" (index-shape ds row))]))))
+        (schema-object-rows ds)))
+
+(defn- reference-schema [schema-statements]
+  (let [{:keys [connectable close-fn]} (memory-storage)]
+    (try
+      (doseq [statement schema-statements]
+        (execute! connectable statement))
+      (let [object-keys (set (map (juxt (comp keyword :type) :name)
+                                  (schema-object-rows connectable)))]
+        {:object-keys object-keys
+         :shapes (schema-shapes connectable object-keys)})
+      (finally
+        (close-fn)))))
+
+(defn- database-empty? [ds managed-object-keys]
+  (not-any? managed-object-keys
+            (map (juxt (comp keyword :type) :name)
+                 (schema-object-rows ds))))
+
+(defn- schema-mismatch! [mode found-generation expected-generation missing mismatched]
+  (throw (ex-info "Database schema does not match the expected Skein schema"
+                  {:reason :schema-mismatch
+                   :mode mode
+                   :found-generation found-generation
+                   :expected-generation expected-generation
+                   :missing-objects (vec (sort missing))
+                   :mismatched-objects (vec (sort mismatched))})))
+
+(defn- validate-schema!
+  "Validate managed objects against reference in pre-DDL or full mode."
+  [ds reference mode additive-objects found-generation expected-generation]
+  (when-not (#{:pre-ddl :full} mode)
+    (throw (ex-info "Unknown schema validation mode" {:mode mode})))
+  (let [{:keys [object-keys shapes]} reference]
+    (when-not (every? object-keys additive-objects)
+      (throw (ex-info "Additive schema objects must belong to the reference schema"
+                      {:additive-objects additive-objects
+                       :reference-objects object-keys})))
+    (let [actual (schema-shapes ds object-keys)
+          required (if (= :pre-ddl mode)
+                     (reduce disj object-keys additive-objects)
+                     object-keys)
+          missing (remove #(contains? actual %) required)
+          mismatched (for [[object-key expected-shape] shapes
+                           :let [actual-shape (get actual object-key)]
+                           :when (and actual-shape (not= expected-shape actual-shape))]
+                       object-key)]
+      (when (or (seq missing) (seq mismatched))
+        (schema-mismatch! mode found-generation expected-generation missing mismatched))))
+  ds)
+
+(defn- schema-generation [ds]
+  (:user_version (execute-one! ds ["PRAGMA user_version"])))
+
+(defn- stamp-generation! [ds generation]
+  (execute! ds [(str "PRAGMA user_version = " generation)]))
+
+(defn- incompatible-generation! [classification found-generation expected-generation]
+  (case classification
+    :refuse-newer
+    (throw (ex-info "This Skein binary is too old for the database schema generation"
+                    {:reason :newer-schema-generation
+                     :found-generation found-generation
+                     :expected-generation expected-generation}))
+
+    :refuse-older
+    (throw (ex-info "Database schema generation is older; use the maintained forward-migration path"
+                    {:reason :older-schema-generation
+                     :found-generation found-generation
+                     :expected-generation expected-generation}))))
 
 (defn- serving-targets [ds run-id]
   (mapv :to_strand_id
@@ -302,21 +500,49 @@
 (declare bootstrap-acyclic-relation! bootstrap-immutable-key! immutable-key?)
 
 (defn init!
-  "Initialize ds with the current schema and shipped acyclic relations.
+  "Initialize ds with the current schema, shipped acyclic relations, and
+  shipped immutable keys.
 
-  Existing incompatible schemas throw instead of being migrated implicitly."
-  [ds]
-  (when (some #(table-exists? ds %) ["strands" "attributes" "strand_edges"])
-    (ensure-current-schema! ds)
-    (require-valid-existing-serves! ds))
-  (doseq [stmt schema-sql]
-    (execute! ds stmt))
-  (ensure-current-schema! ds)
-  (doseq [relation shipped-acyclic-relations]
-    (bootstrap-acyclic-relation! ds relation))
-  (doseq [k shipped-immutable-keys]
-    (bootstrap-immutable-key! ds k))
-  ds)
+  Existing compatible unstamped schemas are adopted as generation 1. Schema
+  mismatches and generation skew throw before initialization writes. The
+  4-arity runs the schema orchestration alone against explicit statements, a
+  binary generation, and a declared-additive object set; it is the seam for
+  exercising generations and additive sets that cannot occur in production,
+  where only the 1-arity is called."
+  ([ds]
+   (init! ds schema-sql current-generation additive-schema-objects)
+   (doseq [relation shipped-acyclic-relations]
+     (bootstrap-acyclic-relation! ds relation))
+   (doseq [k shipped-immutable-keys]
+     (bootstrap-immutable-key! ds k))
+   ds)
+  ([ds schema-statements binary-generation additive-objects]
+   (let [reference (reference-schema schema-statements)
+         found-generation (schema-generation ds)
+         classification (classify-generation found-generation
+                                             binary-generation
+                                             (database-empty? ds (:object-keys reference)))]
+     (case classification
+       (:refuse-newer :refuse-older)
+       (incompatible-generation! classification found-generation binary-generation)
+
+       :bootstrap
+       (do
+         (doseq [statement schema-statements]
+           (execute! ds statement))
+         (validate-schema! ds reference :full additive-objects found-generation binary-generation)
+         (stamp-generation! ds binary-generation))
+
+       (:adopt :proceed)
+       (do
+         (validate-schema! ds reference :pre-ddl additive-objects found-generation binary-generation)
+         (require-valid-existing-serves! ds)
+         (doseq [statement schema-statements]
+           (execute! ds statement))
+         (validate-schema! ds reference :full additive-objects found-generation binary-generation)
+         (when (= :adopt classification)
+           (stamp-generation! ds binary-generation)))))
+   ds))
 
 (declare get-strand update-strand! add-edge! strands-by-ids require-updated-strand require-existing-strand-ids! placeholders)
 

@@ -26,8 +26,41 @@
       (finally
         (delete-sqlite-family! db-file)))))
 
-(defn pragma-value [ds pragma]
+(defn- with-raw-db [f]
+  (let [db-file (temp-db-file)
+        ds (db/datasource db-file)]
+    (try
+      (f ds)
+      (finally
+        (delete-sqlite-family! db-file)))))
+
+(defn- pragma-value [ds pragma]
   (first (vals (db/execute-one! ds [(str "PRAGMA " pragma)]))))
+
+(defn- private-db-var [symbol]
+  (or (ns-resolve 'skein.core.db symbol)
+      (throw (ex-info "Missing private database test seam" {:symbol symbol}))))
+
+(defn- schema-statements []
+  @(private-db-var 'schema-sql))
+
+(defn- execute-schema! [ds statements]
+  (doseq [statement statements]
+    (db/execute! ds statement)))
+
+(defn- replace-schema-sql [statements needle replacement]
+  (mapv (fn [[sql]]
+          [(if (str/includes? sql needle)
+             (str/replace sql needle replacement)
+             sql)])
+        statements))
+
+(defn- caught-ex-info [f]
+  (try
+    (f)
+    nil
+    (catch clojure.lang.ExceptionInfo error
+      error)))
 
 (deftest sqlite-file-storage-applies-open-pragmas
   (let [db-file (temp-db-file)
@@ -42,6 +75,7 @@
 (deftest init-creates-strand-schema
   (with-db
     (fn [ds]
+      (is (= 1 (pragma-value ds "user_version")))
       (is (= #{"id" "title" "state" "created_at" "updated_at"}
              (set (map :name (db/execute! ds ["PRAGMA table_info(strands)"])))))
       (is (= #{"strand_id" "key" "value" "archived"}
@@ -56,6 +90,179 @@
       (is (some #(= "idx_strand_edges_single_serves" (:name %))
                 (db/execute! ds ["PRAGMA index_list(strand_edges)"])))
       (is (empty? (db/execute! ds ["SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('tasks', 'task_edges')"]))))))
+
+(deftest schema-generation-classification-covers-every-route
+  (let [classify (private-db-var 'classify-generation)]
+    (is (= :bootstrap (classify 0 1 true)))
+    (is (= :adopt (classify 0 1 false)))
+    (is (= :proceed (classify 1 1 false)))
+    (is (= :refuse-newer (classify 2 1 false)))
+    (is (= :refuse-older (classify 1 2 false)))
+    (is (thrown? clojure.lang.ExceptionInfo (classify -1 1 false)))
+    (is (thrown? clojure.lang.ExceptionInfo (classify 0 0 true)))
+    (is (thrown? clojure.lang.ExceptionInfo (classify 0 1 nil)))))
+
+(def ^:private managed-table-order
+  [["strands" "id"]
+   ["attributes" "strand_id, key"]
+   ["strand_edges" "from_strand_id, to_strand_id, edge_type"]
+   ["acyclic_relations" "relation"]
+   ["scheduler_wakes" "key"]
+   ["scheduler_history" "id"]])
+
+(defn- logical-managed-rows [ds]
+  (into {}
+        (map (fn [[table order-by]]
+               [table (db/execute! ds [(str "SELECT * FROM " table " ORDER BY " order-by)])]))
+        managed-table-order))
+
+(defn- populate-managed-tables! [ds]
+  (db/execute! ds ["INSERT INTO strands (id, title) VALUES ('a', 'A'), ('b', 'B')"])
+  (db/execute! ds ["INSERT INTO attributes (strand_id, key, value) VALUES ('a', 'owner', '\"agent\"')"])
+  (db/execute! ds ["INSERT INTO strand_edges (from_strand_id, to_strand_id, edge_type) VALUES ('a', 'b', 'depends-on')"])
+  (doseq [relation ["depends-on" "parent-of" "supersedes" "serves" "notes"]]
+    (db/execute! ds ["INSERT INTO acyclic_relations (relation) VALUES (?)" relation]))
+  (db/execute! ds ["INSERT INTO scheduler_wakes (key, wake_at, handler) VALUES ('wake', 10, 'handler')"])
+  (db/execute! ds ["INSERT INTO scheduler_history (id, key, wake_at, handler, status) VALUES (7, 'past', 5, 'handler', 'completed')"]))
+
+(deftest unstamped-current-schema-is-adopted-without-changing-logical-rows
+  (with-raw-db
+    (fn [ds]
+      (execute-schema! ds (schema-statements))
+      (populate-managed-tables! ds)
+      (let [before (logical-managed-rows ds)]
+        (is (zero? (pragma-value ds "user_version")))
+        (db/init! ds)
+        (is (= 1 (pragma-value ds "user_version")))
+        (is (= before (logical-managed-rows ds)))
+        (db/init! ds)
+        (is (= before (logical-managed-rows ds)))))))
+
+(deftest bootstrap-ignores-and-preserves-non-skein-objects
+  (with-raw-db
+    (fn [ds]
+      (db/execute! ds ["CREATE TABLE user_notes (body TEXT NOT NULL)"])
+      (db/execute! ds ["INSERT INTO user_notes (body) VALUES ('keep me')"])
+      (db/init! ds)
+      (is (= 1 (pragma-value ds "user_version")))
+      (is (= [{:body "keep me"}]
+             (db/execute! ds ["SELECT body FROM user_notes"]))))))
+
+(deftest incompatible-unstamped-schemas-are-refused-without-stamping
+  (let [schema (schema-statements)
+        cases
+        {"missing column"
+         (replace-schema-sql schema
+                             "       updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+       CHECK (state"
+                             "       CHECK (state")
+         "extra column"
+         (replace-schema-sql schema
+                             "       title TEXT NOT NULL,"
+                             "       title TEXT NOT NULL,\n       unexpected TEXT,")
+         "wrong index"
+         (replace-schema-sql schema
+                             "attributes(key, value)"
+                             "attributes(value, key)")
+         "legacy edge constraint"
+         (replace-schema-sql schema
+                             "       PRIMARY KEY (from_strand_id, to_strand_id, edge_type),"
+                             "       PRIMARY KEY (from_strand_id, to_strand_id, edge_type),\n       CHECK (edge_type IN ('depends-on', 'related-to')),")}]
+    (doseq [[label statements] cases]
+      (testing label
+        (with-raw-db
+          (fn [ds]
+            (execute-schema! ds statements)
+            (let [error (caught-ex-info #(db/init! ds))]
+              (is (= :schema-mismatch (:reason (ex-data error))))
+              (is (zero? (:found-generation (ex-data error))))
+              (is (= 1 (:expected-generation (ex-data error))))
+              (is (zero? (pragma-value ds "user_version"))))))))))
+
+(def ^:private synthetic-additive-sql
+  ["CREATE TABLE IF NOT EXISTS synthetic_aux (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL CHECK (length(value) > 0)
+    )"])
+
+(def ^:private synthetic-additive-object #{[:table "synthetic_aux"]})
+
+(defn- initialize-synthetic-schema! [ds generation]
+  (db/init!
+   ds
+   (conj (schema-statements) synthetic-additive-sql)
+   generation
+   synthetic-additive-object))
+
+(deftest additive-object-seam-backfills-only-declared-additions
+  (testing "a stamped current database gains a missing additive object"
+    (with-raw-db
+      (fn [ds]
+        (execute-schema! ds (schema-statements))
+        (db/execute! ds ["PRAGMA user_version = 1"])
+        (initialize-synthetic-schema! ds 1)
+        (is (= "synthetic_aux"
+               (:name (db/execute-one! ds ["SELECT name FROM sqlite_master WHERE name = 'synthetic_aux'"]))))
+        (is (= 1 (pragma-value ds "user_version"))))))
+  (testing "an unstamped current database gains the addition before it is stamped"
+    (with-raw-db
+      (fn [ds]
+        (execute-schema! ds (schema-statements))
+        (initialize-synthetic-schema! ds 1)
+        (is (= "synthetic_aux"
+               (:name (db/execute-one! ds ["SELECT name FROM sqlite_master WHERE name = 'synthetic_aux'"]))))
+        (is (= 1 (pragma-value ds "user_version"))))))
+  (testing "a missing baseline object is refused before DDL can recreate it"
+    (with-raw-db
+      (fn [ds]
+        (execute-schema! ds (conj (schema-statements) synthetic-additive-sql))
+        (db/execute! ds ["DROP INDEX idx_strand_edges_to"])
+        (db/execute! ds ["PRAGMA user_version = 1"])
+        (let [error (caught-ex-info #(initialize-synthetic-schema! ds 1))]
+          (is (= :schema-mismatch (:reason (ex-data error))))
+          (is (= :pre-ddl (:mode (ex-data error))))
+          (is (nil? (db/execute-one! ds ["SELECT name FROM sqlite_master WHERE name = 'idx_strand_edges_to'"])))
+          (is (= 1 (pragma-value ds "user_version")))))))
+  (testing "a present malformed additive object is refused"
+    (with-raw-db
+      (fn [ds]
+        (execute-schema! ds (schema-statements))
+        (db/execute! ds ["CREATE TABLE synthetic_aux (key TEXT PRIMARY KEY, value INTEGER)"])
+        (let [error (caught-ex-info #(initialize-synthetic-schema! ds 1))]
+          (is (= :schema-mismatch (:reason (ex-data error))))
+          (is (= [[:table "synthetic_aux"]]
+                 (:mismatched-objects (ex-data error))))
+          (is (zero? (pragma-value ds "user_version"))))))))
+
+(deftest schema-generation-skew-is-refused-with-diagnostic-data
+  (testing "a newer database identifies the binary as too old"
+    (with-raw-db
+      (fn [ds]
+        (execute-schema! ds (schema-statements))
+        (db/execute! ds ["INSERT INTO strands (id, title) VALUES ('kept', 'Kept')"])
+        (db/execute! ds ["PRAGMA user_version = 2"])
+        (let [error (caught-ex-info #(db/init! ds))]
+          (is (str/includes? (ex-message error) "binary is too old"))
+          (is (= {:reason :newer-schema-generation
+                  :found-generation 2
+                  :expected-generation 1}
+                 (ex-data error)))
+          (is (= "Kept" (:title (db/execute-one! ds ["SELECT title FROM strands WHERE id = 'kept'"]))))
+          (is (= 2 (pragma-value ds "user_version")))))))
+  (testing "an older database points at the maintained migration path"
+    (with-raw-db
+      (fn [ds]
+        (execute-schema! ds (schema-statements))
+        (db/execute! ds ["INSERT INTO strands (id, title) VALUES ('kept', 'Kept')"])
+        (db/execute! ds ["PRAGMA user_version = 1"])
+        (let [error (caught-ex-info #(db/init! ds (schema-statements) 2 #{}))]
+          (is (str/includes? (ex-message error) "maintained forward-migration path"))
+          (is (= {:reason :older-schema-generation
+                  :found-generation 1
+                  :expected-generation 2}
+                 (ex-data error)))
+          (is (= "Kept" (:title (db/execute-one! ds ["SELECT title FROM strands WHERE id = 'kept'"]))))
+          (is (= 1 (pragma-value ds "user_version"))))))))
 
 (deftest strand-creation-and-validation
   (with-db
@@ -647,8 +854,9 @@
                          CHECK (edge_type IN ('depends-on', 'related-to', 'parent-of', 'supersedes')),
                          CHECK (json_valid(attributes))
                        )"])
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"strands table is not compatible"
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"does not match the expected Skein schema"
                             (db/init! ds)))
+      (is (zero? (pragma-value ds "user_version")))
       (is (empty? (db/execute! ds ["SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'attributes'"])))
       (finally
         (delete-sqlite-family! db-file)))))
