@@ -67,7 +67,7 @@
             [skein.api.cli.internal.shared :as shared]
             [skein.api.cli.internal.validation :as validation]))
 
-(declare parse-selected walk-to-leaf)
+(declare parse-selected leaf-route)
 
 (def reserved-subcommand-names
   "Subcommand names reserved from op declaration for the help grammar.
@@ -126,7 +126,7 @@
    (parse arg-spec argv {}))
   ([arg-spec argv payloads]
    (let [arg-spec (validate! arg-spec)
-         {:keys [node path argv]} (walk-to-leaf arg-spec (vec argv))
+         {:keys [node path argv]} (leaf-route arg-spec (vec argv))
          parsed (parse-selected (assoc node :op (:op arg-spec)) argv payloads)]
      (if (contains? arg-spec :subcommands)
        (assoc parsed :subcommand path)
@@ -144,7 +144,7 @@
   context."
   [arg-spec argv]
   (let [arg-spec (validate! arg-spec)]
-    (select-keys (walk-to-leaf arg-spec (vec argv)) [:node :path])))
+    (select-keys (leaf-route arg-spec (vec argv)) [:node :path])))
 
 (defn explain
   "Render `arg-spec` as JSON-safe help data.
@@ -157,7 +157,7 @@
 
 ;; --- routing to the invoked leaf --------------------------------------
 
-(defn- walk-to-leaf
+(defn- leaf-route
   "Route `argv`'s leading tokens through a validated node tree to its leaf.
 
   Returns `{:node <leaf> :path <tokens walked> :argv <remaining argv>}`,

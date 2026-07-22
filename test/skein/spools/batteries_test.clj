@@ -56,7 +56,7 @@
               (return-case-leaves name
                                   (if (seq path) {:subcommand path} {})
                                   return-node)))]
-    (into #{} (leaves returns []))))
+    (set (leaves returns []))))
 
 (defn- owner-return-coverage [rt checked-leaves]
   (let [entries (filterv #(= 'skein.spools.batteries (:provenance %)) (weaver/ops rt))

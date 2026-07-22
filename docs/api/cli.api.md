@@ -12,25 +12,37 @@ Blessed declarative argv parser for weaver ops (SPEC-003-D003.C1/C2).
   `help <op>` projection. The namespace is pure: no registry, socket, or runtime
   coupling and no module-level state.
 
-  Arg-spec shape:
+  An arg-spec is a fractal node tree (DELTA-Lhc-001.CC1). A **leaf** node
+  declares no `:subcommands`; its `:flags`/`:positionals` are optional (a
+  doc-only leaf is valid) and it may carry `:hook-class`/`:deadline-class`
+  metadata as peers of `:doc` (DELTA-Lhc-001.CC2):
 
     {:op <keyword-or-string> ; optional, echoed into errors and help
-     :doc <string>           ; optional op summary
+     :doc <string>           ; optional summary
+     :hook-class :read | :mutating          ; optional leaf metadata
+     :deadline-class :standard | :unbounded ; optional leaf metadata
      :flags {<name-kw> <flag-spec>}
      :positionals [<positional-spec> ...]} ; trailing may be variadic
 
-  Multi-verb ops may instead declare one level of subcommands:
+  An **interior** node instead declares `:subcommands`, mapping non-blank name
+  strings to nested nodes of the same shape at any depth; it may not also
+  declare `:flags`/`:positionals` or class metadata, and an empty
+  `:subcommands {}` is invalid:
 
     {:op <keyword-or-string>
      :doc <string>
-     :subcommands {<name-string> {:doc <string>
-                                  :flags {<name-kw> <flag-spec>}
-                                  :positionals [<positional-spec> ...]}}}
+     :subcommands {<name-string> <node> ...}}
 
-  Subcommand arg-specs route on the first argv token and return the nested
-  parsed args merged with `:subcommand` set to the matched subcommand name.
-  `:subcommand` is reserved and may not be declared as a nested flag or
-  positional name.
+  Parsing a subcommand arg-spec routes on argv tokens recursively: each token
+  selects a child node until a leaf is reached, and the remaining argv parses
+  against the leaf. The result merges the leaf's parsed args with `:subcommand`
+  bound to the full routing path as a vector of name strings (always a vector,
+  at every depth; DELTA-Lhc-001.CC3). Missing or unknown routing tokens — and
+  structural failures at depth — carry the canonical error context: `:op`
+  (string), `:path` (tokens successfully walked, `[]` at the root), `:token`
+  (the offending token, nil when missing), and `:available` (child names at the
+  failing node). The names in `reserved-subcommand-names` and the `subcommand`
+  arg name are rejected at every level.
 
   A flag-spec is a map with:
 
@@ -52,6 +64,8 @@ Blessed declarative argv parser for weaver ops (SPEC-003-D003.C1/C2).
   the envelope payloads map. Matching is whole-value only (a value that merely
   contains `:stdin` as a substring is untouched). A reference with no matching
   payload throws; an attached payload that no reference consumed throws.
+  Payload references and `:parse` declarations apply unchanged inside every
+  nested level.
 
 
 
@@ -64,9 +78,10 @@ Function.
 
 Render `arg-spec` as JSON-safe help data.
 
-  Includes arguments, types, docs, required flags, subcommands, and payload-parse
-  declarations for the `help <op>` projection.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/cli/alpha.clj#L138-L150">Source</a></sub></p>
+  Includes arguments, types, docs, required flags, and payload-parse
+  declarations for the `help <op>` projection; nested subcommands render
+  recursively to their declared depth (DELTA-Lhc-001.CC3).
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/cli/alpha.clj#L149-L156">Source</a></sub></p>
 
 ## <a name="skein.api.cli.alpha/parse">`parse`</a>
 ``` clojure
@@ -78,14 +93,15 @@ Function.
 Parse `argv` against `arg-spec`, resolving payload references from `payloads`.
 
   Returns a map of keyword arg names to parsed values. For subcommand arg-specs,
-  the first argv token selects the nested spec and the result includes the
-  matched `:subcommand` string. Throws a structured `ex-info` (ex-data carries
-  `:reason` plus the offending token/flag and the op) on any violation: unknown
-  flags, missing required args, type violations, duplicate non-repeat flags,
-  malformed key=value tokens, trailing unconsumed tokens, missing/unknown
-  subcommands, dangling or unused payload references, and malformed
-  :json/:jsonl payloads.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/cli/alpha.clj#L101-L136">Source</a></sub></p>
+  argv tokens route recursively to the invoked leaf and the result includes
+  `:subcommand` bound to the full routing path vector (DELTA-Lhc-001.CC3).
+  Throws a structured `ex-info` (ex-data carries `:reason` plus the offending
+  token/flag and the op) on any violation: unknown flags, missing required args,
+  type violations, duplicate non-repeat flags, malformed key=value tokens,
+  trailing unconsumed tokens, missing/unknown subcommands (with the canonical
+  `:op`/`:path`/`:token`/`:available` context), dangling or unused payload
+  references, and malformed :json/:jsonl payloads.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/cli/alpha.clj#L113-L133">Source</a></sub></p>
 
 ## <a name="skein.api.cli.alpha/reserved-subcommand-names">`reserved-subcommand-names`</a>
 
@@ -95,11 +111,29 @@ Parse `argv` against `arg-spec`, resolving payload references from `payloads`.
 Subcommand names reserved from op declaration for the help grammar.
 
   The single source of truth for the reserved set: registration/parse/explain
-  validation here blocks any op from declaring these as subcommands. The weaver
-  rewrites only the dash-prefixed flag forms (`--help`/`-h`) of a trailing token
-  to the `help` op (DELTA-Dtf-002.CC3); the bare word `help` stays reserved but
-  is the retired sugar that flows to normal parsing.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/cli/alpha.clj#L58-L66">Source</a></sub></p>
+  validation here blocks any op from declaring these as subcommands at any
+  depth (DELTA-Lhc-001.CC1). The weaver rewrites only the dash-prefixed flag
+  forms (`--help`/`-h`) of a trailing token to the `help` op
+  (DELTA-Dtf-002.CC3); the bare word `help` stays reserved but is the retired
+  sugar that flows to normal parsing.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/cli/alpha.clj#L72-L81">Source</a></sub></p>
+
+## <a name="skein.api.cli.alpha/resolve-leaf">`resolve-leaf`</a>
+``` clojure
+(resolve-leaf arg-spec argv)
+```
+Function.
+
+Walk `argv`'s routing tokens through `arg-spec` to the invoked leaf node.
+
+  Returns `{:node <leaf-node> :path <path-vector>}` without parsing the leaf's
+  flags or positionals: the walk consumes exactly the routing tokens, so
+  callers such as the socket payload-hook gate and deadline lookup
+  (DELTA-Lhc-002.CC3/CC4) can read leaf metadata before any hook runs. A flat
+  arg-spec resolves to its own root at path `[]`. Missing or unknown routing
+  tokens fail loudly with the canonical `:op`/`:path`/`:token`/`:available`
+  context.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/cli/alpha.clj#L135-L147">Source</a></sub></p>
 
 ## <a name="skein.api.cli.alpha/validate!">`validate!`</a>
 ``` clojure
@@ -109,11 +143,13 @@ Function.
 
 Validate any parser arg-spec shape, returning it unchanged on success.
 
-  Flat arg-specs validate their top-level flags and positionals. Subcommand
-  arg-specs additionally enforce the one-level subcommand contract and reserved
-  `:subcommand` result key. Throws structured `ex-info` on malformed specs so
-  op registration fails before help or invocation can drift from the contract.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/cli/alpha.clj#L68-L86">Source</a></sub></p>
+  Validates the fractal node tree recursively (DELTA-Lhc-001.CC1/CC2): interior
+  nodes may not declare `:flags`/`:positionals` or class metadata, leaves may
+  carry `:hook-class`/`:deadline-class`, reserved names are rejected at every
+  level, and an empty `:subcommands {}` is invalid. Throws structured `ex-info`
+  on malformed specs so op registration fails before help or invocation can
+  drift from the contract.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/cli/alpha.clj#L83-L98">Source</a></sub></p>
 
 ## <a name="skein.api.cli.alpha/validate-annotations!">`validate-annotations!`</a>
 ``` clojure
@@ -129,4 +165,4 @@ Structurally validate a standalone annotation sub-map for `op`, returning it.
   declares outside any arg-spec (DELTA-Dtf-002.MI1a). Purely structural: the
   glossary-ref existence check for `failure-modes` names runs at registration
   (DELTA-Dtf-003.CC2).
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/cli/alpha.clj#L88-L99">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/cli/alpha.clj#L100-L111">Source</a></sub></p>

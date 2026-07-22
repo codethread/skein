@@ -157,7 +157,7 @@
         (when return-subcommands
           (invalid-returns! op-name
                             :return-routing-misalignment
-                            "Operation :returns declares :subcommands where the arg-spec has a leaf"
+                            "Operation :returns routes :subcommands at an arg-spec leaf"
                             {:path path :returns return-node}))
         (validate-return-case-alignment! op-name stream? return-node {:path path})))))
 

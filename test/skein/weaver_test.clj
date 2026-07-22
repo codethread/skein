@@ -86,7 +86,7 @@
               (return-case-leaves name
                                   (if (seq path) {:subcommand path} {})
                                   return-node)))]
-    (into #{} (leaves returns []))))
+    (set (leaves returns []))))
 
 (defn- owner-return-coverage
   [rt provenance checked-leaves]
