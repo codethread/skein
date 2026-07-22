@@ -148,3 +148,22 @@ bump task, which is coordinator-sequenced after all spool releases exist.
   the user-sanctioned restart/refresh after landing; `.skein` config edits on
   this branch are inert until merged. Never refresh or restart the canonical
   weaver from this feature's tasks.
+- 2026-07-22 (t1-oracle, PH1): design slice landed (084e873..2cba54b). No delta
+  amendments — DELTA-Lhc-001/002/003 held as written at the applied seam. Two
+  boundary records for successor tasks:
+  (1) TASK-Lhc-001.OS2 exception, forced by DW1: the path-vector `:subcommand`
+  contract (CC3) breaks any handler that cases on the old scalar, so batteries
+  `query-op`/`pattern-op` received the minimal mechanical fix (dispatch on the
+  first path segment) to keep the owner tests and smoke green. Their grammars,
+  classes, and annotations were NOT swept — Task 2 still owns that. Guild,
+  text-search, and `.skein` registrants were left untouched and their handlers
+  case on the scalar shape: `test/skein/guild_test.clj` and the `.skein`
+  workflow ops are red against the new parse contract until PH2 sweeps them
+  (branch lands as one merge; per-slice gates are focused suites).
+  (2) Intra-branch scaffolding Task 5 must remove beside the class tolerance:
+  `skein.test.alpha/check-op-return!` coerces a legacy scalar `:subcommand`
+  context to a one-segment path, and `operation-label` still honors the parsed
+  nested `:action` (per MI6). The batteries `spool` registration row now passes
+  no op-level class (single-source leaf authoring) — the entry still assembles
+  the tolerated `:mutating` default, which the socket's leaf resolution
+  overrides per leaf; Task 5's flip deletes that default path.
