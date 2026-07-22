@@ -93,7 +93,7 @@ Storage has no declared hot-key registry. Every hot attribute row is uniformly i
 
 Queryable core fields include `:id`, `:title`, `:state`, `:created_at`, `:updated_at`, and attribute paths. Removed lifecycle fields such as `:active`, `:inactive_at`, `:status`, and `:final_at` are not accepted by the core query compiler.
 
-Attribute predicates compile against the row-backed `attributes` table, not against JSON paths on `strands`. Every predicate uses a correlated `EXISTS` probe over the candidate strand's non-archived row for the requested key; `:missing` negates the probe. Comparison and membership predicates, and `:exists`, are not satisfied by a missing or archived row or by a `NULL` value at the requested JSON path. Attribute `:not` distributes through `:and` / `:or` and negates each leaf inside its `EXISTS` predicate, so composed negation has the same document-form `NULL` filtering semantics for missing, archived, and `NULL` values.
+Attribute predicates compile against the row-backed `attributes` table, not against JSON paths on `strands`. Every predicate uses a correlated `EXISTS` probe over the candidate strand's non-archived row for the requested key; `:missing` negates the probe. Comparison and membership predicates, and `:exists`, are not satisfied by a missing or archived row or by a `NULL` value at the requested JSON path. Attribute `:not` distributes through `:and` / `:or`: comparison and membership leaves negate inside their `EXISTS` probe, while presence and edge leaves negate the probe itself.
 
 Every attribute key has the same predicate capability: `:=`, `:!=`, `:<`/`:<=`/`:>`/`:>=`, `:in`, `:exists`, `:missing`, and logical composition. Archived attributes are excluded from hot query membership.
 

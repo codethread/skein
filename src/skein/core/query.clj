@@ -130,17 +130,17 @@
   (let [values (resolve-query-value values params)]
     (when-not (and (coll? values) (seq values))
       (fail! ":in values must be a non-empty collection" {:values values}))
-    (let [predicate-sql (str (attr-value-sql "a")
-                             " IN ("
-                             (str/join ", " (repeat (count values) "?"))
-                             ")")]
-      (if (attr-field? field)
-        (compile-attr-predicate field (maybe-negate-predicate predicate-sql negated?) values)
-        (let [{field-sql :sql field-params :params} (compile-field field)]
-          (maybe-negate-compiled
-           {:sql (str field-sql " IN (" (str/join ", " (repeat (count values) "?")) ")")
-            :params (vec (concat field-params values))}
-           negated?))))))
+    (if (attr-field? field)
+      (let [predicate-sql (str (attr-value-sql "a")
+                               " IN ("
+                               (str/join ", " (repeat (count values) "?"))
+                               ")")]
+        (compile-attr-predicate field (maybe-negate-predicate predicate-sql negated?) values))
+      (let [{field-sql :sql field-params :params} (compile-field field)]
+        (maybe-negate-compiled
+         {:sql (str field-sql " IN (" (str/join ", " (repeat (count values) "?")) ")")
+          :params (vec (concat field-params values))}
+         negated?)))))
 
 (defn- join-compiled [operator compiled]
   {:sql (str "(" (str/join (str " " operator " ") (map :sql compiled)) ")")

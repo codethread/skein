@@ -112,6 +112,75 @@
           (is (= #{"both matching"}
                  (query-titles ds [:and [:in :id ids] [:not [:not attr-and]]]))))))))
 
+(deftest json-null-and-missing-nested-paths-follow-document-semantics
+  (db-test/with-db
+    (fn [ds]
+      (let [json-null-matching-other
+            (:id (db/add-strand! ds {:title "json null, other matching"
+                                     :attributes {:json-value nil :other 2}}))
+            json-null-nonmatching-other
+            (:id (db/add-strand! ds {:title "json null, other nonmatching"
+                                     :attributes {:json-value nil :other 3}}))
+            json-matching
+            (:id (db/add-strand! ds {:title "json matching"
+                                     :attributes {:json-value 1 :other 2}}))
+            json-nonmatching
+            (:id (db/add-strand! ds {:title "json nonmatching"
+                                     :attributes {:json-value 0 :other 3}}))
+            nested-missing-matching-other
+            (:id (db/add-strand! ds {:title "nested missing, other matching"
+                                     :attributes {:nested {} :other 2}}))
+            nested-missing-nonmatching-other
+            (:id (db/add-strand! ds {:title "nested missing, other nonmatching"
+                                     :attributes {:nested {} :other 3}}))
+            nested-matching
+            (:id (db/add-strand! ds {:title "nested matching"
+                                     :attributes {:nested {:value 1} :other 2}}))
+            nested-nonmatching
+            (:id (db/add-strand! ds {:title "nested nonmatching"
+                                     :attributes {:nested {:value 0} :other 3}}))
+            json-ids [json-null-matching-other
+                      json-null-nonmatching-other
+                      json-matching
+                      json-nonmatching]
+            nested-ids [nested-missing-matching-other
+                        nested-missing-nonmatching-other
+                        nested-matching
+                        nested-nonmatching]
+            json-field [:attr :json-value]
+            nested-field [:attr :nested :value]
+            matching-other [:= [:attr :other] 2]]
+        (testing "stored JSON null is missing, not existing, and not comparable"
+          (is (= #{"json matching"}
+                 (query-titles ds [:and [:in :id json-ids] [:= json-field 1]])))
+          (is (= #{"json matching" "json nonmatching"}
+                 (query-titles ds [:and [:in :id json-ids] [:exists json-field]])))
+          (is (= #{"json null, other matching" "json null, other nonmatching"}
+                 (query-titles ds [:and [:in :id json-ids] [:missing json-field]]))))
+
+        (testing "a missing nested path follows the same semantics"
+          (is (= #{"nested matching"}
+                 (query-titles ds [:and [:in :id nested-ids] [:= nested-field 1]])))
+          (is (= #{"nested matching" "nested nonmatching"}
+                 (query-titles ds [:and [:in :id nested-ids] [:exists nested-field]])))
+          (is (= #{"nested missing, other matching" "nested missing, other nonmatching"}
+                 (query-titles ds [:and [:in :id nested-ids] [:missing nested-field]]))))
+
+        (testing "composed negation retains unknown leaves unless another disjunct is true"
+          (doseq [[ids field expected-and expected-or]
+                  [[json-ids json-field
+                    #{"json null, other nonmatching" "json nonmatching"}
+                    #{"json nonmatching"}]
+                   [nested-ids nested-field
+                    #{"nested missing, other nonmatching" "nested nonmatching"}
+                    #{"nested nonmatching"}]]]
+            (is (= expected-and
+                   (query-titles ds [:and [:in :id ids]
+                                     [:not [:and [:= field 1] matching-other]]])))
+            (is (= expected-or
+                   (query-titles ds [:and [:in :id ids]
+                                     [:not [:or [:= field 1] matching-other]]])))))))))
+
 (deftest negated-attr-predicates-require-present-hot-keys
   (db-test/with-db
     (fn [ds]
