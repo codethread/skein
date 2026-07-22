@@ -27,7 +27,7 @@ tasks:
   - id: 6
     description: Convert batteries roster and text-search
     task_file: tasks/006-simple-first-party-spools.md
-    status: pending
+    status: complete
     blocked_by: [5, 24]
   - id: 7
     description: Convert workflow and shell executor

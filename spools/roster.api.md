@@ -59,6 +59,15 @@ Block until the selected scope has no active non-stale entries.
   `:timeout-secs`/`:poll-ms`.
 <p><sub><a href="https://github.com/codethread/skein/blob/main/spools/roster/src/skein/spools/roster.clj#L374-L402">Source</a></sub></p>
 
+## <a name="skein.spools.roster/contribute">`contribute`</a>
+``` clojure
+(contribute _ctx)
+```
+Function.
+
+Return roster's complete CLI operation and named-query contribution.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/roster/src/skein/spools/roster.clj#L816-L828">Source</a></sub></p>
+
 ## <a name="skein.spools.roster/default-stale-after-ms">`default-stale-after-ms`</a>
 
 
@@ -173,6 +182,19 @@ Return the full agent-priming payload for using the roster.
   adds the working discipline an agent needs before starting, heartbeating, or
   finishing roster entries.
 <p><sub><a href="https://github.com/codethread/skein/blob/main/spools/roster/src/skein/spools/roster.clj#L611-L654">Source</a></sub></p>
+
+## <a name="skein.spools.roster/reconcile">`reconcile`</a>
+``` clojure
+(reconcile {:keys [runtime], :as ctx})
+```
+Function.
+
+Reconcile roster's watcher and vocabulary around published declarations.
+
+  Removal unregisters the event handler, preventing a stale background
+  heartbeat worker after this module is omitted from a complete refresh.
+  
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/roster/src/skein/spools/roster.clj#L830-L843">Source</a></sub></p>
 
 ## <a name="skein.spools.roster/roster-op">`roster-op`</a>
 ``` clojure

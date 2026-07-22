@@ -41,6 +41,19 @@ UNSAFE: uses skein.core.db for substring search over strand titles and
 
 
 
+## <a name="skein.spools.text-search/contribute">`contribute`</a>
+``` clojure
+(contribute _ctx)
+```
+Function.
+
+Return text-search's complete unsafe search-operation contribution.
+
+  The operation retains its documented direct `skein.core.db` dependency; only
+  publication changes from eager registration to owner-complete declaration.
+  
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/text-search/src/skein/spools/text_search.clj#L229-L241">Source</a></sub></p>
+
 ## <a name="skein.spools.text-search/default-search-limit">`default-search-limit`</a>
 
 

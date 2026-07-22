@@ -812,3 +812,32 @@
                                       [:and
                                        [:= :state "active"]
                                        [:= [:attr "roster/entry"] "true"]])]}))
+
+(defn contribute
+  "Return roster's complete CLI operation and named-query contribution."
+  [_ctx]
+  {:ops {:entries {'roster {:doc "Manage active-work roster entries: start, heartbeat, finish, list, and await quiet."
+                            :arg-spec roster-arg-spec
+                            :returns roster-returns
+                            :deadline-class :unbounded
+                            :handler 'skein.spools.roster/roster-op}}
+         :overrides #{}}
+   :queries {:entries {'roster [:and
+                                [:= :state "active"]
+                                [:= [:attr "roster/entry"] "true"]]}
+             :overrides #{}}})
+
+(defn reconcile
+  "Reconcile roster's watcher and vocabulary around published declarations.
+
+  Removal unregisters the event handler, preventing a stale background
+  heartbeat worker after this module is omitted from a complete refresh.
+  "
+  [{:keys [runtime] :as ctx}]
+  (case (get-in ctx [:module/contribution :status])
+    :applied (do (vocab/declare! runtime roster-namespace-declaration)
+                 (watch! runtime)
+                 {:reconciled :applied})
+    :removed (do (events/unregister-handler! runtime integration-event-key)
+                 {:reconciled :removed})
+    {:reconciled :noop}))

@@ -76,7 +76,10 @@
                     tag-shas)))
 
 (defn- stub-git-client! [rt client]
-  (reset! (runtime/spool-state rt :skein.spools.batteries/git-client #(atom nil)) client))
+  (reset! (:client (runtime/spool-state rt :skein.spools.batteries/git-client
+                                        {:version 1}
+                                        #(hash-map :client (atom nil))))
+          client))
 
 (defn- stub-git! [rt tags manifest]
   (stub-git-client! rt {:ls-remote (fn [_git-url] tags)

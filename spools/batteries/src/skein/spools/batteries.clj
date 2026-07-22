@@ -40,6 +40,7 @@
 (def ^:private generic-states #{"active" "closed"})
 (def ^:private lean-attribute-byte-floor 1024)
 (def ^:private default-read-limit 500)
+(def ^:private read-limit-state-version 1)
 (def ^:private readable-states #{"active" "closed" "replaced"})
 (def ^:private release-tag-pattern #"v([1-9][0-9]*)")
 
@@ -193,12 +194,13 @@
     k))
 
 (defn- read-limit-state [rt]
-  (runtime-api/spool-state rt ::read-limit #(atom default-read-limit)))
+  (runtime-api/spool-state rt ::read-limit {:version read-limit-state-version}
+                           #(hash-map :limit (atom default-read-limit))))
 
 (defn read-limit
   "Return the runtime's batteries read-result cap for CLI list/ready ops."
   [rt]
-  @(read-limit-state rt))
+  @(:limit (read-limit-state rt)))
 
 (defn set-read-limit!
   "Set the runtime's batteries read-result cap for CLI list/ready ops.
@@ -207,7 +209,7 @@
   falling back to the default cap."
   [rt limit]
   (let [limit (validate-read-limit limit)]
-    (reset! (read-limit-state rt) limit)
+    (reset! (:limit (read-limit-state rt)) limit)
     limit))
 
 (defn- effective-read-limit [rt explicit-limit]
@@ -319,11 +321,14 @@
   {:ls-remote ls-remote
    :manifest-at manifest-at})
 
+(def ^:private git-client-state-version 1)
+
 (defn- git-client-state [rt]
-  (runtime-api/spool-state rt ::git-client #(atom default-git-client)))
+  (runtime-api/spool-state rt ::git-client {:version git-client-state-version}
+                           #(hash-map :client (atom default-git-client))))
 
 (defn- git-client [rt]
-  @(git-client-state rt))
+  @(:client (git-client-state rt)))
 
 (defn- release-number [tag]
   (when-let [[_ n] (and (string? tag) (re-matches release-tag-pattern tag))]
@@ -1193,3 +1198,21 @@
                                        :hook-class hook-class}
                                       handler))
                op-registrations)}))
+
+(defn contribute
+  "Return batteries' complete stable-owner CLI operation contribution.
+
+  The classpath spool remains explicitly required by workspace startup; this
+  function only supplies its declarative operation partition. Built-in help is
+  still replaced by the batteries `help` declaration through normal ownership.
+  "
+  [_ctx]
+  {:ops {:entries (into {}
+                        (map (fn [[op-name arg-spec hook-class handler]]
+                               [op-name {:doc (:doc arg-spec)
+                                         :arg-spec arg-spec
+                                         :returns (get op-returns op-name)
+                                         :hook-class hook-class
+                                         :handler handler}])
+                             op-registrations))
+         :overrides #{'help}}})

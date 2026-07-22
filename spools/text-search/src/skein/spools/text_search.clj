@@ -225,3 +225,17 @@
                                  :returns search-return
                                  :hook-class :read}
                                 'skein.spools.text-search/search-op)]}))
+
+(defn contribute
+  "Return text-search's complete unsafe search-operation contribution.
+
+  The operation retains its documented direct `skein.core.db` dependency; only
+  publication changes from eager registration to owner-complete declaration.
+  "
+  [_ctx]
+  {:ops {:entries {'search {:doc search-doc
+                            :arg-spec search-arg-spec
+                            :returns search-return
+                            :hook-class :read
+                            :handler 'skein.spools.text-search/search-op}}
+         :overrides #{}}})
