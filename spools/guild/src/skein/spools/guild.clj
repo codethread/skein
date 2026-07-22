@@ -10,6 +10,7 @@
   (:require [clojure.data.json :as json]
             [clojure.spec.alpha :as s]
             [clojure.string :as str]
+            [skein.api.registry.alpha :as registry]
             [skein.api.weaver.alpha :as weaver]
             [skein.api.runtime.alpha :as runtime]
             [skein.api.spool.alpha :as spool :refer [fail!]]))
@@ -29,6 +30,44 @@
 (defn- guild-ops [runtime] (:guild-ops (state runtime)))
 (defn- deprecated-ops [runtime] (:deprecated-ops (state runtime)))
 (defn- fallback-guild-name [runtime] (:fallback-guild-name (state runtime)))
+
+(def ^:private declaration-kind :skein.spools.guild/declarations)
+(def ^:private declaration-owner :skein.spools.guild/defaults)
+
+(s/def ::declaration
+  (s/and map?
+         #(contains? #{:active :deprecated} (:status %))
+         #(string? (:name %))))
+
+(defn- new-declarations []
+  (doto (registry/registry)
+    (registry/declare-kind! {:id declaration-kind
+                             :entry-spec ::declaration
+                             :binding-moment :operation-dispatch})))
+
+(defn- declarations-handle [runtime]
+  (runtime/spool-state runtime ::declarations {:version 1} new-declarations))
+
+(defn- declaration-entries [runtime]
+  (merge
+   (into {}
+         (map (fn [[name entry]]
+                [name (assoc entry :status :active)]))
+         @(guild-ops runtime))
+   (into {}
+         (map (fn [[name entry]]
+                [name (assoc entry :name name :status :deprecated)]))
+         @(deprecated-ops runtime))))
+
+(defn- publish-declarations! [runtime]
+  (let [entries (declaration-entries runtime)
+        handle (declarations-handle runtime)]
+    (if (seq entries)
+      (registry/replace-owner! handle declaration-kind declaration-owner
+                               {:layer :spools
+                                :entries entries
+                                :overrides #{}})
+      (registry/remove-owner! handle declaration-kind declaration-owner))))
 
 (def ^:private register-op-opt-keys #{:doc :input-spec :returns})
 (def ^:private deprecate-opt-keys #{:replacement :since})
@@ -160,6 +199,7 @@
                 (contains? opts :returns) (assoc :returns (:returns opts)))]
     (swap! (guild-ops runtime) assoc (:name entry) entry)
     (swap! (deprecated-ops runtime) dissoc (:name entry))
+    (publish-declarations! runtime)
     entry))
 
 (defn- guild-name [name]
@@ -187,6 +227,7 @@
                              'skein.spools.guild/deprecated-op (:returns entry))
     (swap! (guild-ops runtime) dissoc (:name entry))
     (swap! (deprecated-ops runtime) assoc (:name entry) (assoc deprecated :doc (:doc entry)))
+    (publish-declarations! runtime)
     (assoc deprecated :name (:name entry))))
 
 (defn ops
@@ -219,6 +260,7 @@
    (reset! (guild-ops runtime) {})
    (reset! (deprecated-ops runtime) {})
    (reset! (fallback-guild-name runtime) guild-name)
+   (publish-declarations! runtime)
    (register-or-replace-op! runtime
                             'guild
                             (:doc guild-arg-spec)

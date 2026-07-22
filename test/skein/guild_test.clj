@@ -4,6 +4,7 @@
             [clojure.test :refer [deftest is testing]]
             [clojure.spec.alpha :as s]
             [clojure.data.json :as json]
+            [skein.api.registry.alpha :as registry]
             [skein.api.weaver.alpha :as weaver]
             [skein.spools.guild :as guild]
             [skein.spools.test-support :refer [assert-state-shape with-runtime]]
@@ -28,6 +29,35 @@
 (deftest spool-state-shape-is-pinned
   (assert-state-shape #'guild/new-state
                       #{:guild-ops :deprecated-ops :fallback-guild-name}))
+
+(deftest declarations-are-owned-and-delete-by-omission
+  (with-runtime
+    (fn [rt _]
+      (guild/install! rt)
+      (guild/register-op! rt 'gate.close.v1 {:doc "Close" :returns close-return}
+                          'skein.guild-test/close-handler)
+      (let [handle (#'guild/declarations-handle rt)
+            kind :skein.spools.guild/declarations
+            owner :skein.spools.guild/defaults]
+        (is (= #{"gate.close.v1"}
+               (set (keys (registry/effective handle kind)))))
+        (registry/remove-owner! handle kind owner)
+        (is (empty? (registry/effective handle kind))
+            "removing guild's complete owner partition deletes its declarations")
+        (guild/register-op! rt 'gate.close.v1 {:doc "Close" :returns close-return}
+                            'skein.guild-test/close-handler)
+        (let [entry (assoc (get (registry/effective handle kind) "gate.close.v1")
+                           :doc "Workspace close")]
+          (registry/replace-owner! handle kind :workspace/test
+                                   {:layer :workspace
+                                    :entries {"gate.close.v1" entry}
+                                    :overrides #{"gate.close.v1"}})
+          (is (= "Workspace close"
+                 (:doc (get (registry/effective handle kind) "gate.close.v1"))))
+          (registry/remove-owner! handle kind :workspace/test)
+          (is (= "Close"
+                 (:doc (get (registry/effective handle kind) "gate.close.v1")))
+              "removing an override restores guild's stable owner entry"))))))
 
 (deftest production-return-coverage-is-derived-from-guild-provenance
   (with-runtime
