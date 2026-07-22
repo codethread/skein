@@ -3,7 +3,7 @@
 **Document ID:** `DELTA-Lhc-001`
 **Root spec:** [repl-api.md](../../../specs/repl-api.md)
 **Feature:** [../proposal.md](../proposal.md)
-**Status:** Draft
+**Status:** Merged
 **Last Updated:** 2026-07-22
 
 ## DELTA-Lhc-001.P1 Summary

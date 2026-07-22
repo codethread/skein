@@ -289,14 +289,16 @@ rewrites to `strand help agent`.
 
 **`help` is never hand-written.** It is one declared, versioned schema, uniformly projected;
 renderings are transforms over it. `strand help` lists every registered op; `strand help <op>`
-renders one op's detail from its arg-spec; `strand help <op> <verb>` slices to a single subcommand.
+renders one op's detail from its arg-spec; `strand help <op> <verb> [<verb> ...]` slices to any
+declared node, including an interior node with further verbs.
 A detail response is a canonical envelope, `{schema-version, operation, source, glossary, node}`,
 verbose by default, where `node` is a self-similar shape that recurses into subcommands, `source`
 points at the handler's `file:line` when it resolves, and `glossary` defines the named failure
 outcomes a node references. With no help transform registered, that raw envelope JSON is the output.
 A workspace can register one default help transform to render it as friendlier text instead; `--json`
 is the sole opt-out, always returning the raw envelope, so a failing transform can never brick help.
-Missing or unknown subcommands fail with structured parser errors carrying the available names. No
+Missing or unknown subcommands at any depth fail with structured parser errors carrying the path
+walked and the available names. No
 spool ever writes its own usage strings or dispatch errors. Contracts: SPEC-002.C39 and the
 discovery-tier deltas.
 
@@ -502,7 +504,7 @@ A query definition is either a bare where expression, or a map with `:where` and
 
 A where expression is an EDN vector of `[operator & args]`:
 
-The grammar is a deliberately narrow boundary surface. New forms must meet the [SPEC-001.P9 acceptance criteria](../devflow/specs/strand-model.md); a selection the grammar cannot express belongs in a registered read op — an op registered with `:hook-class :read` that composes registered queries and extra filtering in Clojure through the `skein.api.graph.alpha` helpers ([Graph helpers](#graph-helpers)) — which CLI callers invoke like any other op.
+The grammar is a deliberately narrow boundary surface. New forms must meet the [SPEC-001.P9 acceptance criteria](../devflow/specs/strand-model.md); a selection the grammar cannot express belongs in a registered read op. Put `:hook-class :read` and `:deadline-class` on that flat arg-spec leaf, then compose registered queries and extra filtering in Clojure through the `skein.api.graph.alpha` helpers ([Graph helpers](#graph-helpers)). CLI callers invoke it like any other op.
 
 | Form | Meaning |
 | --- | --- |
@@ -743,8 +745,9 @@ printf "(do (require 'my.workflow) (my.workflow/owned-strands {}))\n" \
   | mill weaver repl --stdin --workspace "$workspace"
 ```
 
-Named read surfaces beyond queries are registered CLI operations (`register-op!` with
-`:hook-class :read`), which add docs, arg parsing, and `strand <op>` invocation on top of
+Named read surfaces beyond queries are registered CLI operations. Their flat arg-spec leaves carry
+`:hook-class :read` and `:deadline-class`; registration opts carry classes only for raw-envelope ops.
+They add docs, arg parsing, and `strand <op>` invocation on top of
 plain trusted functions like the one above.
 
 ## Events

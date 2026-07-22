@@ -3,7 +3,7 @@
 **Document ID:** `DELTA-Lhc-003`
 **Root spec:** [cli.md](../../../specs/cli.md)
 **Feature:** [../proposal.md](../proposal.md)
-**Status:** Draft
+**Status:** Merged
 **Last Updated:** 2026-07-22
 
 ## DELTA-Lhc-003.P1 Summary

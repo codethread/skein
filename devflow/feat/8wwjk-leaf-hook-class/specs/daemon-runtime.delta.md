@@ -3,7 +3,7 @@
 **Document ID:** `DELTA-Lhc-002`
 **Root spec:** [daemon-runtime.md](../../../specs/daemon-runtime.md)
 **Feature:** [../proposal.md](../proposal.md)
-**Status:** Draft
+**Status:** Merged
 **Last Updated:** 2026-07-22
 
 ## DELTA-Lhc-002.P1 Summary

@@ -331,14 +331,17 @@ Skein's discovery convention has three tiers — generated `help`, authored `abo
 — described in [`docs/reference.md`](../reference.md) ("Discovery tiers"). For a spool op this
 means:
 
-1. **Declare your verbs as `:subcommands` arg-spec data; never hand-roll dispatch or usage errors.**
-   Declaring subcommands buys the whole `help` tier for free: `strand help <op>` renders your verbs as
-   the fractal node's `children`, a trailing `strand <op> --help`/`-h` rewrites to it, and
-   missing/unknown-verb failures become structured parser errors carrying the available names. `help`,
+1. **Declare your verbs as recursive `:subcommands` arg-spec data; never hand-roll dispatch or usage errors.**
+   A node may nest to the depth your command needs. `strand help <op> <verb> [<verb> ...]` slices any
+   declared node, a trailing `strand <op> <verb> --help`/`-h` rewrites to it, and missing/unknown-verb
+   failures become structured parser errors carrying the walked path and available names. `help`,
    `-h`, `--help`, and the arg name `subcommand` are reserved and rejected at registration. The old
    sole-token `<op> help` alias is retired — a bare `<op> help` word now fails with a loud redirect to
    `strand help <op>`. Bare `<op>` stays a loud non-zero error — never exit-0 help.
-2. **Author per-verb annotations on the arg-spec node, not prose blobs.** Each subcommand's spec may
+2. **Author leaf classes and per-verb annotations on the arg-spec node, not prose blobs.** Every
+   invocable leaf carries `:hook-class` (`:read` or `:mutating`) and `:deadline-class` (`:standard` or
+   `:unbounded`). Interior nodes carry neither. A flat op's root is its leaf; raw-envelope ops are the
+   sole exception and declare both classes in registration metadata. Each subcommand's spec may
    carry a closed `use-when`/`notes`/`failure-modes` sub-map (string arrays; `failure-modes` holds
    glossary outcome **names**). The projection folds them into that verb's node, so `help` stays the
    single non-drifting source for anything derivable from a verb's shape.
@@ -391,7 +394,8 @@ applies to shared-spool CLIs.
 - Prefer `list` for live, filterable entities; `ps` already owns the live
   process listing. Use a plural noun such as `harnesses`, `suites`, or
   `backends` for a fixed catalog.
-- Prefer one op with declared subcommands for a cohesive multi-verb domain. Keep
+- Prefer one op with declared subcommands for a cohesive multi-verb domain. Compose deeper verb trees
+  from flat `def` node blocks, reusing a node where more than one parent needs the same leaf. Keep
   single-purpose projections and config-registered ops flat.
 - Before a `v1` promise, a vocabulary correction may be a clear cut under
   TEN-000@1. After `v1`, keep the old contract and publish the correction under a
