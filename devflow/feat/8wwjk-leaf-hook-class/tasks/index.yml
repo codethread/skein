@@ -5,12 +5,12 @@ tasks:
     status: pending
     blocked_by: []
   - id: 2
-    description: Batteries sweep — remaining ops, renderer, contract docs
+    description: Batteries sweep — remaining ops, contract docs
     task_file: tasks/002-batteries-sweep.md
     status: pending
     blocked_by: [1]
   - id: 3
-    description: System ops, guild/text-search, in-repo local spools, smoke
+    description: System ops registrar, guild, text-search, Go deep-argv test
     task_file: tasks/003-system-ops-and-local-spools.md
     status: pending
     blocked_by: [1]
@@ -30,22 +30,17 @@ tasks:
     status: pending
     blocked_by: [5]
   - id: 7
-    description: kanban.spool adoption + release tag
+    description: kanban.spool adoption + v7 release tag
     task_file: tasks/007-kanban-spool-adoption.md
     status: pending
     blocked_by: [5]
   - id: 8
-    description: agent-harness.spool adoption (agent-run/delegation/bench) + release tag
+    description: agent-harness.spool adoption (agent-run/delegation/bench) + v12 release tag
     task_file: tasks/008-agent-harness-spool-adoption.md
     status: pending
     blocked_by: [5]
   - id: 9
-    description: devflow.spool adoption + release tag
-    task_file: tasks/009-devflow-spool-adoption.md
-    status: pending
-    blocked_by: [5]
-  - id: 10
     description: Pin bumps + full acceptance gates
-    task_file: tasks/010-pin-bumps-and-acceptance.md
+    task_file: tasks/009-pin-bumps-and-acceptance.md
     status: pending
-    blocked_by: [6, 7, 8, 9]
+    blocked_by: [6, 7, 8]

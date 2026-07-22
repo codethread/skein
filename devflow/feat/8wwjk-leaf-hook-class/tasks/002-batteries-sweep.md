@@ -33,14 +33,21 @@ match each op's current registered behavior (`query`/`pattern`/`vocab`/`list`/
 
 - **TASK-Lhc-002.DW1:** Cold `clojure -M:test` green on the batteries owner test
   namespaces.
-- **TASK-Lhc-002.DW2:** `make fmt-check lint reflect-check docs-check` green;
-  clean `git status --short`.
+- **TASK-Lhc-002.DW2:** `make api-docs` when docstrings changed; `make
+  fmt-check lint reflect-check docs-check` green; clean `git status --short`.
 
 ## TASK-Lhc-002.P4 Out of scope / ownership
 
-- **TASK-Lhc-002.OS1:** No edits to Task 1's core files, the smoke suite
-  (Task 3), `.skein/` (Task 4), or enforcement (Task 5).
+- **TASK-Lhc-002.OS1:** No edits to Task 1's core mechanism files, the smoke
+  suite (Task 1 owns it), `.skein/` (Task 4), or enforcement (Task 5).
+  Batteries op definitions + owner tests are owned here post-Task 1; the
+  `spool` op and renderer regions stay as Task 1 left them.
 - Owns: `spools/batteries/src/skein/spools/batteries.clj` (op definitions +
   contribution constructors; not the `spool` op or renderer regions),
   `test/skein/spools/batteries_test.clj`, `spools/batteries.md`,
   `spools/README.md`.
+
+## References
+
+- Plan: [../8wwjk-leaf-hook-class.plan.md](../8wwjk-leaf-hook-class.plan.md) (PH2a)
+- Deltas: [repl-api](../specs/repl-api.delta.md), [daemon-runtime](../specs/daemon-runtime.delta.md), [cli](../specs/cli.delta.md)

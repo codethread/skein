@@ -24,12 +24,18 @@ never refresh or restart the canonical weaver.
   matching current behavior (reads `:read`; blocking waits — `flow-await`,
   agent awaiting verbs' wrappers — `:unbounded` at the blocking leaf only).
 - **TASK-Lhc-004.MI3:** Registry/publication test fixtures under `test/` that
-  assemble op entries declare leaf classes (enumerate by grepping fixtures for
-  `:hook-class` and entry constructors; name them in your worklog note).
-- **TASK-Lhc-004.MI4:** Where a `.skein` op grammar fakes verbs with a
-  positional action, record it in a migration-matrix note on the plan
-  (Developer Notes) — fold to real nesting only when the op is repo-owned and
-  the fold is mechanical; otherwise leave for a follow-up card.
+  assemble op entries declare leaf classes. Review 6qg5z counted ~118
+  registration references across six fixture/test files including
+  `stream-op-init.clj`, peers, glossary, test-alpha, and weaver tests: grep
+  `register-op!|replace-op!|:hook-class|op-contribution` under `test/` and
+  `test_resources/`, enumerate the full list in your worklog, and convert every
+  fixture you own here (Task 5 asserts none remain).
+- **TASK-Lhc-004.MI4:** Enumerate every `.skein` op grammar that fakes verbs
+  with a positional action in a migration-matrix worklog note. Any grammar
+  whose dispatch label relies on the nested `:action` amendment MUST migrate to
+  real nesting in this task — DELTA-Lhc-002.CC5 retires that amendment at
+  Task 5, so deferral is not an option; purely-internal positionals that never
+  fed the label may stay and are marked so in the matrix.
 
 ## TASK-Lhc-004.P3 Done when
 
@@ -47,3 +53,8 @@ never refresh or restart the canonical weaver.
   (Task 5); no canonical-weaver refresh/restart, ever.
 - Owns: `.skein/*.clj`, `.skein/spools/macros/`, and the registry fixture test
   files it names.
+
+## References
+
+- Plan: [../8wwjk-leaf-hook-class.plan.md](../8wwjk-leaf-hook-class.plan.md) (PH2c)
+- Deltas: [repl-api](../specs/repl-api.delta.md), [daemon-runtime](../specs/daemon-runtime.delta.md), [cli](../specs/cli.delta.md)

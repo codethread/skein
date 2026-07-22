@@ -33,4 +33,9 @@ docs. Prose follows the repo docs style (load the docs-style checklist).
 ## TASK-Lhc-006.P4 Out of scope
 
 - **TASK-Lhc-006.OS1:** Any source/behavior change; sibling spool docs (their
-  own repos, Tasks 7–9).
+  own repos, Tasks 7–8).
+
+## References
+
+- Plan: [../8wwjk-leaf-hook-class.plan.md](../8wwjk-leaf-hook-class.plan.md) (PH4)
+- Deltas: [repl-api](../specs/repl-api.delta.md), [daemon-runtime](../specs/daemon-runtime.delta.md), [cli](../specs/cli.delta.md)

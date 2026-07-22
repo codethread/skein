@@ -63,7 +63,8 @@ amendment in the plan's Developer Notes).
   help, socket integration (pre-hook verb failures; read-leaf hook skipping;
   leaf deadline), batteries owner tests, test/alpha.
 - **TASK-Lhc-001.DW2:** `clojure -M:smoke` and `(cd cli && go test ./...)`
-  green; `make fmt-check lint reflect-check docs-check` green; clean
+  green; `make api-docs` re-run when docstrings changed (regenerated files
+  committed); `make fmt-check lint reflect-check docs-check` green; clean
   `git status --short`.
 - **TASK-Lhc-001.DW3:** Any delta amendments recorded in the delta file(s) and
   the plan's Developer Notes.
@@ -78,7 +79,12 @@ amendment in the plan's Developer Notes).
   MI5).
 - **TASK-Lhc-001.OS3:** Root spec promotion and prose docs — Task 6.
 
-## TASK-Lhc-001.P5 File ownership (Tasks 2–4 may not touch these)
+## TASK-Lhc-001.P5 File ownership (exclusive only while Task 1 is open)
+
+Ownership transfers when Task 1 closes: Task 2 then owns the batteries op
+definitions + owner tests, Task 3 the `register-built-in-ops!` declaration
+block, Task 4 the fixtures it names. The smoke suite is Task 1-owned (this
+slice changes the envelope and the `spool` surface) and stays green here.
 
 `src/skein/api/cli/alpha.clj`, `src/skein/api/cli/internal/validation.clj`,
 `src/skein/api/cli/internal/help.clj`, `src/skein/api/return_shape/alpha.clj`,
@@ -86,3 +92,8 @@ amendment in the plan's Developer Notes).
 `src/skein/core/weaver/socket.clj`, `src/skein/core/weaver/help.clj`,
 `src/skein/test/alpha.clj`, `spools/batteries/src/skein/spools/batteries.clj`
 (spool op + renderer regions), and their co-located test namespaces.
+
+## TASK-Lhc-001.P6 References
+
+- Plan: [../8wwjk-leaf-hook-class.plan.md](../8wwjk-leaf-hook-class.plan.md) (PH1)
+- Deltas: [repl-api](../specs/repl-api.delta.md), [daemon-runtime](../specs/daemon-runtime.delta.md), [cli](../specs/cli.delta.md)

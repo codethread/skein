@@ -128,6 +128,14 @@ bump task, which is coordinator-sequenced after all spool releases exist.
 
 ## PLAN-Lhc-001.P7 Developer Notes
 
+- 2026-07-22 (coordinator): task-queue review runs xogz3+6qg5z (notes 64ses,
+  qpf5g on strand kx90q) folded: devflow.spool dropped from the fan-out (v3
+  registers no CLI ops — pin stays v3); workflow/chime/cron register no CLI
+  ops; smoke owned by Task 1; guild constructor API requires caller-supplied
+  classes; test-registration sweep enumerated (Task 4 + Task 5 backstop);
+  :action-label grammars must migrate in-queue; sibling tasks get wiring +
+  compat-alarm ceremony; api-docs regenerated per task; queue renumbered to 9
+  tasks while still draft.
 - 2026-07-22 (coordinator): spec/plan review runs szlo1+nz2x6 (notes n59mo, mzijt
   on strand exuix) folded: single-source class authoring, doc-only leaves, C63a/b
   + C33 + C63b-deadline amendments, deep help-alias semantics, canonical error
