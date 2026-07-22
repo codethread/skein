@@ -112,7 +112,7 @@ tasks:
   - id: 23
     description: "[HITL] Adopt the new canonical live runtime"
     task_file: tasks/023-canonical-runtime-adoption.md
-    status: blocked
+    status: complete
     blocked_by: [22]
   - id: 24
     description: Publish owner registry API for spool domains
