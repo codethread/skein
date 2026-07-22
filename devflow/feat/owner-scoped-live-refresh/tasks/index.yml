@@ -87,7 +87,7 @@ tasks:
   - id: 18
     description: Run cross-repository acceptance matrix
     task_file: tasks/018-cross-repo-acceptance.md
-    status: pending
+    status: complete
     blocked_by: [16, 17, 26]
   - id: 19
     description: Prepare peer compatibility exception releases
