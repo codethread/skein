@@ -241,8 +241,8 @@
   {:ops {:entries {"search" {:name "search"
                              :fn 'skein.spools.text-search/search-op
                              :stream? false
-                             :deadline-class :standard
-                             :hook-class :read
+                             ;; Classes live on the arg-spec leaf; duplicating them
+                             ;; here would make registration metadata invalid.
                              :provenance 'skein.spools.text-search
                              :doc search-doc
                              :arg-spec search-arg-spec
