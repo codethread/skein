@@ -53,12 +53,12 @@
   :args (s/cat)
   :ret ::install-result)
 
-;; BRANCH-ONLY module adapter (PLAN-Olr-001 Task 11, DELTA-OlrRepl-001.CC6). The
-;; tracker binding rides the peer kanban `set-tracker!` surface until the kanban
-;; spool exposes an owner-partitioned tracker kind (Tasks 12-15); Task 16
-;; replaces this reconcile with a declarative contribution.
+;; The devflow<->kanban tracker binding is a singleton slot, not a partitioned
+;; kind: kanban exposes one tracker per runtime through `set-tracker!`, so there
+;; is no owner partition to contribute and nothing for deletion-by-omission to
+;; drop. Reconcile is its home — it re-establishes the binding on every refresh.
 (defn reconcile
   "Bind devflow as this runtime's required kanban tracker."
   [{:keys [runtime]}]
   (current/with-runtime runtime (install!))
-  {:reconciled :kanban-tracker :adapter :branch-only})
+  {:reconciled :kanban-tracker})

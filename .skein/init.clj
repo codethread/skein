@@ -130,23 +130,26 @@
                   :required? true})
 
 ;; --- repo policy over the peer spools ---------------------------------------
-;; harnesses.clj registers seats over the :pi harness that agent-run reconciles,
-;; and consumes the delegation review/task contract text, so it reconciles after
-;; both peers; its reconcile calls the file's branch-only install!.
+;; harnesses.clj contributes its seats over the :pi harness that agent-run
+;; reconciles, as the workspace-owned partitions of agent-run's tool/alias kinds,
+;; so it orders after both peers. Its reconcile sets the two singleton default
+;; review/task contract slots, consuming the delegation contract text.
 (runtime/module! runtime :harnesses
                  {:file "harnesses.clj"
                   :spools ['ct.spools/delegation 'ct.spools/agent-run]
                   :after [:skein/spools-shuttle :skein/spools-delegation]
+                  :contribute 'harnesses/contribute
                   :reconcile 'harnesses/reconcile
                   :required? true})
-;; The declarative reviewer roster stays a small git-reviewable data document.
+;; The declarative reviewer roster stays a small git-reviewable data document,
+;; contributed as the workspace-owned partition of delegation's roster kind.
 ;; Roster harness aliases resolve at review time, not registration time, so order
 ;; relative to harnesses.clj is not load-bearing.
 (runtime/module! runtime :reviewers
                  {:file "reviewers.clj"
                   :spools ['ct.spools/delegation]
                   :after [:skein/spools-delegation]
-                  :reconcile 'reviewers/reconcile
+                  :contribute 'reviewers/contribute
                   :required? true})
 
 ;; --- chime notification engine + this repo's attention rules ----------------
@@ -219,14 +222,15 @@
                   :spools ['skein.macros/macros]
                   :after [:macros/ops]
                   :required? true})
-;; workflows.clj registers the land/story workflows and their ops through its
-;; branch-only reconcile, and references config.clj's public CLI-tail helpers at
-;; load time, so it orders after :config as well as the workflow/delegation spools.
+;; workflows.clj contributes the land/story workflow constructors, the land/flow
+;; ops, and the delegate-pipeline pattern as its workspace-owned partitions, and
+;; references config.clj's public CLI-tail helpers at load time, so it orders
+;; after :config as well as the workflow/delegation spools.
 (runtime/module! runtime :workflows
                  {:file "workflows.clj"
                   :spools ['skein.spools/workflow 'ct.spools/delegation]
                   :after [:skein/spools-workflow :skein/spools-delegation :config]
-                  :reconcile 'workflows/reconcile
+                  :contribute 'workflows/contribute
                   :required? true})
 
 ;; The subagent gate executor reconciles last: its reconcile runs an initial gate

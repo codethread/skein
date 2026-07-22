@@ -134,10 +134,13 @@
              (requiring-resolve 'ct.spools.devflow/contribute))
             (load-module-source! rt :config ".skein/config.clj")
             (load-file ".skein/harnesses.clj")
+            (publish-module-contribution!
+             rt :harnesses (requiring-resolve 'harnesses/contribute))
+            ((requiring-resolve 'harnesses/reconcile) {:runtime rt})
             (load-file ".skein/workflows.clj")
+            (publish-module-contribution!
+             rt :workflows (requiring-resolve 'workflows/contribute))
             (load-module-source! rt :analytics ".skein/analytics.clj")
-            ((requiring-resolve 'harnesses/install!))
-            ((requiring-resolve 'workflows/install!))
             (f rt)))
         (finally
           (weaver-runtime/stop! rt)
@@ -178,6 +181,72 @@
                                              :publish? false})]
       (try
         (with-runtime-loader rt #(f rt))
+        (finally
+          (weaver-runtime/stop! rt)
+          (db-test/delete-sqlite-family! db-file)
+          (delete-directory! config-dir))))))
+
+(defn- write-f16-probe!
+  "Write the F16 regression probe file into config-dir.
+
+  When present? is true it contributes one harness seat and one workflow
+  constructor; otherwise it contributes empty partitions — the file-edit a
+  developer makes to remove an entry."
+  [config-dir present?]
+  (spit (io/file config-dir "f16_probe.clj")
+        (str "(ns f16-probe\n"
+             "  \"F16 regression probe: contributes an alias and a workflow constructor.\"\n"
+             "  (:require [ct.spools.agent-run :as shuttle]\n"
+             "            [skein.spools.workflow :as workflow]))\n"
+             "(defn contribute [_]\n"
+             "  {shuttle/alias-kind "
+             (if present? "{:f16-probe-seat {:alias-of :codex}}" "{}") "\n"
+             "   workflow/constructor-kind "
+             (if present? "{:f16-probe-flow 'workflows/story-workflow}" "{}") "})\n")))
+
+(deftest f16-workspace-partition-refresh-deletes-omitted-seats-and-constructors
+  ;; F16 regression: the .skein policy files publish their harness seats, reviewer
+  ;; rosters, and workflow constructors as :workspace-layer partitions, so removing
+  ;; an entry from the file and refreshing must DELETE it from the live registry.
+  ;; The reconcile->install! path this replaced upserted into a shared REPL owner,
+  ;; where a deleted entry stayed silently effective. A probe module contributes an
+  ;; alias-kind seat and a constructor-kind entry, then drops both and refreshes.
+  (let [db-file (db-test/temp-db-file)
+        config-dir (str "/tmp/skein-f16-probe-" (java.util.UUID/randomUUID))]
+    (copy-config-dir! config-dir)
+    ;; Layer the probe module onto the same overlay hook as the chime notifier,
+    ;; so init.clj stays untouched and refresh re-reads the probe every cycle.
+    (spit (io/file config-dir "init.local.clj")
+          (pr-str '(do (require '[skein.api.current.alpha :as current]
+                                '[skein.api.runtime.alpha :as runtime]
+                                '[skein.spools.chime :as chime])
+                       (chime/set-notifier! {:argv ["true"]})
+                       (runtime/module! (current/runtime) :f16-probe
+                                        {:file "f16_probe.clj"
+                                         :spools ['ct.spools/agent-run 'skein.spools/workflow]
+                                         :after [:skein/spools-shuttle :skein/spools-workflow]
+                                         :contribute 'f16-probe/contribute}))))
+    (write-f16-probe! config-dir true)
+    (let [rt (weaver-runtime/start! db-file {:world (test-world config-dir)
+                                             :publish? false})]
+      (try
+        (with-runtime-loader
+          rt
+          (fn []
+            (let [resolve-harness (requiring-resolve 'ct.spools.agent-run/resolve-harness)
+                  workflow-definition (requiring-resolve 'skein.spools.workflow/workflow-definition)]
+              (is (= :codex (:name (resolve-harness :f16-probe-seat)))
+                  "the probe seat resolves through its :alias-of tool after startup")
+              (is (= 'workflows/story-workflow (workflow-definition :f16-probe-flow))
+                  "the probe workflow constructor is registered after startup")
+              (write-f16-probe! config-dir false)
+              (is (contains? #{:applied :unchanged} (:status (runtime/refresh! rt))))
+              (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Harness not found"
+                                    (resolve-harness :f16-probe-seat))
+                  "omitting the seat and refreshing deletes it from the alias registry")
+              (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unknown registered workflow"
+                                    (workflow-definition :f16-probe-flow))
+                  "omitting the constructor and refreshing deletes it from the registry"))))
         (finally
           (weaver-runtime/stop! rt)
           (db-test/delete-sqlite-family! db-file)
@@ -666,11 +735,15 @@
              (set (map :title (weaver/ready rt (var-get (requiring-resolve 'config/work-query)) {}))))))))
 
 (deftest reviewers-file-registers-declarative-roster
-  ;; exercises the same load path init.clj's :file+:call reviewers module runs
+  ;; exercises the same contribution path init.clj's reviewers module runs
   (with-config-runtime
-    (fn [_rt]
+    (fn [rt]
+      ;; materialize delegation's registry handle so its roster kind is a declared
+      ;; publication backend before reviewers.clj contributes its roster partition
+      ((requiring-resolve 'ct.spools.delegation/contribute)
+       {:runtime rt :module/key :skein/spools-delegation})
       (load-file ".skein/reviewers.clj")
-      ((requiring-resolve 'reviewers/install!))
+      (publish-module-contribution! rt :reviewers (requiring-resolve 'reviewers/contribute))
       (let [rosters ((requiring-resolve 'ct.spools.delegation/rosters))
             roster (first (filter #(= :change-review (:name %)) rosters))
             complex-roster (first (filter #(= :complex-patch-review (:name %)) rosters))

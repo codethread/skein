@@ -2,8 +2,11 @@
   "Focused tests for pure repo-local config operation projections."
   (:require [clojure.java.io :as io]
             [clojure.set :as set]
+            [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [skein.api.weaver.alpha :as weaver]
+            [skein.core.weaver.module-graph :as module-graph]
+            [skein.core.weaver.module-publication :as publication]
             [skein.core.weaver.runtime :as weaver-runtime]
             [skein.core.weaver.spool-sync :as spool-sync]
             [skein.spools.test-support :as test-support]
@@ -53,6 +56,38 @@
           (spool-sync/sync-approved-spools runtime)
           (f runtime))))))
 
+(defn- publish-authoring!
+  "Load one defop/defquery authoring file under contribution collection and
+  publish its complete module contribution — the load path init.clj's `:file`
+  modules run, standing in for a full refresh in these focused projections."
+  [rt module-key file]
+  (let [ns-sym (symbol (str/replace (str/replace file #"^\.skein/" "") #"\.clj$" ""))
+        contribution (:contribution
+                      (module-graph/with-contribution-collection
+                        {:module/key module-key
+                         :source/file (.getCanonicalPath (io/file file))
+                         :source/namespace ns-sym}
+                        #(load-file file)))
+        backends (publication/backends rt)]
+    (publication/publish! backends
+                          (publication/stage-owner backends (publication/candidates backends)
+                                                   module-key contribution))))
+
+(defn- publish-contribution!
+  "Publish one module's complete owner partition from its data-first contribution
+  function, normalizing bare partitions to the `{:entries :overrides}` shape."
+  [rt module-key contribute]
+  (let [contribution (update-vals
+                      (contribute {:runtime rt :module/key module-key})
+                      (fn [partition]
+                        (if (contains? partition :entries)
+                          partition
+                          {:entries partition :overrides #{}})))
+        backends (publication/backends rt)]
+    (publication/publish! backends
+                          (publication/stage-owner backends (publication/candidates backends)
+                                                   module-key contribution))))
+
 (defn- return-case-leaves [operation context return-case]
   (if (and (map? return-case) (contains? return-case :stream))
     (set (map (fn [channel] [operation (assoc context :channel channel)])
@@ -79,12 +114,14 @@
 (deftest repo-config-ops-declare-and-check-every-production-return-leaf
   (run-with-config-world
    (fn [runtime]
-     (load-file ".skein/config.clj")
-     (load-file ".skein/analytics.clj")
+     (publish-authoring! runtime :config ".skein/config.clj")
+     (publish-authoring! runtime :analytics ".skein/analytics.clj")
+     ;; materialize the workflow spool's registry handle so its constructor kind
+     ;; is a declared publication backend before workflows.clj contributes to it
+     ((requiring-resolve 'skein.spools.workflow/contribute)
+      {:runtime runtime :module/key :skein/spools-workflow})
      (load-file ".skein/workflows.clj")
-     ((requiring-resolve 'config/install!))
-     ((requiring-resolve 'analytics/install!))
-     ((requiring-resolve 'workflows/install!))
+     (publish-contribution! runtime :workflows (requiring-resolve 'workflows/contribute))
      (let [provenances #{'config 'analytics 'workflows}
            checked (atom #{})
            check! (fn [operation context value]
@@ -115,9 +152,8 @@
 (deftest kanban-tree-builds-on-the-canonical-entity-projection
   (run-with-config-world
    (fn [runtime]
-     (load-file ".skein/config.clj")
      ((requiring-resolve 'ct.spools.kanban/install!))
-     ((requiring-resolve 'config/install!))
+     (publish-authoring! runtime :config ".skein/config.clj")
      (let [card (weaver/add! runtime
                              {:title "Feature"
                               :attributes {:kanban/card "true"
