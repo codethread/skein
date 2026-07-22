@@ -168,6 +168,24 @@
   (is (= [] (graph/referenced-params [:= [:attr :owner] "agent"]))
       "a definition with no references reports none"))
 
+(deftest query-helpers-reject-malformed-definition-seams
+  (doseq [[helper invoke]
+          [["conjoin-where" #(graph/conjoin-where % nil)]
+           ["coerce-declared-params" #(graph/coerce-declared-params % {})]
+           ["referenced-params" graph/referenced-params]]
+          query-def [{:where [:= [:attr :owner] [:param :owner]] :params ["owner"]}
+                     {:where '(:= [:attr :owner] "agent") :params [:owner]}]]
+    (let [ex (try
+               (invoke query-def)
+               nil
+               (catch clojure.lang.ExceptionInfo error error))]
+      (is ex (str helper " rejects malformed definitions at its seam"))
+      (is (= query-def (:query-def (ex-data ex)))
+          (str helper " reports the offending definition"))
+      (is (= "a vector or map with vector :where and optional sequential keyword :params"
+             (:contract (ex-data ex)))
+          (str helper " reports its documented definition contract")))))
+
 (deftest current-runtime-fails-loudly-without-ambient-runtime
   ;; This namespace runs in the parallel batch, whose tests start unpublished
   ;; runtimes only; with the thread-local binding cleared, the public entry point

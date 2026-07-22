@@ -696,18 +696,12 @@
   [query-name]
   (symbol (query/query-lookup-name query-name)))
 
-(defn- validate-query-params
-  "Restrict provided string params to a query's declared keyword names, failing
-  loudly on unknown params (mirrors the JSON socket dispatch contract)."
-  [query-def params]
-  (graph/coerce-declared-params query-def params))
-
 (defn- run-named-query
   "Resolve a named query, validate params, overlay an optional state filter, and
   invoke the runtime list/ready fn exactly as the socket dispatch does."
   [rt query-fn query-name raw-params state limit]
   (let [query-def (graph/resolve-query rt (handle-name query-name))
-        params (validate-query-params query-def raw-params)
+        params (graph/coerce-declared-params query-def raw-params)
         query-def (graph/conjoin-where query-def
                                        (when state [:= :state state])
                                        params)]
@@ -715,7 +709,7 @@
 
 (defn- run-named-ready-lean [rt query-name raw-params limit]
   (let [query-def (graph/resolve-query rt (handle-name query-name))
-        params (validate-query-params query-def raw-params)]
+        params (graph/coerce-declared-params query-def raw-params)]
     (weaver/ready-lean rt lean-attribute-byte-floor query-def params limit)))
 
 (defn- query-list-entry [[name query-def]]

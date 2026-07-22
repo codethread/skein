@@ -138,6 +138,24 @@
 
 ;; CLI/JSON callers supply params string-keyed; declared names are keywords.
 (s/def ::string-params (s/nilable (s/map-of string? any?)))
+(s/def ::declared-params (s/coll-of keyword? :kind sequential?))
+(s/def ::helper-map-def
+  (s/and map?
+         #(vector? (:where %))
+         #(or (not (contains? % :params))
+              (s/valid? ::declared-params (:params %)))))
+(s/def ::helper-query-def
+  (s/or :where-vector vector? :detailed ::helper-map-def))
+
+(def ^:private helper-query-def-contract
+  "a vector or map with vector :where and optional sequential keyword :params")
+
+(defn- validate-helper-query-def!
+  "Fail loudly when a helper receives a definition outside its documented seam."
+  [query-def]
+  (when-not (s/valid? ::helper-query-def query-def)
+    (throw (ex-info "Invalid query helper definition"
+                    {:query-def query-def :contract helper-query-def-contract}))))
 
 (defn- validate-conjoin-params!
   "Fail when keyword-keyed `params` exceed `query-def`'s declared parameters."
@@ -157,18 +175,21 @@
   same `params`. A nil `extra-where` returns `query-def` unchanged so callers
   thread an optional overlay (a state filter, say) without a surrounding
   conditional. `skein.core.query` owns the where grammar and resolves
-  `[:param name]` references at compile time, not here."
+  `[:param name]` references at compile time, not here. The helper accepts a
+  bare vector expression or a map with vector `:where` and optional sequential
+  keyword `:params`; other definitions fail with ex-info at this seam."
   ([query-def extra-where] (conjoin-where query-def extra-where nil))
   ([query-def extra-where params]
-   (let [params (or params {})]
+   (let [_ (validate-helper-query-def! query-def)
+         params (or params {})]
      (validate-conjoin-params! query-def params)
      (if (nil? extra-where)
        query-def
        [:and (query/query-expr query-def params) extra-where]))))
 
 (s/fdef conjoin-where
-  :args (s/or :bare (s/cat :query-def ::query-def :extra-where (s/nilable ::where))
-              :with-params (s/cat :query-def ::query-def
+  :args (s/or :bare (s/cat :query-def ::helper-query-def :extra-where (s/nilable ::where))
+              :with-params (s/cat :query-def ::helper-query-def
                                   :extra-where (s/nilable ::where)
                                   :params (s/nilable map?)))
   :ret ::query-def)
@@ -182,9 +203,12 @@
   mirroring the socket read path's contract (batteries hand-rolled this against
   the JSON dispatch) so a spool's `--query` support rejects exactly the params
   the built-in path does. A definition with no declared `:params` accepts an
-  empty map and rejects every name."
+  empty map and rejects every name. The helper accepts a bare vector expression
+  or a map with vector `:where` and optional sequential keyword `:params`; other
+  definitions fail with ex-info at this seam."
   [query-def params]
-  (let [params (or params {})
+  (let [_ (validate-helper-query-def! query-def)
+        params (or params {})
         declared (vec (:params query-def))
         declared-names (set (map name declared))]
     (when-let [unknown (seq (remove declared-names (keys params)))]
@@ -196,7 +220,7 @@
                    declared))))
 
 (s/fdef coerce-declared-params
-  :args (s/cat :query-def ::query-def :params ::string-params)
+  :args (s/cat :query-def ::helper-query-def :params ::string-params)
   :ret (s/map-of keyword? any?))
 
 (defn referenced-params
@@ -206,12 +230,15 @@
   and reports each referenced parameter name in first-seen order without
   compiling SQL. This is the composable read a spool uses to describe a query's
   runtime params; `query-explain` is the by-name descriptive projection that
-  carries this same list beside the definition's declared `:params`."
+  carries this same list beside the definition's declared `:params`. The helper
+  accepts a bare vector expression or a map with vector `:where` and optional
+  sequential keyword `:params`; other definitions fail with ex-info at this seam."
   [query-def]
+  (validate-helper-query-def! query-def)
   (query/referenced-params (where-clause query-def)))
 
 (s/fdef referenced-params
-  :args (s/cat :query-def ::query-def)
+  :args (s/cat :query-def ::helper-query-def)
   :ret ::referenced-params)
 
 ;; --- strand hydration -------------------------------------------------------
