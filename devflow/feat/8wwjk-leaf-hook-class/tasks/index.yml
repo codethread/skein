@@ -17,12 +17,12 @@ tasks:
   - id: 4
     description: Workspace config ops, workflows, defop macro, fixtures
     task_file: tasks/004-workspace-config-sweep.md
-    status: in_progress
+    status: complete
     blocked_by: [1]
   - id: 5
     description: Enforcement flip — delete defaults, strict validation everywhere
     task_file: tasks/005-enforcement-flip.md
-    status: pending
+    status: in_progress
     blocked_by: [2, 3, 4]
   - id: 6
     description: Root spec promotion + docs sweep + api docs

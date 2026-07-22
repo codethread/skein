@@ -128,6 +128,15 @@ bump task, which is coordinator-sequenced after all spool releases exist.
 
 ## PLAN-Lhc-001.P7 Developer Notes
 
+- 2026-07-22 (coordinator, Task 4 verification): mill-supervisor-launched
+  weavers always run the canonical checkout's code (supervisor owns source
+  resolution), so a pre-merge worktree `.skein` config cannot be live-proven
+  through `mill weaver start` — canonical code NPEs on defop entries without
+  op-level classes, which is expected and not a branch defect. Branch-code
+  proof is the smoke suite + the defop-shaped help regression (ed1d2a0). After
+  landing, the canonical weaver needs the standard user-sanctioned refresh to
+  pick up the new `.skein` config.
+
 - 2026-07-22 (coordinator): task-queue review runs xogz3+6qg5z (notes 64ses,
   qpf5g on strand kx90q) folded: devflow.spool dropped from the fan-out (v3
   registers no CLI ops — pin stays v3); workflow/chime/cron register no CLI
