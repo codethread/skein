@@ -4,6 +4,8 @@ Active feature work is tracked on the kanban board and as devflow workflow runs 
 
 Always study [TENETS](./TENETS.md) and [PHILOSOPHY](./PHILOSOPHY.md). No code, spec or idea can violate these unless explicitly stated and cited in an agreed RFC first.
 
+[RFCs](./rfcs/) propose work that then ships; [ADRs](./adrs/) record a decision reached, including a decision to keep a tenet and *not* build something.
+
 ## Root specs
 
 Root specs are canonical for shipped behavior:
