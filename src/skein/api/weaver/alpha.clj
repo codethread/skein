@@ -638,7 +638,8 @@
     (when (:doc opts)
       (op-entry/validate-op-doc! (:doc opts)))
     (when (some? (:arg-spec opts))
-      (validate-op-arg-spec! op-name (:arg-spec opts)))
+      (validate-op-arg-spec! op-name (:arg-spec opts))
+      (op-entry/validate-stream-leaf-deadlines! op-name stream? (:arg-spec opts)))
     (when (contains? opts :annotations)
       (validate-op-annotations! op-name (:annotations opts)))
     (when (contains? opts :returns)
@@ -672,11 +673,12 @@
 
 (defn- arg-spec-failure-modes
   "Return every `failure-modes` outcome name referenced across `arg-spec`'s
-  annotation sub-maps — the flat/root node plus each declared subcommand's node."
+  annotation sub-maps, walking the fractal node tree to every depth
+  (DELTA-Lhc-001.CC5)."
   [arg-spec]
   (when (map? arg-spec)
     (into (vec (get-in arg-spec [:annotations :failure-modes]))
-          (mapcat (fn [[_ nested]] (get-in nested [:annotations :failure-modes])))
+          (mapcat (fn [[_ nested]] (arg-spec-failure-modes nested)))
           (:subcommands arg-spec))))
 
 (defn- entry-failure-modes
@@ -711,7 +713,12 @@
 ;; -- op dispatch helpers --
 
 (defn- operation-label
-  "Return the canonical label for a parsed subcommand invocation."
+  "Return the canonical label for a parsed subcommand invocation.
+
+  The registered op name and the full `:subcommand` path vector joined with
+  spaces (DELTA-Lhc-002.CC5), still honoring a parsed nested `:action` while
+  positional-action grammars survive (the enforcement flip retires that
+  amendment)."
   [op-name parsed-args]
-  (str/join " " (cond-> [op-name (:subcommand parsed-args)]
+  (str/join " " (cond-> (into [op-name] (:subcommand parsed-args))
                   (contains? parsed-args :action) (conj (:action parsed-args)))))

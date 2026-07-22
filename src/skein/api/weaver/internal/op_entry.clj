@@ -126,43 +126,77 @@
                       "Operation :returns does not align with :stream?"
                       (assoc context :stream? stream? :returns return-case))))
 
-(defn validate-returns-alignment!
-  "Require the `returns` declaration's routing to align with the op, returning it.
-
-  Checks that `:subcommands` routing matches the arg-spec's subcommands exactly
-  and that each case's stream marker aligns with `stream?`. Purely structural:
-  the return-shape contract itself is validated in alpha, which owns the reach
-  into `skein.api.return-shape.alpha`."
-  [op-name arg-spec stream? returns]
-  (let [arg-subcommands (:subcommands arg-spec)
-        return-subcommands (when (and (map? returns) (contains? returns :subcommands))
-                             (:subcommands returns))]
+(defn- align-returns-node!
+  "Recursively align one arg-spec node with its return node at `path`."
+  [op-name stream? arg-node return-node path]
+  (let [arg-subcommands (:subcommands arg-node)
+        return-subcommands (when (and (map? return-node)
+                                      (contains? return-node :subcommands))
+                             (:subcommands return-node))]
     (if arg-subcommands
       (do
         (when-not return-subcommands
           (invalid-returns! op-name
                             :return-routing-misalignment
                             "Subcommand operation :returns must declare :subcommands"
-                            {:returns returns}))
+                            {:path path :returns return-node}))
         (let [expected (set (keys arg-subcommands))
               actual (set (keys return-subcommands))]
           (when-not (= expected actual)
             (invalid-returns! op-name
                               :return-subcommand-misalignment
                               "Operation :returns subcommands must exactly match :arg-spec"
-                              {:expected-subcommands (vec (sort expected))
+                              {:path path
+                               :expected-subcommands (vec (sort expected))
                                :actual-subcommands (vec (sort actual))})))
-        (doseq [[subcommand return-case] return-subcommands]
-          (validate-return-case-alignment! op-name stream? return-case
-                                           {:subcommand subcommand})))
+        (doseq [[subcommand arg-child] arg-subcommands]
+          (align-returns-node! op-name stream? arg-child
+                               (get return-subcommands subcommand)
+                               (conj path subcommand))))
       (do
         (when return-subcommands
           (invalid-returns! op-name
                             :return-routing-misalignment
-                            "Flat operation :returns cannot declare :subcommands"
-                            {:returns returns}))
-        (validate-return-case-alignment! op-name stream? returns {}))))
+                            "Operation :returns declares :subcommands where the arg-spec has a leaf"
+                            {:path path :returns return-node}))
+        (validate-return-case-alignment! op-name stream? return-node {:path path})))))
+
+(defn validate-returns-alignment!
+  "Require the `returns` declaration's routing to align with the op, returning it.
+
+  Checks that `:subcommands` routing mirrors the arg-spec's node tree exactly at
+  every depth (DELTA-Lhc-001.CC4) and that each leaf case's stream marker aligns
+  with `stream?`; misalignments carry the node `:path`. Purely structural: the
+  return-shape contract itself is validated in alpha, which owns the reach into
+  `skein.api.return-shape.alpha`."
+  [op-name arg-spec stream? returns]
+  (align-returns-node! op-name stream? arg-spec returns [])
   returns)
+
+(defn validate-stream-leaf-deadlines!
+  "Require every declared leaf `:deadline-class` of a stream op to be
+  `:unbounded`, returning `arg-spec`.
+
+  Streams stay explicitly unbounded (DELTA-Lhc-001.CC2): a stream-class op's
+  leaf may not opt into a standard deadline. Accretive in this slice — a leaf
+  that declares no deadline class passes; the enforcement flip makes the
+  declaration itself mandatory."
+  [op-name stream? arg-spec]
+  (when (and stream? (map? arg-spec))
+    (letfn [(walk! [node path]
+              (if-let [subcommands (:subcommands node)]
+                (doseq [[subcommand child] subcommands]
+                  (walk! child (conj path subcommand)))
+                (when (and (contains? node :deadline-class)
+                           (not= :unbounded (:deadline-class node)))
+                  (throw (ex-info
+                          "Stream operation leaves must declare :deadline-class :unbounded"
+                          {:operation (canonical-op-name op-name)
+                           :reason :stream-leaf-deadline
+                           :path path
+                           :deadline-class (:deadline-class node)})))))]
+      (walk! arg-spec [])))
+  arg-spec)
 
 (defn assemble
   "Assemble the registry entry for already-validated registration inputs.

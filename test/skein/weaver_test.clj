@@ -27,6 +27,7 @@
             [skein.core.weaver.metadata :as metadata]
             [skein.core.weaver.module-refresh :as module-refresh]
             [skein.core.weaver.runtime :as weaver-runtime]
+            [skein.core.weaver.socket :as socket]
             [skein.core.weaver.spool-sync :as spool-sync]
             [skein.core.db :as db]
             [skein.core.db-test :as db-test]
@@ -78,12 +79,14 @@
 
 (defn- op-return-leaves
   [{:keys [name returns]}]
-  (if (and (map? returns) (contains? returns :subcommands))
-    (into #{}
-          (mapcat (fn [[subcommand return-case]]
-                    (return-case-leaves name {:subcommand subcommand} return-case)))
-          (:subcommands returns))
-    (return-case-leaves name {} returns)))
+  (letfn [(leaves [return-node path]
+            (if (and (map? return-node) (contains? return-node :subcommands))
+              (mapcat (fn [[subcommand child]] (leaves child (conj path subcommand)))
+                      (:subcommands return-node))
+              (return-case-leaves name
+                                  (if (seq path) {:subcommand path} {})
+                                  return-node)))]
+    (into #{} (leaves returns []))))
 
 (defn- owner-return-coverage
   [rt provenance checked-leaves]
@@ -139,6 +142,13 @@
   (swap! op-side-effects conj :slow-finished)
   {:slow true})
 
+(defn medium-op
+  "Sleep past a shortened standard deadline but not past a test's patience."
+  [_ctx]
+  (Thread/sleep 500)
+  (swap! op-side-effects conj :medium-finished)
+  {:finished true})
+
 (defn side-effecting-op
   "Record that the handler ran, so a hook rejection before dispatch is provable."
   [{:op/keys [name]}]
@@ -153,9 +163,9 @@
                                 :opaque (Object.)})))
 
 (defn subcommand-result-op
-  "Return operation-label variants selected by the parsed subcommand."
+  "Return operation-label variants selected by the parsed subcommand path."
   [{:op/keys [name args]}]
-  (case (:subcommand args)
+  (case (first (:subcommand args))
     "absent" {:result :absent}
     "equal" {:operation (str name " equal") :result :equal}
     "conflicting" {:operation "handler-owned" :result :conflicting}
@@ -167,7 +177,13 @@
   [{:op/keys [name args]}]
   (case (:action args)
     "absent" {:result :absent}
-    "equal" {:operation (str name " " (:subcommand args) " equal") :result :equal}))
+    "equal" {:operation (str name " " (first (:subcommand args)) " equal")
+             :result :equal}))
+
+(defn deep-path-result-op
+  "Echo the routed path unstamped so the dispatch label derives from it."
+  [{:op/keys [args]}]
+  {:routed (:subcommand args)})
 
 (defn streaming-subcommand-op
   "Emit a handler-owned item and return an unstamped map result."
@@ -1752,8 +1768,8 @@
 
           (t/check-op-return! rt 'flat "ok")
           (swap! checked conj ["flat" {}])
-          (t/check-op-return! rt 'subcommand {:subcommand "show"} 42)
-          (swap! checked conj ["subcommand" {:subcommand "show"}])
+          (t/check-op-return! rt 'subcommand {:subcommand ["show"]} 42)
+          (swap! checked conj ["subcommand" {:subcommand ["show"]}])
           (t/check-op-return! rt 'stream {:channel :emits} "line")
           (swap! checked conj ["stream" {:channel :emits}])
 
@@ -1834,6 +1850,52 @@
             (is (= reason (:reason (ex-data e))))
             (is (= before (weaver/ops rt)))
             (is (not-any? #(= (clojure.core/name name) (:name %)) (weaver/ops rt))))))
+      (testing "returns alignment recurses the arg-spec tree with path context"
+        (let [deep-arg-spec {:op "deep-misaligned"
+                             :subcommands
+                             {"a" {:subcommands {"b" {} "c" {}}}}}
+              e (is (thrown? clojure.lang.ExceptionInfo
+                             (weaver/register-op!
+                              rt 'deep-misaligned
+                              {:arg-spec deep-arg-spec
+                               :returns {:subcommands
+                                         {"a" {:subcommands {"b" :string}}}}}
+                              'skein.weaver-test/test-op)))]
+          (is (= :return-subcommand-misalignment (:reason (ex-data e))))
+          (is (= ["a"] (:path (ex-data e))))
+          (is (= ["b" "c"] (:expected-subcommands (ex-data e)))))
+        (let [e (is (thrown? clojure.lang.ExceptionInfo
+                             (weaver/register-op!
+                              rt 'deep-overrouted
+                              {:arg-spec {:op "deep-overrouted"
+                                          :subcommands {"a" {}}}
+                               :returns {:subcommands
+                                         {"a" {:subcommands {"b" :string}}}}}
+                              'skein.weaver-test/test-op)))]
+          (is (= :return-routing-misalignment (:reason (ex-data e))))
+          (is (= ["a"] (:path (ex-data e))))))
+      (testing "a stream op's leaf may not declare a standard deadline class"
+        (let [e (is (thrown-with-msg?
+                     clojure.lang.ExceptionInfo
+                     #"Stream operation leaves must declare"
+                     (weaver/register-op!
+                      rt 'bounded-stream-leaf
+                      {:stream? true
+                       :arg-spec {:op "bounded-stream-leaf"
+                                  :subcommands {"watch" {:deadline-class :standard}}}
+                       :returns {:subcommands
+                                 {"watch" {:stream {:emits :string :result :boolean}}}}}
+                      'skein.weaver-test/test-op)))]
+          (is (= :stream-leaf-deadline (:reason (ex-data e))))
+          (is (= ["watch"] (:path (ex-data e)))))
+        (is (map? (weaver/register-op!
+                   rt 'unbounded-stream-leaf
+                   {:stream? true
+                    :arg-spec {:op "unbounded-stream-leaf"
+                               :subcommands {"watch" {:deadline-class :unbounded}}}
+                    :returns {:subcommands
+                              {"watch" {:stream {:emits :string :result :boolean}}}}}
+                   'skein.weaver-test/test-op))))
       (testing "flat arg-specs are validated at registration"
         (let [e (is (thrown-with-msg? clojure.lang.ExceptionInfo
                                       #"arg-spec is invalid"
@@ -1882,10 +1944,11 @@
                                       #"arg-spec is invalid"
                                       (weaver/replace-op! rt 'replaceable
                                                           {:arg-spec {:op "replaceable"
-                                                                      :subcommands {"run" {:subcommands {"again" {}}}}}}
+                                                                      :subcommands {"run" {:subcommands {}}}}}
                                                           'skein.weaver-test/context-echo-op)))]
           (is (= "replaceable" (:operation (ex-data e))))
-          (is (= :invalid-subcommands (:reason (ex-data e))))
+          (is (= :empty-subcommands (:reason (ex-data e))))
+          (is (= ["run"] (:path (ex-data e))))
           (is (= 'skein.weaver-test/test-op (:fn (weaver/resolve-op rt 'replaceable))))))
       (testing "replace-op! retains the old entry when returns are invalid"
         (weaver/register-op! rt 'replace-returns
@@ -2050,7 +2113,7 @@
                                                        "list" {:doc "List items"}}}}
                              'skein.weaver-test/context-echo-op)
         (let [ctx (weaver/op! rt 'subbed ["add" "--force" "Widget"])]
-          (is (= {:subcommand "add" :force true :title "Widget"} (:op/args ctx)))
+          (is (= {:subcommand ["add"] :force true :title "Widget"} (:op/args ctx)))
           (is (= ["add" "--force" "Widget"] (:op/argv ctx)))))
       (testing "subcommand map results receive the canonical operation label"
         (let [subcommands (into {}
@@ -2152,8 +2215,8 @@
                                          :subcommands {"about" {:doc "About this op"}
                                                        "prime" {:doc "Prime this op"}}}}
                              'skein.weaver-test/context-echo-op)
-        (is (= "about" (:subcommand (:op/args (weaver/op! rt 'sugarful ["about"])))))
-        (is (= "prime" (:subcommand (:op/args (weaver/op! rt 'sugarful ["prime"]))))))
+        (is (= ["about"] (:subcommand (:op/args (weaver/op! rt 'sugarful ["about"])))))
+        (is (= ["prime"] (:subcommand (:op/args (weaver/op! rt 'sugarful ["prime"]))))))
       (testing "non-clean --help shapes redirect loudly and never reach a handler"
         (weaver/register-op! rt 'subbed-side-effect
                              {:arg-spec {:op "subbed-side-effect"
@@ -2176,8 +2239,44 @@
                                       #"Unknown subcommand"
                                       (weaver/op! rt 'subbed-side-effect ["bogus"])))]
           (is (= :unknown-subcommand (:reason (ex-data e))))
-          (is (= ["ok"] (:available-subcommands (ex-data e))))
+          (is (= [] (:path (ex-data e))))
+          (is (= "bogus" (:token (ex-data e))))
+          (is (= ["ok"] (:available (ex-data e))))
           (is (empty? @op-side-effects))))
+      (testing "deep grammars route, label, and fail with the canonical context (MI8)"
+        (weaver/register-op!
+         rt 'deep
+         {:arg-spec {:op "deep"
+                     :subcommands
+                     {"admin" {:subcommands
+                               {"caps" {:subcommands
+                                        {"show" {:hook-class :read
+                                                 :deadline-class :standard
+                                                 :positionals [{:name :id :required? true}]}
+                                         "grant" {:hook-class :mutating
+                                                  :deadline-class :standard
+                                                  :positionals [{:name :subject :required? true}]}}}
+                                "audit" {:hook-class :read
+                                         :deadline-class :standard}}}}}
+          :returns {:subcommands
+                    {"admin" {:subcommands
+                              {"caps" {:subcommands {"show" {:type :map :extra :json}
+                                                     "grant" {:type :map :extra :json}}}
+                               "audit" {:type :map :extra :json}}}}}}
+         'skein.weaver-test/deep-path-result-op)
+        (let [result (weaver/op! rt 'deep ["admin" "caps" "show" "c1"])]
+          (is (= {:routed ["admin" "caps" "show"] :operation "deep admin caps show"}
+                 result))
+          (t/check-op-return! rt 'deep {:subcommand ["admin" "caps" "show"]} result))
+        (is (= {:routed ["admin" "audit"] :operation "deep admin audit"}
+               (weaver/op! rt 'deep ["admin" "audit"])))
+        (let [e (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                                      #"Missing subcommand"
+                                      (weaver/op! rt 'deep ["admin" "caps"])))]
+          (is (= "deep" (:op (ex-data e))))
+          (is (= ["admin" "caps"] (:path (ex-data e))))
+          (is (nil? (:token (ex-data e))))
+          (is (= ["grant" "show"] (:available (ex-data e))))))
       (testing "raw-envelope ops receive no :op/args and keep the raw payloads map"
         (let [ctx (weaver/op! rt 'raw ["a" "b"] {:payloads {"stdin" "hi"}})]
           (is (not (contains? ctx :op/args)))
@@ -2215,7 +2314,7 @@
       (weaver/register-op! rt 'raw "Raw op" 'skein.weaver-test/context-echo-op)
       (testing "no argv returns the versioned catalog of shallow per-op envelopes"
         (let [{:keys [schema-version ops]} (weaver/op! rt 'help [])]
-          (is (= 1 schema-version))
+          (is (= 2 schema-version))
           (is (= ["about" "custom" "help" "prime" "raw" "streamed" "subbed"]
                  (mapv #(get-in % [:operation :name]) ops)))
           ;; Every catalog node is a summary node: op-wide facts stay in
@@ -2227,22 +2326,33 @@
                       ops))
           (is (every? #(nil? (get-in % [:node :returns])) ops))
           (is (every? #(= [] (get-in % [:node :children])) ops))
+          ;; hook/deadline classes left the operation facts (DELTA-Lhc-003.CC1).
+          (is (every? #(not (contains? (:operation %) :hook-class)) ops))
+          (is (every? #(not (contains? (:operation %) :deadline-class)) ops))
           (let [help-entry (first (filter #(= "help" (get-in % [:operation :name])) ops))]
-            (is (= "read" (get-in help-entry [:operation :hook-class])))
             (is (= "skein.core.weaver.help" (get-in help-entry [:operation :provenance])))
             (is (false? (get-in help-entry [:operation :stream?])))
-            (is (= "standard" (get-in help-entry [:operation :deadline-class])))
             (is (false? (get-in help-entry [:operation :raw-envelope])))
             (is (= "declared" (get-in help-entry [:node :invocation :mode])))
             (is (= [] (get-in help-entry [:node :invocation :flags])))
+            ;; a flat op's summary node is its leaf, so classes populate.
+            (is (= "read" (get-in help-entry [:node :hook-class])))
+            (is (= "standard" (get-in help-entry [:node :deadline-class])))
             (is (string? (get-in help-entry [:node :doc]))))
+          (let [subbed-entry (first (filter #(= "subbed" (get-in % [:operation :name])) ops))]
+            ;; a subcommand op's summary node is a root, never a leaf: null classes.
+            (is (nil? (get-in subbed-entry [:node :hook-class])))
+            (is (nil? (get-in subbed-entry [:node :deadline-class]))))
           (let [raw-entry (first (filter #(= "raw" (get-in % [:operation :name])) ops))]
             (is (true? (get-in raw-entry [:operation :raw-envelope])))
-            (is (= "raw-envelope" (get-in raw-entry [:node :invocation :mode]))))))
+            (is (= "raw-envelope" (get-in raw-entry [:node :invocation :mode])))
+            ;; a raw-envelope op's root is its leaf: entry classes populate.
+            (is (= "mutating" (get-in raw-entry [:node :hook-class])))
+            (is (= "standard" (get-in raw-entry [:node :deadline-class]))))))
       (testing "op name returns the detail envelope with a flat-op fractal node"
         (let [{:keys [schema-version operation source glossary node]}
               (weaver/op! rt 'help ["custom"])]
-          (is (= 1 schema-version))
+          (is (= 2 schema-version))
           ;; test-op is a readable on-disk handler, so source resolves to its
           ;; {file, line}; the exact path is environment-specific.
           (is (str/ends-with? (:file source) "weaver_test.clj"))
@@ -2260,6 +2370,9 @@
                    :variadic false :parse nil :doc nil}]
                  (get-in node [:invocation :positionals])))
           (is (= {:type "collection" :items "string"} (:returns node)))
+          ;; a flat op's root node is its leaf: entry-fallback classes populate.
+          (is (= "mutating" (:hook-class node)))
+          (is (= "standard" (:deadline-class node)))
           (is (= [] (:use-when node) (:notes node) (:failure-modes node) (:children node)))))
       (testing "subcommand op yields a root node with one child per subcommand"
         (let [node (:node (weaver/op! rt 'help ["subbed"]))]
@@ -2272,6 +2385,9 @@
           (is (= [] (get-in node [:invocation :flags])))
           (is (= [] (get-in node [:invocation :positionals])))
           (is (nil? (:returns node)))
+          ;; a subcommand-op root is interior: null classes (DELTA-Lhc-003.CC1).
+          (is (nil? (:hook-class node)))
+          (is (nil? (:deadline-class node)))
           (is (= ["add" "list"] (mapv :name (:children node))))
           (is (= {:name "add"
                   :doc "Add an item"
@@ -2281,6 +2397,8 @@
                                :positionals [{:name "title" :type "string" :required true
                                               :variadic false :parse nil :doc "Item title"}]}
                   :returns {:type "map" :required {"id" "integer"} :optional {}}
+                  :hook-class "mutating"
+                  :deadline-class "standard"
                   :use-when [] :notes [] :failure-modes [] :children []}
                  (first (:children node))))))
       (testing "verb slice narrows node to the child; op-wide facts unchanged"
@@ -2292,16 +2410,21 @@
           (is (= (:glossary detail) (:glossary sliced)))
           (is (= "add" (get-in sliced [:node :name])))
           (is (= (first (get-in detail [:node :children])) (:node sliced)))))
-      (testing "unknown verb fails loudly carrying the available verbs"
+      (testing "unknown verb fails loudly with the canonical error context"
         (let [e (is (thrown-with-msg? clojure.lang.ExceptionInfo
                                       #"Help verb not found"
                                       (weaver/op! rt 'help ["subbed" "nope"])))]
-          (is (= ["add" "list"] (:available-verbs (ex-data e))))))
+          (is (= "subbed" (:op (ex-data e))))
+          (is (= [] (:path (ex-data e))))
+          (is (= "nope" (:token (ex-data e))))
+          (is (= ["add" "list"] (:available (ex-data e))))))
       (testing "raw-envelope ops (declared or streaming) project a raw-envelope node"
         (let [{:keys [operation node]} (weaver/op! rt 'help ["streamed"])]
           (is (true? (:raw-envelope operation)))
           (is (true? (:stream? operation)))
           (is (= "raw-envelope" (get-in node [:invocation :mode])))
+          (is (= "mutating" (:hook-class node)))
+          (is (= "unbounded" (:deadline-class node)))
           (is (= {:stream {:emits "string" :result ["nullable" "boolean"]}}
                  (:returns node))))
         (let [{:keys [operation node]} (weaver/op! rt 'help ["raw"])]
@@ -2325,6 +2448,113 @@
   (doseq [name names]
     (glossary/register-glossary-outcome!
      rt {:name name :definition (str name " definition") :owner 'skein.weaver-test/fixture})))
+
+(deftest weaver-op-help-deep-projection
+  ;; Depth-3 grammar over the live projection (TASK-Lhc-001.MI8): recursive
+  ;; children, per-leaf classes with null interior semantics, verb-path slicing
+  ;; to any depth and to interior nodes, deep glossary narrowing, and the deep
+  ;; trailing --help rewrite (DELTA-Lhc-001.CC5/CC6, DELTA-Lhc-002.CC6).
+  (with-runtime
+    (fn [rt _]
+      (register-fixture-outcomes! rt ["acl/denied"])
+      (weaver/register-op!
+       rt 'acl
+       {:doc "Access control"
+        :arg-spec {:op "acl"
+                   :doc "Access control"
+                   :subcommands
+                   {"admin" {:doc "Admin surface"
+                             :subcommands
+                             {"caps" {:doc "Manage caps"
+                                      :subcommands
+                                      {"show" {:doc "Show one cap"
+                                               :hook-class :read
+                                               :deadline-class :standard
+                                               :annotations {:failure-modes ["acl/denied"]}
+                                               :positionals [{:name :id :required? true}]}
+                                       "grant" {:doc "Grant a cap"
+                                                :hook-class :mutating
+                                                :deadline-class :unbounded
+                                                :positionals [{:name :subject :required? true}]}}}
+                              "audit" {:doc "Audit trail"
+                                       :hook-class :read
+                                       :deadline-class :standard}}}}}
+        :returns {:subcommands
+                  {"admin" {:subcommands
+                            {"caps" {:subcommands {"show" {:type :map :extra :json}
+                                                   "grant" :string}}
+                             "audit" {:type :collection :items :string}}}}}}
+       'skein.weaver-test/deep-path-result-op)
+      (testing "the detail envelope recurses children to the declared depth"
+        (let [node (:node (weaver/op! rt 'help ["acl"]))
+              admin (first (:children node))
+              caps (first (filter #(= "caps" (:name %)) (:children admin)))
+              show (first (filter #(= "show" (:name %)) (:children caps)))]
+          (is (= ["admin"] (mapv :name (:children node))))
+          (is (= ["audit" "caps"] (mapv :name (:children admin))))
+          (is (= ["grant" "show"] (mapv :name (:children caps))))
+          (testing "interior nodes carry null classes and no returns"
+            (doseq [interior [node admin caps]]
+              (is (nil? (:hook-class interior)) (:name interior))
+              (is (nil? (:deadline-class interior)) (:name interior))
+              (is (nil? (:returns interior)) (:name interior))))
+          (testing "deep leaves carry declared classes and routed returns"
+            (is (= "read" (:hook-class show)))
+            (is (= "standard" (:deadline-class show)))
+            (is (= {:type "map" :required {} :optional {} :extra "json"}
+                   (:returns show)))
+            (let [grant (first (filter #(= "grant" (:name %)) (:children caps)))]
+              (is (= "mutating" (:hook-class grant)))
+              (is (= "unbounded" (:deadline-class grant)))
+              (is (= "string" (:returns grant)))))))
+      (testing "verb-path slicing reaches any depth and interior nodes"
+        (let [detail (weaver/op! rt 'help ["acl"])
+              caps (weaver/op! rt 'help ["acl" "admin" "caps"])
+              show (weaver/op! rt 'help ["acl" "admin" "caps" "show"])]
+          (is (= (:operation detail) (:operation caps) (:operation show)))
+          (is (= "caps" (get-in caps [:node :name])))
+          (is (= ["grant" "show"] (mapv :name (get-in caps [:node :children]))))
+          (is (= "show" (get-in show [:node :name])))
+          (is (= "read" (get-in show [:node :hook-class])))
+          (doseq [envelope [detail caps show]]
+            (t/check-op-return! rt 'help envelope))))
+      (testing "the glossary closure narrows with deep slices"
+        (is (= {"acl/denied" "acl/denied definition"}
+               (:glossary (weaver/op! rt 'help ["acl" "admin" "caps" "show"]))))
+        (is (= {} (:glossary (weaver/op! rt 'help ["acl" "admin" "audit"])))))
+      (testing "a deep token naming no child fails with the canonical context"
+        (let [e (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                                      #"Help verb not found"
+                                      (weaver/op! rt 'help ["acl" "admin" "nope"])))]
+          (is (= "acl" (:op (ex-data e))))
+          (is (= ["admin"] (:path (ex-data e))))
+          (is (= "nope" (:token (ex-data e))))
+          (is (= ["audit" "caps"] (:available (ex-data e))))))
+      (testing "the trailing --help rewrite composes with deep paths"
+        (is (= (weaver/op! rt 'help ["acl" "admin" "caps" "show"])
+               (weaver/op! rt 'acl ["admin" "caps" "show" "--help"])))
+        (is (= (weaver/op! rt 'help ["acl" "admin" "caps"])
+               (weaver/op! rt 'acl ["admin" "caps" "--help"])))
+        (testing "a --help past a leaf fails naming the leaf's children as none"
+          (let [e (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                                        #"Help verb not found"
+                                        (weaver/op! rt 'acl ["admin" "audit" "extra" "--help"])))]
+            (is (= ["admin" "audit"] (:path (ex-data e))))
+            (is (= "extra" (:token (ex-data e))))
+            (is (= [] (:available (ex-data e)))))))
+      (testing "a deep unregistered failure-mode ref fails at registration"
+        (let [e (is (thrown-with-msg?
+                     clojure.lang.ExceptionInfo
+                     #"unregistered glossary outcome"
+                     (weaver/register-op!
+                      rt 'deep-unresolved
+                      {:arg-spec {:op "deep-unresolved"
+                                  :subcommands
+                                  {"a" {:subcommands
+                                        {"b" {:annotations
+                                              {:failure-modes ["acl/never-registered"]}}}}}}}
+                      'skein.weaver-test/test-op)))]
+          (is (= "acl/never-registered" (:failure-mode (ex-data e)))))))))
 
 (deftest weaver-op-help-glossary-closure
   ;; Task 4 authors real annotation values; here a synthetic op declares
@@ -2495,7 +2725,7 @@
                            'skein.weaver-test/test-op)
       (testing "with no transform registered, help output is the raw envelope"
         (is (map? (weaver/op! rt 'help ["described"])))
-        (is (= 1 (:schema-version (weaver/op! rt 'help ["described"]))))
+        (is (= 2 (:schema-version (weaver/op! rt 'help ["described"]))))
         (is (map? (weaver/op! rt 'help []))))
       (testing "an elected transform renders the full envelope to a verbatim result"
         (help-transform/register-default-help-transform!
@@ -2512,7 +2742,7 @@
           (is (= "RENDERED:described" (weaver-help/verbatim-text (weaver/op! rt 'described ["--help"])))))
         (testing "leading --json bypasses the slot back to the raw envelope"
           (is (map? (weaver/op! rt 'help ["--json" "described"])))
-          (is (= 1 (:schema-version (weaver/op! rt 'help ["--json" "described"]))))
+          (is (= 2 (:schema-version (weaver/op! rt 'help ["--json" "described"]))))
           (is (map? (weaver/op! rt 'help ["--json"])))
           (is (contains? (weaver/op! rt 'help ["--json"]) :ops)))
         (testing "--json is leading-only within the help surface"
@@ -2724,7 +2954,7 @@
       (testing "the built-in help op is reachable through invoke"
         (let [help (invoke-request rt "help" [])]
           (is (true? (get help "ok")))
-          (is (= 1 (get-in help ["result" "schema-version"])))
+          (is (= 2 (get-in help ["result" "schema-version"])))
           (is (some #(= "help" (get-in % ["operation" "name"]))
                     (get-in help ["result" "ops"]))))
         (let [detail (invoke-request rt "help" ["help"])]
@@ -2878,6 +3108,78 @@
           (is (true? (get real-call "ok")))
           (is (= 1 (count @hook-contexts)))
           (is (= ["subbed-mutate"] @op-side-effects)))))))
+
+(deftest json-socket-invoke-gates-by-invoked-leaf
+  ;; MI4: the payload-hook gate walks argv to the invoked leaf pre-hook
+  ;; (DELTA-Lhc-002.CC3): declared leaf classes win over the op-entry class,
+  ;; and unresolvable verbs fail before any hook or handler runs.
+  (with-runtime
+    (fn [rt _]
+      ;; entry hook-class defaults to :mutating; the leaves declare their own.
+      (weaver/register-op! rt 'leafed
+                           {:arg-spec {:op "leafed"
+                                       :subcommands
+                                       {"peek" {:hook-class :read
+                                                :deadline-class :standard}
+                                        "poke" {:hook-class :mutating
+                                                :deadline-class :standard}
+                                        "deep" {:subcommands
+                                                {"peek" {:hook-class :read
+                                                         :deadline-class :standard}}}}}}
+                           'skein.weaver-test/side-effecting-op)
+      (hooks/register-hook! rt :payload #{:payload/received} 'skein.weaver-test/capture-hook {})
+      (reset! hook-contexts [])
+      (reset! op-side-effects [])
+      (testing "a :read leaf skips payload hooks although the entry class is :mutating"
+        (is (true? (get (invoke-request rt "leafed" ["peek"]) "ok")))
+        (is (true? (get (invoke-request rt "leafed" ["deep" "peek"]) "ok")))
+        (is (empty? @hook-contexts)))
+      (testing "a :mutating leaf runs payload hooks"
+        (is (true? (get (invoke-request rt "leafed" ["poke"]) "ok")))
+        (is (= 1 (count @hook-contexts))))
+      (testing "missing/unknown verbs fail pre-hook with the canonical context"
+        (reset! hook-contexts [])
+        (reset! op-side-effects [])
+        (let [missing (invoke-request rt "leafed" [])
+              unknown (invoke-request rt "leafed" ["deep" "bogus"])]
+          (is (false? (get missing "ok")))
+          (is (= "domain" (get-in missing ["error" "type"])))
+          (is (= "leafed" (get-in missing ["error" "details" "op"])))
+          (is (= [] (get-in missing ["error" "details" "path"])))
+          (is (= ["deep" "peek" "poke"] (get-in missing ["error" "details" "available"])))
+          (is (false? (get unknown "ok")))
+          (is (= ["deep"] (get-in unknown ["error" "details" "path"])))
+          (is (= "bogus" (get-in unknown ["error" "details" "token"])))
+          (is (= ["peek"] (get-in unknown ["error" "details" "available"]))))
+        (is (empty? @hook-contexts))
+        (is (empty? @op-side-effects))))))
+
+(deftest json-socket-invoke-deadline-defaults-from-invoked-leaf
+  ;; MI4: the single-result deadline default comes from the invoked leaf's
+  ;; :deadline-class (DELTA-Lhc-002.CC4); the envelope timeout still wins. The
+  ;; server-side standard deadline is shortened so a half-second handler can
+  ;; prove which class drove the deadline without a ten-second wait.
+  (with-runtime
+    (fn [rt _]
+      (weaver/register-op! rt 'paced
+                           {:arg-spec {:op "paced"
+                                       :subcommands
+                                       {"bounded" {:hook-class :read
+                                                   :deadline-class :standard}
+                                        "roomy" {:hook-class :read
+                                                 :deadline-class :unbounded}}}}
+                           'skein.weaver-test/medium-op)
+      (with-redefs [socket/default-standard-deadline-ms 100]
+        (testing "a :standard leaf gets the server default deadline"
+          (let [timed-out (invoke-request rt "paced" ["bounded"])]
+            (is (false? (get timed-out "ok")))
+            (is (= "operation/deadline-exceeded" (get-in timed-out ["error" "code"])))))
+        (testing "an :unbounded leaf outlives the standard default"
+          (is (true? (get (invoke-request rt "paced" ["roomy"]) "ok"))))
+        (testing "the envelope timeout still overrides the leaf class"
+          (let [timed-out (invoke-request rt "paced" ["roomy"] {} {"timeout" 100})]
+            (is (false? (get timed-out "ok")))
+            (is (= "operation/deadline-exceeded" (get-in timed-out ["error" "code"])))))))))
 
 (deftest json-socket-invoke-read-ops-skip-hooks-and-protocol-errors
   (with-runtime

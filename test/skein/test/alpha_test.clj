@@ -95,15 +95,35 @@
                            'skein.test.alpha-test/unused-op)
       (testing "flat success preserves identity"
         (is (identical? flat-value (t/check-op-return! rt 'flat flat-value))))
-      (testing "subcommand result"
+      (testing "subcommand result selects by path vector"
+        (is (= 42 (t/check-op-return! rt 'subcommand {:subcommand ["show"]} 42))))
+      (testing "a legacy scalar subcommand coerces to a one-segment path"
         (is (= 42 (t/check-op-return! rt 'subcommand {:subcommand "show"} 42))))
       (testing "stream emitted item and terminal result"
         (is (= "line" (t/check-op-return! rt 'stream
-                                          {:subcommand "watch" :channel :emits}
+                                          {:subcommand ["watch"] :channel :emits}
                                           "line")))
         (is (nil? (t/check-op-return! rt 'stream
-                                      {:subcommand "watch" :channel :result}
+                                      {:subcommand ["watch"] :channel :result}
                                       nil))))
+      (testing "nested return trees select by the full path (DELTA-Lhc-001.CC7)"
+        (weaver/register-op! rt 'deep
+                             {:arg-spec {:op "deep"
+                                         :subcommands
+                                         {"a" {:subcommands {"b" {} "c" {}}}}}
+                              :returns {:subcommands
+                                        {"a" {:subcommands {"b" :integer
+                                                            "c" :string}}}}}
+                             'skein.test.alpha-test/unused-op)
+        (is (= 7 (t/check-op-return! rt 'deep {:subcommand ["a" "b"]} 7)))
+        (is (= "ok" (t/check-op-return! rt 'deep {:subcommand ["a" "c"]} "ok")))
+        (doseq [[path reason] [[["a"] :missing-return-subcommand]
+                               [["a" "nope"] :unknown-return-subcommand]
+                               [["a" "b" "extra"] :unrouted-return-path]]]
+          (let [e (is (thrown? clojure.lang.ExceptionInfo
+                               (t/check-op-return! rt 'deep {:subcommand path} 7)))]
+            (is (= reason (:reason (ex-data e))) (pr-str path))
+            (is (= "deep" (:operation (ex-data e)))))))
       (testing "mismatch diagnostics preserve selected declaration and shape path"
         (let [e (is (thrown-with-msg? clojure.lang.ExceptionInfo
                                       #"Operation return value does not match declaration"
