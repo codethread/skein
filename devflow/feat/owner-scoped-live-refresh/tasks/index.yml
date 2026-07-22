@@ -57,22 +57,22 @@ tasks:
   - id: 12
     description: Convert agent-run live registries and bindings
     task_file: tasks/012-agent-run-owner-refresh.md
-    status: in_progress
+    status: complete
     blocked_by: [7, 24]
   - id: 13
     description: Convert delegation and bench registries
     task_file: tasks/013-delegation-bench-owner-refresh.md
-    status: pending
+    status: complete
     blocked_by: [12]
   - id: 14
     description: Convert kanban and peering registrations
     task_file: tasks/014-kanban-owner-refresh.md
-    status: pending
+    status: complete
     blocked_by: [7, 24]
   - id: 15
     description: Convert devflow route registration
     task_file: tasks/015-devflow-owner-refresh.md
-    status: pending
+    status: complete
     blocked_by: [7, 24]
   - id: 16
     description: Remove old lifecycle and integrate local peer roots
