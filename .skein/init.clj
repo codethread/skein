@@ -146,11 +146,12 @@
 ;; Cron is a generic weaver timer engine; install! only creates its scheduled
 ;; executor. nvd_scan.clj requires it (for the job's seed/jitter fns), so it
 ;; must be synced before that module loads.
-(runtime/use! runtime :skein/spools-cron
-              {:ns 'skein.spools.cron
-               :spools ['skein.spools/cron]
-               :call 'skein.spools.cron/install!
-               :required? true})
+(runtime/module! runtime :skein/spools-cron
+                 {:ns 'skein.spools.cron
+                  :spools ['skein.spools/cron]
+                  :contribute 'skein.spools.cron/contribute
+                  :reconcile 'skein.spools.cron/reconcile
+                  :required? true})
 (runtime/module! runtime :config
                  {:file "config.clj"
                   :spools ['skein.spools/workflow 'ct.spools/agent-run
@@ -174,12 +175,11 @@
                :required? true})
 ;; The NVD scan job is its own module (not part of config.clj) so config_test's
 ;; direct config.clj load never registers the job or seeds against real gh.
-(runtime/use! runtime :nvd-scan
-              {:file "nvd_scan.clj"
-               :spools ['skein.spools/cron]
-               :after [:skein/spools-cron :skein/spools-kanban]
-               :call 'nvd-scan/install!
-               :required? true})
+(runtime/module! runtime :nvd-scan
+                 {:file "nvd_scan.clj"
+                  :spools ['skein.spools/cron]
+                  :after [:skein/spools-cron :skein/spools-kanban]
+                  :required? true})
 ;; The subagent gate executor installs last: its install! runs an initial gate
 ;; scan, so every harness alias harnesses.clj registers (e.g. sol-low) must
 ;; already exist or a durable ready gate would be stamped gate/error on every

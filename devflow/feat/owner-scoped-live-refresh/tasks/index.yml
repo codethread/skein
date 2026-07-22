@@ -42,7 +42,7 @@ tasks:
   - id: 9
     description: Convert cron and scheduler references
     task_file: tasks/009-cron-scheduler-reconciliation.md
-    status: pending
+    status: complete
     blocked_by: [5, 24]
   - id: 10
     description: Replace workspace remember forget install macros

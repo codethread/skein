@@ -179,22 +179,7 @@
                                    ((requiring-resolve 'ct.spools.kanban/add!)
                                     title {"--body" body "--priority" "p1"})))}))
 
-(defn- register-nvd-scan-job!
-  "Register the every-6-days NVD deep-scan cron job on the active runtime.
-
-  Shared across every maintainer's weaver; the +/-1h jitter and the 'scan-lock
-  running' issue lock keep concurrent maintainer weavers from all scanning at
-  once. Re-run on reload it re-registers idempotently."
-  []
-  {:nvd-scan (cron/register! (current/runtime)
-                             {:id :nvd-scan
-                              :interval-ms nvd-scan-interval-ms
-                              :jitter-ms nvd-scan-jitter-ms
-                              :handler 'nvd-scan/nvd-scan-tick})})
-
-(defn install!
-  "Register the scheduled NVD deep-scan cron job."
-  []
-  {:installed true
-   :namespace 'nvd-scan
-   :jobs (register-nvd-scan-job!)})
+(cron/defjob :nvd-scan
+  {:interval-ms nvd-scan-interval-ms
+   :jitter-ms nvd-scan-jitter-ms
+   :handler 'nvd-scan/nvd-scan-tick})

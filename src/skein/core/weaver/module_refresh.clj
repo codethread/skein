@@ -12,6 +12,7 @@
             [skein.core.weaver.dispatch :as dispatch]
             [skein.core.weaver.module-graph :as module-graph]
             [skein.core.weaver.module-publication :as publication]
+            [skein.core.weaver.scheduler :as scheduler]
             [skein.core.weaver.spool-sync :as spool-sync]))
 
 (def plan-caveat
@@ -768,5 +769,6 @@
      :module/outcomes (:outcomes state)
      :resource/outcomes (:resources state)
      :root/outcomes (:root-outcomes state)
+     :scheduler/wakes (scheduler/wake-status runtime)
      :loaded loaded
      :last-refresh (:last-refresh state)}))
