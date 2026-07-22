@@ -24,7 +24,8 @@ mechanics land in `SPEC-004` (see `DELTA-Sss-002`); this delta owns the data-con
 - **DELTA-Sss-001.CC2 (evolution classes):** SPEC-001.P8 states the persistence-evolution contract: (i) the validated core schema is
   fixed within a schema generation; (ii) additive auxiliary tables and indexes created with `IF NOT EXISTS` flow into existing worlds
   without a generation bump; (iii) domain evolution goes through the attribute bag (TEN-007) and needs no schema ceremony; (iv) any
-  structural change to the validated core is a generation bump and owes existing worlds a maintained forward-migration step.
+  structural change to the validated core is a generation bump, which owes existing worlds a maintained forward-migration step and
+  folds objects added additively since the outgoing baseline into the new generation's baseline (`DELTA-Sss-002.CC2a/CC3`).
 - **DELTA-Sss-001.CC3 (boundary):** Physical schema and migration mechanics remain implementation details behind the storage boundary;
   the attribute map remains the userland contract. Nothing in this delta changes attribute storage representation, query fields, or the
   JSON `TEXT` guarantee.

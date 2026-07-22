@@ -1,7 +1,7 @@
 # SQLite schema story proposal
 
 **Document ID:** `PROP-Sss-001`
-**Last Updated:** 2026-07-19
+**Last Updated:** 2026-07-22
 **Related RFCs:** None
 **Related root specs:** [strand-model.md SPEC-001.P8](../../specs/strand-model.md),
 [daemon-runtime.md SPEC-004.C91b/C16b](../../specs/daemon-runtime.md)
@@ -69,9 +69,11 @@ Adopt a release-era policy of **schema generations, maintained forward migration
 - **PROP-Sss-001.S2 (stamp):** Each database records its schema generation as a monotonically increasing integer in SQLite's native
   `PRAGMA user_version`. The weaver refuses a database stamped with a newer generation than it understands. Databases created before the stamp that
   match the current shape are adopted as generation 1 by stamping them in place; no row data is touched. Before adoption, a canonical validator must
-  compare every Skein-owned table and index with a freshly constructed generation-1 schema. The comparison covers exact columns, order, declared
-  types, nullability, defaults, primary keys, foreign keys, CHECK constraints, index columns and order, uniqueness, and partial-index predicates.
-  It covers core and auxiliary objects, rejects extra columns on managed tables, and refuses adoption without writing the stamp on any mismatch.
+  compare Skein-owned tables and indexes with a freshly constructed generation-1 schema. The comparison covers exact columns, order, declared
+  types, nullability, defaults, primary keys, foreign keys, CHECK constraints, index columns and order, uniqueness, and partial-index predicates,
+  rejecting extra columns on managed tables. Validation is two-stage (refined during spec-plan review, `DELTA-Sss-002.CC2a`): pre-DDL screening
+  requires every baseline object present and exact — only additive-since-baseline auxiliary objects may be absent, since the `IF NOT EXISTS` DDL
+  creates them next — and refuses without writing the stamp on any mismatch; the stamp is written only after post-DDL full-equality validation.
 - **PROP-Sss-001.S3 (migration ladder):** Every generation bump adds a maintained, versioned migration step. The steps remain available in later
   releases and compose in order, so a user can migrate from any released generation to the current one. Each step must apply its DDL, data changes,
   and `user_version` update in one SQLite transaction so failure rolls the whole step back. A step that cannot be transactional must instead define

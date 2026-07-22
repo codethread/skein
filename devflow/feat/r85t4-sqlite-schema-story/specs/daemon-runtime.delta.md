@@ -20,21 +20,26 @@ migration path" stance is superseded by the migration-ladder contract for the st
 
 - **DELTA-Sss-002.CC1 (generation check, amends `SPEC-004.C91b`):** Storage initialization reads `PRAGMA user_version` before any DDL
   and classifies the database: **newer** than the binary's generation → refused without modification; **older** stamped generation
-  (`>= 1`) → refused with a pointer to the maintained forward-migration path; **at the binary's generation** → proceeds through the
-  `IF NOT EXISTS` DDL (which fills in any additive auxiliary objects) and is then canonically validated; **unstamped and empty** (no
-  Skein-owned objects) → bootstrapped with the full schema, validated, and stamped with the binary's generation; **unstamped and
+  (`>= 1`) → refused with a pointer to the maintained forward-migration path; **at the binary's generation** → pre-DDL screening (CC2a),
+  then the `IF NOT EXISTS` DDL (which fills in any additive auxiliary objects), then full canonical validation; **unstamped and empty**
+  (no Skein-owned objects) → bootstrapped with the full schema, validated, and stamped with the binary's generation; **unstamped and
   non-empty** → the adoption path (CC2).
-- **DELTA-Sss-002.CC2 (adoption):** A non-empty database with no stamp (`user_version` 0) whose present objects structurally match
-  generation 1 is adopted by stamping `user_version = 1` in place at initialization; no row data is touched and adoption is idempotent.
-  The canonical validator compares Skein-owned tables and indexes against the generation-1 reference schema: exact columns, order,
+- **DELTA-Sss-002.CC2 (adoption):** A non-empty database with no stamp (`user_version` 0) that passes pre-DDL screening (CC2a) against
+  the generation-1 reference is adopted by stamping `user_version = 1` in place at initialization; no row data is touched and adoption
+  is idempotent. The canonical validator compares Skein-owned tables and indexes against the reference schema: exact columns, order,
   declared types, nullability, defaults, primary keys, foreign keys, CHECK constraints, index columns and order, uniqueness, and
-  partial-index predicates, rejecting extra columns on managed tables. Before any DDL, every *present* Skein-owned object must match the
-  reference exactly — a mismatch refuses initialization without writing anything; *absent* auxiliary objects are permitted, since the
-  same `IF NOT EXISTS` DDL that carries additive evolution creates them next. The stamp is written only after the post-DDL full
-  validation passes.
-- **DELTA-Sss-002.CC3 (migration ladder):** Every generation bump adds a maintained, versioned migration step and freezes the outgoing
-  generation's reference schema into the dedicated migration space — while the current generation is 1, the generation-1 reference is
-  the live schema DDL itself, so the first bump must snapshot it before the live DDL evolves. Steps remain available in later releases
+  partial-index predicates, rejecting extra columns on managed tables. The stamp is written only after the post-DDL full validation
+  passes.
+- **DELTA-Sss-002.CC2a (baseline and pre-DDL screening):** A generation's **baseline** is its frozen reference schema; objects
+  introduced additively within a generation (`DELTA-Sss-001.CC2` ii) sit outside the baseline until the next bump folds them in.
+  Pre-DDL screening — applied to unstamped-adoption and stamped-current databases alike — requires every baseline object of the target
+  generation to be present and match the reference exactly; only additive-since-baseline objects may be absent, and any present
+  Skein-owned object must match exactly. Any screening failure refuses initialization without writing anything, so a missing or
+  malformed baseline object can never be silently recreated by the `IF NOT EXISTS` DDL and then pass full validation.
+- **DELTA-Sss-002.CC3 (migration ladder):** Every generation bump adds a maintained, versioned migration step, freezes the outgoing
+  generation's reference schema into the dedicated migration space, and folds objects added additively since that baseline into the new
+  generation's baseline — while the current generation is 1, the generation-1 reference is the live schema DDL itself, so the first
+  bump must snapshot it before the live DDL evolves. Steps remain available in later releases
   and compose in order, so a user can migrate from any released generation to the current one. Each step applies its DDL, data changes,
   and `user_version` update in one SQLite transaction so failure rolls the whole step back; a step that cannot be transactional must
   define durable resume or rollback semantics with failure-injection tests proving recovery from every persisted checkpoint before it

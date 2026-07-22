@@ -31,16 +31,17 @@ the deliverable is the contract, the guard, and the stamp — kept as small as t
   `sqlite_master` plus `PRAGMA table_info`/`index_list`/`index_info`/`foreign_key_list` — into normalized shape maps, and compare.
   Comparison covers exact columns, order, declared types, nullability, defaults, primary keys, foreign keys, CHECK constraints, index
   columns/order/uniqueness, and partial-index predicates, for Skein-owned tables and indexes, rejecting extra columns on managed tables
-  (`DELTA-Sss-002.CC2`). The validator takes two comparison modes: present-objects-only (pre-DDL adoption screening, where absent
-  auxiliary objects are legal) and full (post-DDL acceptance). While `current-generation` is 1, the live `schema-sql` *is* the
+  (`DELTA-Sss-002.CC2`). The validator takes two comparison modes: pre-DDL screening (every baseline object present and exact; only
+  additive-since-baseline objects may be absent — `DELTA-Sss-002.CC2a`; the additive set is empty at stamp introduction) and full
+  (post-DDL acceptance). While `current-generation` is 1, the live `schema-sql` *is* the
   generation-1 reference; the reference-db construction makes the validator self-maintaining within a generation, and the first bump
   snapshots the outgoing reference per `DELTA-Sss-002.CC3`.
 - **PLAN-Sss-001.A3 (generation gate):** Classification is a pure decision function over `(found-generation, binary-generation,
   empty?)` returning bootstrap / adopt / proceed / refuse-newer / refuse-older, unit-testable across every branch including generations
   that cannot yet occur on disk. `init!` reads `user_version` before any DDL and routes: empty unstamped db → DDL, full validation,
-  stamp; non-empty unstamped → present-objects validation, refuse untouched on mismatch, else DDL, full validation, stamp 1; at
-  generation → DDL (fills additive objects), full validation; newer/older stamped → refuse untouched with found/expected in the error
-  data, older naming the migration path. `current-generation` is a `skein.core.db` constant beside `schema-sql`. The existing
+  stamp; non-empty unstamped → pre-DDL screening, refuse untouched on mismatch, else DDL, full validation, stamp 1; at generation →
+  pre-DDL screening (a missing baseline object refuses rather than being silently recreated), then DDL (fills additive objects), full
+  validation; newer/older stamped → refuse untouched with found/expected in the error data, older naming the migration path. `current-generation` is a `skein.core.db` constant beside `schema-sql`. The existing
   legacy-shape throws (`ensure-current-schema!`) fold into the validator's mismatch reporting rather than surviving as a parallel
   mechanism.
 
@@ -67,9 +68,10 @@ stamping, both skew refusals with found/expected generations in the error data, 
 unit tests on the pure classification function across every branch (including older/newer stamped generations, simulated by
 parameterizing the binary generation); integration tests for fresh empty db bootstrapped and stamped; unstamped matching db adopted
 idempotently; unstamped mismatched db (missing column, extra column, wrong index, legacy document/edge-constraint shapes) refused
-without a stamp write; stamped current-generation db lacking an additive auxiliary table opened and back-filled; newer-generation db
-refused untouched; older-generation refusal (via a hand-stamped `user_version` against a parameterized binary generation) naming the
-migration path.
+without a stamp write; stamped current-generation db lacking an additive auxiliary table opened and back-filled, while one lacking a
+baseline object is refused untouched; unstamped non-empty db lacking an additive auxiliary object passing pre-DDL screening, gaining
+the object from DDL, passing full validation, and only then being stamped; newer-generation db refused untouched; older-generation
+refusal (via a hand-stamped `user_version` against a parameterized binary generation) naming the migration path.
 
 ### PLAN-Sss-001.PH2 Spec promotion and index
 
