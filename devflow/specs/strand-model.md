@@ -99,7 +99,7 @@ Every attribute key has the same predicate capability: `:=`, `:!=`, `:<`/`:<=`/`
 
 The query grammar is boundary grammar: it carries named, validated selections for lower-privilege CLI callers while keeping the physical schema private; trusted-side needs route to Clojure read ops composed with `skein.api.graph.alpha` helpers.
 
-A proposed grammar form must be needed by a CLI-tier caller that a registered read op cannot serve; be selection only, never shaping, aggregation, or ordering by an attribute; and define its semantics across missing attributes, JSON `null`, archived values, negation, parameters, edge predicates, and conjunction with `ready`. It must compile through the uniform correlated `EXISTS` shape, with no parallel compiler path; the shape split repaired by strand `2yic2` is the precedent cost.
+A proposed grammar form must be needed by a CLI-tier caller that a registered read op (an op registered with `:hook-class :read`, reachable from the CLI like any other op) cannot serve; be selection only, never shaping, aggregation, or ordering by an attribute; and define its semantics across missing attributes, JSON `null`, archived values, negation, parameters, edge predicates, and conjunction with `ready`. It must extend the compile path its domain already owns — attribute-predicate forms go through the uniform correlated `EXISTS` shape above — and never introduce a parallel path for an existing domain: the grammar previously carried two compile shapes for attribute predicates, and composed negation silently diverged from the documented `NULL` semantics until the split was removed.
 
 ## SPEC-001.P10 Deferred
 
