@@ -1,8 +1,8 @@
 {:spools {;; Git family coordinates are the consumer's single source; developers
           ;; override them with gitignored spools.local.edn entries.
           ct.spools/agent-run {:git/url "https://github.com/codethread/agent-harness.spool.git"
-                               :git/sha "ef6a92359749a9b9d11fb49938006512f60a6c51"
-                               :git/tag "v10"
+                               :git/sha "75b8a23526039f399db55adc20c71786352f2f23"
+                               :git/tag "v11"
                                :roots {ct.spools/agent-run "agent-run"
                                        ct.spools/delegation "delegation"
                                        ct.spools/bench "bench"}}
