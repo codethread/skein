@@ -177,13 +177,14 @@
    :children children})
 
 (defn- leaf-class
-  "The projected class string for an invocable leaf node.
+  "The projected class string or nil for an invocable leaf node.
 
   The leaf's declared node metadata when present, else the op-entry class —
-  the accretive fallback this slice tolerates (DELTA-Lhc-001.CC2); the
-  enforcement flip makes the node declaration the only source."
+  the accretive fallback this slice tolerates (DELTA-Lhc-001.CC2). Entries
+  published before either declaration existed project nil; the enforcement
+  flip makes the node declaration the only source."
   [raw-node entry key]
-  (name (or (get raw-node key) (get entry key))))
+  (some-> (or (get raw-node key) (get entry key)) name))
 
 (defn- node-doc
   "The declared doc for an op's root node.
@@ -240,8 +241,8 @@
             ;; come from the op's `:annotations` metadata (MI1a); an arg-spec op
             ;; sources them from its arg-spec nodes.
             (:annotations entry)
-            (name (:hook-class entry))
-            (name (:deadline-class entry))
+            (leaf-class nil entry :hook-class)
+            (leaf-class nil entry :deadline-class)
             [])
       (let [explained (cli/explain arg-spec)]
         (arg-node entry (:name entry) (node-doc entry explained)

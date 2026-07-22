@@ -21,6 +21,7 @@
             [skein.api.weaver.alpha :as weaver]
             [skein.core.weaver.access :as access]
             [skein.core.weaver.config :as weaver-config]
+            [skein.core.weaver.core-registry :as core-registry]
             [skein.core.weaver.help :as weaver-help]
             [skein.core.weaver.dispatch :as dispatch]
             [skein.core.weaver.lifecycle :as lifecycle]
@@ -2312,10 +2313,21 @@
                                                :result [:nullable :boolean]}}}
                            'skein.weaver-test/test-op)
       (weaver/register-op! rt 'raw "Raw op" 'skein.weaver-test/context-echo-op)
+      ;; Module-published defop entries bypass register-op!'s transitional
+      ;; op-level class defaults. Keep this fixture shaped like that publication
+      ;; path so help covers the pre-flip entry with neither class declaration.
+      (core-registry/put-entry!
+       (:op-store rt) :skein.owner/defop-fixture "unclassed"
+       {:name "unclassed"
+        :fn 'skein.weaver-test/context-echo-op
+        :stream? false
+        :provenance 'skein.weaver-test
+        :doc "Defop-shaped entry"
+        :arg-spec {:op "unclassed" :doc "Defop-shaped entry"}})
       (testing "no argv returns the versioned catalog of shallow per-op envelopes"
         (let [{:keys [schema-version ops]} (weaver/op! rt 'help [])]
           (is (= 2 schema-version))
-          (is (= ["about" "custom" "help" "prime" "raw" "streamed" "subbed"]
+          (is (= ["about" "custom" "help" "prime" "raw" "streamed" "subbed" "unclassed"]
                  (mapv #(get-in % [:operation :name]) ops)))
           ;; Every catalog node is a summary node: op-wide facts stay in
           ;; :operation and :source, never merged onto the node. The op-wide
@@ -2348,7 +2360,11 @@
             (is (= "raw-envelope" (get-in raw-entry [:node :invocation :mode])))
             ;; a raw-envelope op's root is its leaf: entry classes populate.
             (is (= "mutating" (get-in raw-entry [:node :hook-class])))
-            (is (= "standard" (get-in raw-entry [:node :deadline-class]))))))
+            (is (= "standard" (get-in raw-entry [:node :deadline-class]))))
+          (let [unclassed-entry
+                (first (filter #(= "unclassed" (get-in % [:operation :name])) ops))]
+            (is (nil? (get-in unclassed-entry [:node :hook-class])))
+            (is (nil? (get-in unclassed-entry [:node :deadline-class]))))))
       (testing "op name returns the detail envelope with a flat-op fractal node"
         (let [{:keys [schema-version operation source glossary node]}
               (weaver/op! rt 'help ["custom"])]
@@ -2432,8 +2448,13 @@
           (is (= "raw-envelope" (get-in node [:invocation :mode])))
           (is (nil? (:returns node)))
           (is (= [] (:children node)))))
+      (testing "defop-shaped entries without classes project null classes"
+        (let [node (:node (weaver/op! rt 'help ["unclassed"]))]
+          (is (nil? (:hook-class node)))
+          (is (nil? (:deadline-class node)))))
       (testing "every help projection satisfies the declared return shape"
-        (doseq [argv [[] ["custom"] ["subbed"] ["subbed" "add"] ["streamed"] ["raw"]]]
+        (doseq [argv [[] ["custom"] ["subbed"] ["subbed" "add"] ["streamed"] ["raw"]
+                      ["unclassed"]]]
           (t/check-op-return! rt 'help (weaver/op! rt 'help argv))))
       (testing "unknown op name fails loudly carrying available names"
         (let [e (is (thrown-with-msg? clojure.lang.ExceptionInfo
