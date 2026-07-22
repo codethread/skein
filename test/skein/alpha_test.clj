@@ -121,6 +121,71 @@
                   :attributes {:owner "agent" :phase "batched"}}
                  (select-keys (:after updated) [:id :state :attributes]))))))))
 
+(deftest conjoin-where-overlays-an-extra-clause
+  (let [bare [:= [:attr :owner] "agent"]
+        detailed {:where [:= [:attr :owner] [:param :owner]] :params [:owner]}]
+    (is (= [:and bare [:= :state "closed"]]
+           (graph/conjoin-where bare [:= :state "closed"]))
+        "a bare-vector definition conjoins into the canonical [:and ...] shape")
+    (is (= [:and [:= [:attr :owner] [:param :owner]] [:= :state "closed"]]
+           (graph/conjoin-where detailed [:= :state "closed"] {:owner "agent"}))
+        "a parameterized definition substitutes its where-expression, params intact")
+    (is (= bare (graph/conjoin-where bare nil))
+        "a nil overlay returns the definition unchanged")
+    (is (= detailed (graph/conjoin-where detailed nil {:owner "agent"}))
+        "a nil overlay preserves a map definition and its declared :params")
+    (let [ex (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unknown query parameters"
+                                   (graph/conjoin-where detailed nil {:nope "x"})))]
+      (is (= {:params [:nope] :declared [:owner]} (ex-data ex))
+          "a nil overlay validates params against the declared set"))))
+
+(deftest coerce-declared-params-restricts-and-rejects-unknown
+  (let [detailed {:where [:= [:attr :owner] [:param :owner]] :params [:owner]}
+        bare [:= [:attr :owner] "agent"]]
+    (is (= {:owner "agent"} (graph/coerce-declared-params detailed {"owner" "agent"}))
+        "a declared string param round-trips to its keyword name")
+    (is (= {} (graph/coerce-declared-params detailed {}))
+        "no supplied params yields an empty map")
+    (is (= {} (graph/coerce-declared-params detailed nil))
+        "nil supplied params normalizes to an empty map")
+    (is (= {} (graph/coerce-declared-params bare {}))
+        "a definition with no declared :params accepts an empty map")
+    (let [ex (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                                   #"Unknown query parameters"
+                                   (graph/coerce-declared-params detailed {"nope" "x"})))]
+      (is (= {:params ["nope"] :declared [:owner]} (ex-data ex))
+          "the failure carries the offending name and the full declared set"))))
+
+(deftest referenced-params-reads-param-references
+  (is (= [:owner]
+         (graph/referenced-params {:where [:= [:attr :owner] [:param :owner]]
+                                   :params [:owner]}))
+      "a map definition reports its where-expression's references")
+  (is (= [:owner :phase]
+         (graph/referenced-params [:and [:= [:attr :owner] [:param :owner]]
+                                   [:= [:attr :phase] [:param :phase]]]))
+      "a bare vector reports references in first-seen order")
+  (is (= [] (graph/referenced-params [:= [:attr :owner] "agent"]))
+      "a definition with no references reports none"))
+
+(deftest query-helpers-reject-malformed-definition-seams
+  (doseq [[helper invoke]
+          [["conjoin-where" #(graph/conjoin-where % nil)]
+           ["coerce-declared-params" #(graph/coerce-declared-params % {})]
+           ["referenced-params" graph/referenced-params]]
+          query-def [{:where [:= [:attr :owner] [:param :owner]] :params ["owner"]}
+                     {:where '(:= [:attr :owner] "agent") :params [:owner]}]]
+    (let [ex (try
+               (invoke query-def)
+               nil
+               (catch clojure.lang.ExceptionInfo error error))]
+      (is ex (str helper " rejects malformed definitions at its seam"))
+      (is (= query-def (:query-def (ex-data ex)))
+          (str helper " reports the offending definition"))
+      (is (= "a vector or map with vector :where and optional sequential keyword :params"
+             (:contract (ex-data ex)))
+          (str helper " reports its documented definition contract")))))
+
 (deftest current-runtime-fails-loudly-without-ambient-runtime
   ;; This namespace runs in the parallel batch, whose tests start unpublished
   ;; runtimes only; with the thread-local binding cleared, the public entry point
