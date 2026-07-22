@@ -578,23 +578,30 @@
          (burn-with-rt! rt (:id root)))
        digest))))
 
+(def constructor-kind
+  "Owner-partitioned kind id for workflow name -> constructor-symbol declarations."
+  registry/constructor-kind)
+
+(def executor-kind
+  "Owner-partitioned kind id for gate-waiter -> stall-predicate-symbol declarations."
+  registry/executor-kind)
+
 (defn register-workflow!
   "Register a workflow constructor under a stable keyword `name`.
 
   `name` is a keyword; `constructor-sym` is a fully qualified symbol resolving to
-  a workflow constructor. Registration is runtime-owned, weaver-lifetime spool
-  state that survives `reload!`; startup config re-registers entries during
-  reload and after restart. A duplicate `name` replaces the prior entry, so
-  reloading a workflow re-points existing in-flight runs' named `:next` routes at
-  the new constructor. Returns `name`."
+  a workflow constructor. The entry is an owner-complete declaration at the
+  direct/REPL layer, published through the owner-partition registry that survives
+  refresh. A duplicate `name` replaces the prior direct entry, so re-pointing a
+  route resolves the new constructor at each in-flight run's next named `:next`
+  transition (DELTA-OlrDrt-001.CC10). Returns `name`."
   [name constructor-sym]
   (when-not (keyword? name)
     (fail! "Workflow registry name must be a keyword" {:name name}))
   (when-not (qualified-symbol? constructor-sym)
     (fail! "Workflow registry constructor must be a fully qualified symbol"
            {:name name :constructor constructor-sym}))
-  (swap! (registry/workflow-name-registry (current/runtime)) assoc name constructor-sym)
-  name)
+  (registry/register-constructor! (current/runtime) name constructor-sym))
 
 (defn register-executor!
   "Register a stall predicate for gate waiter `waiter` (a keyword/symbol/string
@@ -602,23 +609,27 @@
 
   The predicate receives a ready gate step view and returns nil/false while the
   executor is still fulfilling the gate, or truthy detail when coordinator
-  attention is needed. Registration is runtime-owned, weaver-lifetime spool state
-  that survives `reload!`, mirroring `register-workflow!`. Returns the registered
+  attention is needed. A fully qualified *symbol* is an owner-complete
+  declaration at the direct/REPL layer, resolved to a function value at each gate
+  evaluation (DELTA-OlrDrt-001.CC10). A bare function *value* — the case with no
+  resolvable symbol — is held as runtime-owned resource state instead of
+  owner-partition declaration data (DELTA-OlrDrt-001.CC8). Returns the registered
   waiter as a keyword."
   [waiter pred]
   (when-not (s/valid? ::external-waiter waiter)
     (fail! "Executor waiter must be a keyword, symbol, or non-blank string other than :self"
            {:waiter waiter :explain (s/explain-data ::external-waiter waiter)}))
-  (when-not (ifn? pred)
-    (fail! "Executor predicate must be invokable" {:waiter waiter}))
-  (swap! (registry/executor-registry (current/runtime)) assoc (name waiter) pred)
-  (keyword (name waiter)))
+  (cond
+    (qualified-symbol? pred) (registry/register-executor-symbol! (current/runtime) waiter pred)
+    (ifn? pred) (registry/register-executor-fn! (current/runtime) waiter pred)
+    :else (fail! "Executor predicate must be a fully qualified symbol or an invokable value"
+                 {:waiter waiter :pred pred})))
 
 (defn executors
   "Return the current registry map of gate waiter name (keyword) -> stall predicate."
   []
   (into {} (map (fn [[k v]] [(keyword k) v]))
-        @(registry/executor-registry (current/runtime))))
+        (registry/executor-map (current/runtime))))
 
 (defn workflow-definition
   "Return the constructor symbol registered under keyword `name`, failing loudly
@@ -629,17 +640,15 @@
 (defn workflows
   "Return the current registry map of workflow name (keyword) -> constructor symbol."
   []
-  @(registry/workflow-name-registry (current/runtime)))
+  (registry/workflow-constructors (current/runtime)))
 
-(defn install!
-  "Return installation metadata for this alpha workflow spool.
-
-  Also seeds the `workflow/*` attribute namespace into the runtime vocabulary
-  registry, owned by this spool's use-key, so the workflow attributes `compile`
-  and the step/gate/checkpoint builders write are discoverable data."
-  []
+(defn- declare-workflow-vocab!
+  "Seed the `workflow/*` attribute namespace into `rt`'s vocabulary registry,
+  owned by this spool, so the attributes `compile` and the builders write are
+  discoverable data."
+  [rt]
   (vocab/declare!
-   (current/runtime)
+   rt
    {:kind :attr-namespace
     :name "workflow"
     :owner :skein/spools-workflow
@@ -654,7 +663,9 @@
            "workflow/action-ref" "workflow/instruction" "workflow/bond"]
     :doc (fmt/reflow "
           |Workflow molecule/wisp attributes written by the workflow spool's
-          |compile and builders.")})
+          |compile and builders.")}))
+
+(def ^:private install-metadata
   {:installed true
    :namespace 'skein.spools.workflow
    :workflow {:builder 'skein.spools.workflow/workflow
@@ -688,6 +699,37 @@
    :registry {:register-workflow 'skein.spools.workflow/register-workflow!
               :workflow-definition 'skein.spools.workflow/workflow-definition
               :workflows 'skein.spools.workflow/workflows}})
+
+(defn install!
+  "Materialize the workflow registries and return installation metadata.
+
+  Realizes the owner-partition registry handle (declaring its constructor and
+  executor kinds) and seeds the `workflow/*` attribute namespace. This is the
+  eager entry point for the pre-module lifecycle; the module lifecycle uses
+  `contribute`/`reconcile` below."
+  []
+  (let [rt (current/runtime)]
+    (registry/registry-handle rt)
+    (declare-workflow-vocab! rt))
+  install-metadata)
+
+(defn contribute
+  "Module contribution for the workflow spool.
+
+  The workflow spool supplies no constructors or executors of its own — those
+  are contributed by the workflows that pour them and by the executors that
+  register — so it contributes no declarative entries. It materializes the
+  registry handle so a dependent module contributing to the workflow kinds finds
+  them already declared (DELTA-OlrDrt-001.CC4)."
+  [{:keys [runtime]}]
+  (registry/registry-handle runtime)
+  {})
+
+(defn reconcile
+  "Reconcile the workflow spool's resources: seed the `workflow/*` vocabulary."
+  [{:keys [runtime]}]
+  (declare-workflow-vocab! runtime)
+  {:reconciled :workflow})
 
 ;; --- input contract specs -------------------------------------------------
 

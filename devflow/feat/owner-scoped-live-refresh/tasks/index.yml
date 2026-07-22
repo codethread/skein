@@ -32,7 +32,7 @@ tasks:
   - id: 7
     description: Convert workflow and shell executor
     task_file: tasks/007-workflow-owner-reconciliation.md
-    status: pending
+    status: complete
     blocked_by: [5, 24]
   - id: 8
     description: Convert Chime and attention rules
