@@ -1,6 +1,6 @@
 # Strand Model
 
-**Document ID:** `SPEC-001` **Status:** Implemented **Last Updated:** 2026-07-10 **Code:** `src/skein/core/db.clj`
+**Document ID:** `SPEC-001` **Status:** Implemented **Last Updated:** 2026-07-22 **Code:** `src/skein/core/db.clj`
 
 ## SPEC-001.P1 Purpose
 
@@ -80,6 +80,8 @@ The `strands` table stores lifecycle state as columns. Attribute values live in 
 The weaver datasource opens each SQLite database with WAL journaling, a non-zero memory map size, and an enlarged page cache. These pragmas are applied on open for every world and change no schema or read shape.
 
 Storage has no declared hot-key registry. Every hot attribute row is uniformly indexable by `(key, value)` and by `strand_id`, so no userland or API caller declares a key before querying it.
+
+Physical schema identity is versioned by a schema generation: each weaver-owned database records a monotonically increasing integer in SQLite's native `PRAGMA user_version`, starting at generation 1 with released Skein (pre-stamp history stays in git and the feature archive). The persistence-evolution contract: the validated core schema is fixed within a schema generation; additive auxiliary tables and indexes created with `IF NOT EXISTS` flow into existing worlds without a generation bump; domain evolution goes through the attribute bag and needs no schema ceremony; and any structural change to the validated core is a generation bump, which owes existing worlds a maintained forward-migration step and folds additive objects into the new generation's baseline (SPEC-004.C91b–C91d). Physical schema and migration mechanics remain implementation details behind the storage boundary; the attribute map remains the userland contract.
 
 ## SPEC-001.P9 Query fields
 

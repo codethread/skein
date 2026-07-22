@@ -3,7 +3,7 @@
 **Document ID:** `DELTA-Sss-001`
 **Root spec:** [strand-model.md](../../../specs/strand-model.md) (`SPEC-001`)
 **Feature:** [../proposal.md](../proposal.md) (`PROP-Sss-001`)
-**Status:** Draft
+**Status:** Merged
 **Last Updated:** 2026-07-22
 **Configuration identification:** Document IDs must be ordered as document type, short name, sequential id, then optional version:
 `DELTA-Dwr-001` for v1 and `DELTA-Dwr-001@2` for v2. Omit `@1`; append `@2`, `@3`, etc. only when a new version supersedes an externally

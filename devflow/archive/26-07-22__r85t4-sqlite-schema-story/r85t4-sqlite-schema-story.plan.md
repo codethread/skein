@@ -6,7 +6,7 @@
 **RFC:** none
 **Root specs:** [strand-model.md](../../specs/strand-model.md), [daemon-runtime.md](../../specs/daemon-runtime.md)
 **Feature specs:** [specs/strand-model.delta.md](./specs/strand-model.delta.md), [specs/daemon-runtime.delta.md](./specs/daemon-runtime.delta.md)
-**Status:** Reviewed
+**Status:** Shipped
 **Last Updated:** 2026-07-22
 **Configuration identification:** Document IDs must be ordered as document type, short name, sequential id, then optional version:
 `PLAN-Dwr-001` for v1 and `PLAN-Dwr-001@2` for v2. Omit `@1`; append `@2`, `@3`, etc. only when a new version supersedes an externally
@@ -109,3 +109,12 @@ contract. Runs with the devflow finish stage.
 ## PLAN-Sss-001.P9 Developer Notes
 
 Append notes here. Do not rewrite earlier notes.
+
+### PLAN-Sss-001.DN1 Feature shipped — 2026-07-22
+
+- Shipped scope: PH1 in full (commits `b57d64c`, `49e8a55`) — generation stamp, five-route gate, two-mode canonical validator,
+  adoption/bootstrap, diagnostic refusals, with the parameterized seam living as `init!`'s 4-arity after change-review. PH2 promotion
+  merged `DELTA-Sss-001` into SPEC-001.P8 and `DELTA-Sss-002` into SPEC-004.C91b–C91d/C16b.
+- Cut/deferred scope: executable migration-ladder machinery and its home (mill vs JVM) deliberately deferred to the first real
+  generation bump (`DELTA-Sss-002.Q1`); the first bump also owes the generation-1 reference freeze (`SPEC-004.C91d`).
+- No RFCs to archive. Release-identity card `rapv5` is unblocked and can cite SPEC-004.C91b–C91d.
