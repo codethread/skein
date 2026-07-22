@@ -10,13 +10,13 @@
 
   An arg-spec is a fractal node tree (DELTA-Lhc-001.CC1). A **leaf** node
   declares no `:subcommands`; its `:flags`/`:positionals` are optional (a
-  doc-only leaf is valid) and it may carry `:hook-class`/`:deadline-class`
-  metadata as peers of `:doc` (DELTA-Lhc-001.CC2):
+  doc-only leaf is valid) and it carries required `:hook-class`/
+  `:deadline-class` metadata as peers of `:doc` (DELTA-Lhc-001.CC2):
 
     {:op <keyword-or-string> ; optional, echoed into errors and help
      :doc <string>           ; optional summary
-     :hook-class :read | :mutating          ; optional parser metadata
-     :deadline-class :standard | :unbounded ; optional parser metadata
+     :hook-class :read | :mutating
+     :deadline-class :standard | :unbounded
      :flags {<name-kw> <flag-spec>}
      :positionals [<positional-spec> ...]} ; trailing may be variadic
 

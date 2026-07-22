@@ -74,6 +74,7 @@
     (fail! :invalid-selection-path
            "Return selection path must be a sequential collection of strings"
            {:path [] :value path}))
+  (validate! declaration)
   (loop [node declaration
          walked []
          tokens (seq path)]
@@ -173,6 +174,10 @@
       (fail! :invalid-subcommands
              "Return :subcommands declaration must be a map"
              {:path (conj path :subcommands) :value subcommands}))
+    (when (empty? subcommands)
+      (fail! :empty-subcommands
+             "Return :subcommands must reach at least one concrete return case"
+             {:path path :token nil :available []}))
     (doseq [[name return-case] subcommands
             :let [child-path (conj path :subcommands name)]]
       (when-not (string? name)

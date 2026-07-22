@@ -168,7 +168,7 @@
       (validate-declared-parse! op path :positionals (:name spec) spec))))
 
 (defn- validate-leaf-classes!
-  "Validate a leaf node's declared `:hook-class`/`:deadline-class` metadata."
+  "Require and validate a leaf node's `:hook-class`/`:deadline-class` metadata."
   [op path node]
   (doseq [[key allowed] node-class-values
           :when (contains? node key)
@@ -179,7 +179,13 @@
        (str "Leaf " key " must be one of " (pr-str (vec (sort-by name allowed))))
        (node-context op path {:field key
                               :value value
-                              :allowed (vec (sort-by name allowed))})))))
+                              :allowed (vec (sort-by name allowed))}))))
+  (doseq [key [:hook-class :deadline-class]
+          :when (not (contains? node key))]
+    (shared/fail!
+     :missing-node-class
+     (str "Arg-spec leaf requires " key)
+     (node-context op path {:field key}))))
 
 (declare validate-node!)
 
@@ -238,7 +244,7 @@
   `:flags`/`:positionals` or class metadata, its `:subcommands` must be a
   non-empty map of non-blank, non-reserved names to nodes of the same shape,
   and each child validates recursively. Any other node is a leaf: its flags,
-  positionals, annotations, and optional `:hook-class`/`:deadline-class`
+  positionals, annotations, and required `:hook-class`/`:deadline-class`
   metadata validate in place, and the `subcommand` arg name stays reserved at
   every level (DELTA-Lhc-001.CC1/CC2)."
   [op path node reserved-names]

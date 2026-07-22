@@ -116,8 +116,10 @@
 
 ;; Stream/op transport fixtures. Namespace-level for the same by-symbol
 ;; registration reason as the hooks/events above; the :each fixture resets
-;; `stream-gate` and `op-side-effects`.
+;; `stream-gate`, `deadline-gate`, and `op-side-effects`.
 (def stream-gate (atom (promise)))
+(def deadline-gate (atom (promise)))
+(def deadline-started (atom (promise)))
 (def op-side-effects (atom []))
 
 (defn gated-stream-op
@@ -144,11 +146,12 @@
   (swap! op-side-effects conj :slow-finished)
   {:slow true})
 
-(defn medium-op
-  "Sleep past a shortened standard deadline but not past a test's patience."
+(defn gated-deadline-op
+  "Signal dispatch, wait for explicit release, then record completion."
   [_ctx]
-  (Thread/sleep 500)
-  (swap! op-side-effects conj :medium-finished)
+  (deliver @deadline-started true)
+  @@deadline-gate
+  (swap! op-side-effects conj :deadline-finished)
   {:finished true})
 
 (defn side-effecting-op
@@ -417,6 +420,8 @@
     (reset! expected-hook-loader nil)
     (reset! pattern-call-count 0)
     (reset! stream-gate (promise))
+    (reset! deadline-gate (promise))
+    (reset! deadline-started (promise))
     (reset! op-side-effects [])
     (reset! snapshot-event-runs [])
     (reset! snapshot-hook-runs [])
@@ -1806,6 +1811,12 @@
 (deftest weaver-op-metadata-and-validation
   (with-runtime
     (fn [rt _]
+      (testing "registration metadata has a named closed public spec"
+        (is (s/valid? ::weaver/op-metadata-map raw-mutating-standard))
+        (is (s/valid? ::weaver/op-metadata "Legacy doc"))
+        (is (s/valid? ::weaver/op-metadata nil))
+        (is (not (s/valid? ::weaver/op-metadata-map
+                           (assoc raw-mutating-standard :unknown true)))))
       (testing "registration requires one explicit class source"
         (is (thrown-with-msg? clojure.lang.ExceptionInfo
                               #"Raw-envelope operation requires :hook-class"
@@ -1813,7 +1824,7 @@
                                                    'skein.weaver-test/test-op)))
         (let [missing (is (thrown-with-msg?
                            clojure.lang.ExceptionInfo
-                           #"Operation leaf requires :hook-class"
+                           #"Operation arg-spec is invalid"
                            (weaver/register-op! rt 'missing-leaf-class
                                                 {:arg-spec {:op "missing-leaf-class"
                                                             :deadline-class :standard}}
@@ -3355,9 +3366,9 @@
 
 (deftest json-socket-invoke-deadline-defaults-from-invoked-leaf
   ;; MI4: the single-result deadline default comes from the invoked leaf's
-  ;; :deadline-class (DELTA-Lhc-002.CC4); the envelope timeout still wins. The
-  ;; server-side standard deadline is shortened so a half-second handler can
-  ;; prove which class drove the deadline without a ten-second wait.
+  ;; :deadline-class (DELTA-Lhc-002.CC4); the envelope timeout still wins. A
+  ;; promise gate holds the handler until the test releases it, so completion
+  ;; and cancellation never depend on scheduler sleep timing.
   (with-runtime
     (fn [rt _]
       (weaver/register-op! rt 'paced
@@ -3367,18 +3378,33 @@
                                                    :deadline-class :standard}
                                         "roomy" {:hook-class :read
                                                  :deadline-class :unbounded}}}}
-                           'skein.weaver-test/medium-op)
+                           'skein.weaver-test/gated-deadline-op)
       (with-redefs [socket/default-standard-deadline-ms 100]
         (testing "a :standard leaf gets the server default deadline"
           (let [timed-out (invoke-request rt "paced" ["bounded"])]
             (is (false? (get timed-out "ok")))
-            (is (= "operation/deadline-exceeded" (get-in timed-out ["error" "code"])))))
+            (is (= "operation/deadline-exceeded" (get-in timed-out ["error" "code"])))
+            (is (true? (deref @deadline-started 1000 false)))
+            (is (not (realized? @deadline-gate)))
+            (is (empty? @op-side-effects))))
         (testing "an :unbounded leaf outlives the standard default"
-          (is (true? (get (invoke-request rt "paced" ["roomy"]) "ok"))))
+          (reset! deadline-gate (promise))
+          (reset! deadline-started (promise))
+          (let [response (future (invoke-request rt "paced" ["roomy"]))]
+            (is (true? (deref @deadline-started 1000 false)))
+            (deliver @deadline-gate true)
+            (is (true? (get (deref response 1000 {}) "ok")))
+            (is (= [:deadline-finished] @op-side-effects))))
         (testing "the envelope timeout still overrides the leaf class"
+          (reset! deadline-gate (promise))
+          (reset! deadline-started (promise))
+          (reset! op-side-effects [])
           (let [timed-out (invoke-request rt "paced" ["roomy"] {} {"timeout" 100})]
             (is (false? (get timed-out "ok")))
-            (is (= "operation/deadline-exceeded" (get-in timed-out ["error" "code"])))))))))
+            (is (= "operation/deadline-exceeded" (get-in timed-out ["error" "code"])))
+            (is (true? (deref @deadline-started 1000 false)))
+            (is (not (realized? @deadline-gate)))
+            (is (empty? @op-side-effects))))))))
 
 (deftest json-socket-invoke-read-ops-skip-hooks-and-protocol-errors
   (with-runtime

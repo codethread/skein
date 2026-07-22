@@ -50,6 +50,24 @@
 ;; A runtime is an opaque, non-nil handle; callers select it and pass it first.
 (s/def ::runtime some?)
 
+(s/def ::op-name
+  (s/and #(or (symbol? %) (keyword? %)) #(nil? (namespace %))))
+(s/def ::doc (s/and string? (complement str/blank?)))
+(s/def ::arg-spec map?)
+(s/def ::returns any?)
+(s/def ::stream? boolean?)
+(s/def ::deadline-class op-entry/op-deadline-classes)
+(s/def ::hook-class op-entry/op-hook-classes)
+(s/def ::about (s/and string? (complement str/blank?)))
+(s/def ::prime (s/and string? (complement str/blank?)))
+(s/def ::annotations map?)
+(s/def ::op-metadata-map
+  (s/and (s/keys :opt-un [::doc ::arg-spec ::returns ::stream? ::deadline-class
+                          ::hook-class ::about ::prime ::annotations])
+         #(every? op-entry/op-metadata-keys (keys %))))
+(s/def ::op-metadata
+  (s/nilable (s/or :legacy-doc ::doc :metadata ::op-metadata-map)))
+
 ;; --- schema init ------------------------------------------------------------
 
 (defn init
@@ -405,11 +423,11 @@
      entry)))
 
 (s/fdef register-op!
-  :args (s/or :default (s/cat :runtime ::runtime :op-name any? :fn-sym symbol?)
-              :with-opts (s/cat :runtime ::runtime :op-name any?
-                                :opts any? :fn-sym symbol?)
-              :owned (s/cat :runtime ::runtime :owner keyword? :op-name any?
-                            :opts any? :fn-sym symbol?))
+  :args (s/or :default (s/cat :runtime ::runtime :op-name ::op-name :fn-sym symbol?)
+              :with-opts (s/cat :runtime ::runtime :op-name ::op-name
+                                :opts ::op-metadata :fn-sym symbol?)
+              :owned (s/cat :runtime ::runtime :owner keyword? :op-name ::op-name
+                            :opts ::op-metadata :fn-sym symbol?))
   :ret map?)
 
 (defn replace-op!
@@ -432,11 +450,11 @@
      entry)))
 
 (s/fdef replace-op!
-  :args (s/or :default (s/cat :runtime ::runtime :op-name any? :fn-sym symbol?)
-              :with-opts (s/cat :runtime ::runtime :op-name any?
-                                :opts any? :fn-sym symbol?)
-              :owned (s/cat :runtime ::runtime :owner keyword? :op-name any?
-                            :opts any? :fn-sym symbol?))
+  :args (s/or :default (s/cat :runtime ::runtime :op-name ::op-name :fn-sym symbol?)
+              :with-opts (s/cat :runtime ::runtime :op-name ::op-name
+                                :opts ::op-metadata :fn-sym symbol?)
+              :owned (s/cat :runtime ::runtime :owner keyword? :op-name ::op-name
+                            :opts ::op-metadata :fn-sym symbol?))
   :ret map?)
 
 (defn ops

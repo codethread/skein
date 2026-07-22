@@ -31,7 +31,7 @@ Check `value` against one concrete return shape and return it unchanged.
   Throws structured `ex-info` on mismatch with `:path`, `:expected`, and
   `:actual`. Routing declarations must be selected by the caller first
   (see `select-case`).
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/return_shape/alpha.clj#L104-L116">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/return_shape/alpha.clj#L105-L117">Source</a></sub></p>
 
 ## <a name="skein.api.return-shape.alpha/explain">`explain`</a>
 ``` clojure
@@ -62,7 +62,7 @@ Select the return case a subcommand path names from a routed declaration.
   canonical `:path`/`:token`/`:available` context when the path stops at an
   interior node, continues past a concrete case, or names an undeclared
   subcommand.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/return_shape/alpha.clj#L62-L102">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/return_shape/alpha.clj#L62-L103">Source</a></sub></p>
 
 ## <a name="skein.api.return-shape.alpha/validate!">`validate!`</a>
 ``` clojure

@@ -685,6 +685,8 @@
 
 (def ^:private main-arg-spec
   {:op :weaver-start
+   :hook-class :mutating
+   :deadline-class :unbounded
    :flags {:workspace {:required? true
                        :doc "Selected config directory."}
            :state-dir {:required? true

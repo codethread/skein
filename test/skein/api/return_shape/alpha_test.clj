@@ -122,7 +122,16 @@
     (is (= [:subcommands "a" :subcommands "b"] (:path (ex-data bad)))))
   (is (thrown? clojure.lang.ExceptionInfo
                (return-shape/validate!
-                {:subcommands {"a" {:subcommands {:kw :string}}}}))))
+                {:subcommands {"a" {:subcommands {:kw :string}}}})))
+  (doseq [[declaration expected-path]
+          [[{:subcommands {}} []]
+           [{:subcommands {"a" {:subcommands {}}}} [:subcommands "a"]]]]
+    (let [error (is (thrown? clojure.lang.ExceptionInfo
+                             (return-shape/validate! declaration)))]
+      (is (= :empty-subcommands (:reason (ex-data error))))
+      (is (= expected-path (:path (ex-data error))))
+      (is (nil? (:token (ex-data error))))
+      (is (= [] (:available (ex-data error)))))))
 
 (deftest select-case-walks-the-full-path
   (is (= {:type :map :required {:id :string}}
@@ -148,3 +157,11 @@
     (is (= :unrouted-return-path (:reason (ex-data long-path))))
     (is (= ["list"] (:path (ex-data long-path))))
     (is (= "extra" (:token (ex-data long-path))))))
+
+(deftest select-case-validates-before-walking
+  (doseq [declaration [{:subcommands {"x" nil}}
+                       {:subcommands {"x" {:subcommands {}}}}]]
+    (let [error (is (thrown? clojure.lang.ExceptionInfo
+                             (return-shape/select-case declaration ["x"])))]
+      (is (::return-shape/error (ex-data error)))
+      (is (some? (:reason (ex-data error)))))))

@@ -18,6 +18,8 @@
 (def add-spec
   {:op :add
    :doc "Add a strand"
+   :hook-class :mutating
+   :deadline-class :standard
    :flags {:state {:type :string :doc "Lifecycle state"}
            :count {:type :int :doc "How many"}
            :force {:type :boolean :doc "Skip checks"}
@@ -61,6 +63,8 @@
 
 (deftest variadic-trailing-positional
   (let [spec {:op :weave
+              :hook-class :mutating
+              :deadline-class :standard
               :positionals [{:name :pattern :type :string :required? true}
                             {:name :ids :type :string :variadic? true}]}]
     (is (= {:pattern "p" :ids ["a" "b" "c"]} (cli/parse spec ["p" "a" "b" "c"])))
@@ -108,6 +112,8 @@
 
 (def payload-spec
   {:op :weave
+   :hook-class :mutating
+   :deadline-class :standard
    :flags {:attr {:type :map}}
    :positionals [{:name :body :type :string :required? true}
                  {:name :extra :type :string :variadic? true}]})
@@ -161,6 +167,8 @@
 
 (def parse-spec
   {:op :weave
+   :hook-class :mutating
+   :deadline-class :standard
    :flags {:data {:type :string :parse :json}}
    :positionals [{:name :items :type :string :parse :jsonl :required? true}]})
 
@@ -221,13 +229,19 @@
   {:op :thing
    :doc "Manage things"
    :subcommands {"add" {:doc "Add a thing"
+                        :hook-class :mutating
+                        :deadline-class :standard
                         :flags {:force {:type :boolean :doc "Skip checks"}
                                 :data {:type :string :parse :json :doc "JSON data"}}
                         :positionals [{:name :title :type :string :required? true :doc "Title"}]}
                  "list" {:doc "List things"
+                         :hook-class :read
+                         :deadline-class :standard
                          :flags {:limit {:type :int :doc "Maximum count"}}
                          :positionals []}
                  "tag" {:doc "Tag things"
+                        :hook-class :mutating
+                        :deadline-class :standard
                         :flags {:attr {:type :map :doc "Metadata"}}
                         :positionals [{:name :id :type :string :required? true}
                                       {:name :labels :type :string :variadic? true}]}}})
@@ -359,7 +373,15 @@
 (deftest leaf-class-metadata-validates
   (testing "leaf classes are accepted on nested leaves and flat roots"
     (is (map? (cli/validate! deep-spec)))
-    (is (map? (cli/validate! (assoc add-spec :hook-class :read :deadline-class :standard)))))
+    (is (map? (cli/validate! add-spec))))
+  (testing "both leaf classes are required with canonical node context"
+    (doseq [[node field] [[{:deadline-class :standard} :hook-class]
+                          [{:hook-class :read} :deadline-class]]]
+      (let [data (thrown-data #(cli/validate! (assoc node :op :x)))]
+        (is (= :missing-node-class (:reason data)))
+        (is (= "x" (:op data)))
+        (is (= [] (:path data)))
+        (is (= field (:field data))))))
   (testing "an unknown class value fails loudly"
     (let [data (thrown-data
                 #(cli/validate!
