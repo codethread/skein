@@ -19,6 +19,7 @@
             [skein.api.runtime.glossary.alpha :as glossary]
             [skein.api.runtime.help-transform.alpha :as help-transform]
             [skein.api.weaver.alpha :as weaver]
+            [skein.core.weaver.access :as access]
             [skein.core.weaver.config :as weaver-config]
             [skein.core.weaver.help :as weaver-help]
             [skein.core.weaver.dispatch :as dispatch]
@@ -770,109 +771,6 @@
         (db-test/delete-sqlite-family! db-file)
         (delete-tree! (io/file (:config-dir world)))))))
 
-(deftest reload-loads-layered-init-files-in-order
-  (with-runtime
-    (fn [rt _]
-      (let [workspace (get-in rt [:metadata :config-dir])
-            order-file (io/file workspace "reload-order.edn")]
-        (source-file/spit-forms!
-         (io/file workspace "init.clj")
-         [`(spit ~(str order-file) (pr-str [:shared]))
-          :shared])
-        (source-file/spit-forms!
-         (io/file workspace "init.local.clj")
-         [`(spit ~(str order-file)
-                 (pr-str (conj (read-string (slurp ~(str order-file))) :local)))
-          :local])
-        (is (= {:status :loaded
-                :files [{:name "init.clj"
-                         :file (.getCanonicalPath (io/file workspace "init.clj"))
-                         :return :shared}
-                        {:name "init.local.clj"
-                         :file (.getCanonicalPath (io/file workspace "init.local.clj"))
-                         :return :local}]
-                :returns [:shared :local]}
-               (runtime/reload! rt)))
-        (is (= [:shared :local] (read-string (slurp order-file))))))))
-
-(deftest reload-failure-preserves-earlier-registrations-and-fails-loudly
-  ;; A failed reload must never leave a world with no useful ops (SPEC-004.C96).
-  ;; The initial clear wipes pre-reload registrations and reinstalls built-ins;
-  ;; a later startup file that throws still leaves every registration that
-  ;; loaded before the failure in place, then rethrows loudly. The failure path
-  ;; deliberately does NOT re-clear — that would take already-loaded userland
-  ;; ops down with the failure, which is exactly the "zero useful ops until a
-  ;; manual reset" cliff.
-  (with-runtime
-    (fn [rt _]
-      (let [workspace (get-in rt [:metadata :config-dir])]
-        (graph/register-query! rt 'prior [:= [:attr :owner] "prior"])
-        (reset! delivered-events [])
-        (events/register-handler! rt :prior #{:strand/added} 'skein.weaver-test/capture-event {})
-        (hooks/register-hook! rt :prior #{:payload/received} 'skein.weaver-test/capture-hook {})
-        (source-file/spit-forms!
-         (io/file workspace "init.clj")
-         ['(require '[skein.api.current.alpha :as current]
-                    '[skein.api.graph.alpha :as graph]
-                    '[skein.api.events.alpha :as events]
-                    '[skein.core.weaver.dispatch :as dispatch])
-          '(let [rt (current/runtime)]
-             (graph/register-query! rt 'shared [:= [:attr :owner] "shared"])
-             (events/register-handler! rt :shared #{:strand/added} 'skein.weaver-test/capture-event)
-             (dispatch/enqueue! rt {:event/type :strand/added :event/id "shared-only"
-                                    :event/at "2026-06-29T00:00:00Z" :event/source :test}))])
-        (source-file/spit-forms!
-         (io/file workspace "init.local.clj")
-         ['(throw (ex-info "local boom" {:source :local}))])
-        (try
-          (runtime/reload! rt)
-          (is false "expected reload failure")
-          (catch clojure.lang.ExceptionInfo e
-            (is (= (.getCanonicalPath (io/file workspace "init.local.clj"))
-                   (:file (ex-data e))))))
-        ;; pre-reload registrations were wiped by the initial clear, but the
-        ;; registrations init.clj made before init.local.clj threw survive.
-        (is (= #{"shared"} (set (keys (graph/queries rt)))))
-        (is (= [:shared] (mapv :key (events/handlers rt))))
-        (is (= [] (hooks/hooks rt)))
-        ;; built-in ops stay registered, so the world is never left op-less.
-        (is (= ["about" "help" "prime"] (mapv :name (weaver/ops rt))))
-        ;; dispatch resumes on the failure path too, so init.clj's own enqueued
-        ;; event reaches the handler it successfully registered.
-        (is (wait-until #(some (fn [event] (= "shared-only" (:event/id event)))
-                               @delivered-events)))))))
-
-(deftest reload-layering-clears-events-and-hooks-before-local-overlay
-  (with-runtime
-    (fn [rt _]
-      (let [workspace (get-in rt [:metadata :config-dir])]
-        (events/register-handler! rt :stale #{:strand/added} 'skein.weaver-test/capture-event {})
-        (hooks/register-hook! rt :stale #{:payload/received} 'skein.weaver-test/capture-hook {})
-        (events/register-handler! rt :fails #{:strand/added} 'skein.weaver-test/failing-event {})
-        (dispatch/enqueue! rt (test-event :strand/added "before-reload"))
-        (t/await-quiescent! rt)
-        (is (seq (events/recent-failures rt)))
-        (source-file/spit-forms!
-         (io/file workspace "init.clj")
-         ['(require '[skein.api.current.alpha :as current]
-                    '[skein.api.events.alpha :as events]
-                    '[skein.api.hooks.alpha :as hooks])
-          '(let [rt (current/runtime)]
-             (events/register-handler! rt :shared #{:strand/added} 'skein.weaver-test/capture-event)
-             (hooks/register-hook! rt :shared #{:payload/received} 'skein.weaver-test/capture-hook))])
-        (source-file/spit-forms!
-         (io/file workspace "init.local.clj")
-         ['(require '[skein.api.current.alpha :as current]
-                    '[skein.api.events.alpha :as events]
-                    '[skein.api.hooks.alpha :as hooks])
-          '(let [rt (current/runtime)]
-             (events/register-handler! rt :local #{:strand/updated} 'skein.weaver-test/capture-event)
-             (hooks/register-hook! rt :local #{:strand/add-before-commit} 'skein.weaver-test/capture-hook))])
-        (runtime/reload! rt)
-        (is (= #{:shared :local} (set (mapv :key (events/handlers rt)))))
-        (is (= #{:shared :local} (set (mapv :key (hooks/hooks rt)))))
-        (is (= [] (events/recent-failures rt)))))))
-
 (deftest weaver-api-delegates-to-db-and-normalizes-results
   (with-runtime
     (fn [rt _]
@@ -1125,37 +1023,6 @@
                                  (events/recent-failures rt))))
           (finally
             (deliver @handler-release true)))))))
-
-(deftest event-queue-capacity-and-reload-semantics
-  (with-runtime
-    (fn [rt _]
-      (weaver/init rt)
-      (reset! delivered-events [])
-      (reset! handler-started (promise))
-      (reset! handler-release (promise))
-      (events/register-handler! rt :slow #{:x} 'skein.weaver-test/slow-capture-event {})
-      (dispatch/enqueue! rt (test-event :x "started"))
-      (is (deref @handler-started (test-support/await-budget-ms 1000) false))
-      (doseq [n (range weaver-runtime/event-queue-capacity)]
-        (dispatch/enqueue! rt (test-event :x (str "queued-" n))))
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"queue is full"
-                            (dispatch/enqueue! rt (test-event :x "full"))))
-      (let [init (io/file (get-in rt [:metadata :config-dir]) "init.clj")]
-        (source-file/spit-forms!
-         init
-         ['(require '[skein.api.current.alpha :as current]
-                    '[skein.api.events.alpha :as events])
-          '(let [rt (current/runtime)]
-             (events/register-handler! rt :after-reload #{:x} 'skein.weaver-test/capture-event))])
-        (runtime/reload! rt)
-        (deliver @handler-release true)
-        (is (= [:after-reload] (mapv :key (events/handlers rt))))
-        (is (= [] (events/recent-failures rt)))
-        (is (not (wait-until #(some (fn [event] (= "queued-0" (:event/id event)))
-                                    @delivered-events))))
-        (dispatch/enqueue! rt (test-event :x "after-reload"))
-        (is (wait-until #(some (fn [event] (= "after-reload" (:event/id event)))
-                               @delivered-events)))))))
 
 (deftest weaver-apply-batch-emits-batch-event-before-compatibility-fanout
   (with-runtime
@@ -1449,7 +1316,7 @@
                entry))
         (is (= [entry] (hooks/hooks rt)))
         (is (not (contains? (first (hooks/hooks rt)) :fn-value)))
-        (is (ifn? (:fn-value (get @(:hook-registry rt) :capture))))
+        (is (ifn? (:fn-value (get (access/hook-registry rt) :capture))))
         (let [replacement (hooks/register-hook! rt :capture #{:strand/add-before-commit} 'skein.weaver-test/capture-hook {:order 10 :doc "Replaced"})
               early (hooks/register-hook! rt "early" #{:payload/received} 'skein.weaver-test/capture-hook {:order -1})
               peer-a (hooks/register-hook! rt :a #{:payload/received} 'skein.weaver-test/capture-hook {})
@@ -1472,25 +1339,6 @@
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"opts" (hooks/register-hook! rt :bad #{:x} 'skein.weaver-test/capture-hook :opaque)))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"data-first" (hooks/register-hook! rt :bad #{:x} 'skein.weaver-test/capture-hook {:opaque (Object.)})))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"integer" (hooks/register-hook! rt :bad #{:x} 'skein.weaver-test/capture-hook {:order 1.5}))))))
-
-(deftest reload-config-clears-and-reinstalls-hooks
-  (with-runtime
-    (fn [rt _]
-      (let [init (io/file (get-in rt [:metadata :config-dir]) "init.clj")]
-        (hooks/register-hook! rt :stale #{:payload/received} 'skein.weaver-test/capture-hook {})
-        (source-file/spit-forms!
-         init
-         ['(require '[skein.api.current.alpha :as current]
-                    '[skein.api.hooks.alpha :as hooks])
-          '(let [rt (current/runtime)]
-             (hooks/register-hook! rt :fresh #{:payload/received} 'skein.weaver-test/capture-hook {:order 2}))])
-        (runtime/reload! rt)
-        (is (= [{:key :fresh
-                 :types #{:payload/received}
-                 :fn 'skein.weaver-test/capture-hook
-                 :order 2
-                 :metadata {}}]
-               (hooks/hooks rt)))))))
 
 (deftest attribute-normalize-hooks-thread-transform-results-for-add-and-update
   (with-runtime
@@ -2166,15 +2014,6 @@
           (is (= "/tmp/wt" (:op/worktree-root ctx)))
           (is (= "/tmp/wt/.git" (:op/git-common-dir ctx)))
           (is (= 5000 (:op/timeout ctx))))))))
-
-(deftest weaver-op-registry-reload-is-collision-free
-  (with-runtime
-    (fn [rt _]
-      (is (= ["about" "help" "prime"] (mapv :name (weaver/ops rt))))
-      ;; reload clears the registry before re-running init, so the built-in
-      ;; help/about/prime ops re-register without tripping the collision check.
-      (runtime/reload! rt)
-      (is (= ["about" "help" "prime"] (mapv :name (weaver/ops rt)))))))
 
 (deftest weaver-op-parser-integration
   (with-runtime
@@ -2872,23 +2711,6 @@
       (is (empty? (weaver/list rt)))
       (is (empty? (db/execute! (:datasource rt) ["SELECT * FROM strand_edges"])))
       (is (empty? @delivered-events)))))
-
-(deftest weaver-reload-clears-patterns
-  (with-runtime
-    (fn [rt _]
-      (let [init-file (io/file (get-in rt [:metadata :config-dir]) "init.clj")]
-        (source-file/spit-forms!
-         init-file
-         ['(require '[skein.api.current.alpha :as current]
-                    '[skein.api.runtime.alpha :as runtime])
-          '(runtime/sync! (current/runtime))])
-        (patterns/register-pattern! rt 'dev-task 'skein.weaver-test/test-pattern ::pattern-input)
-        (is (= 1 (count (patterns/patterns rt))))
-        (runtime/reload! rt)
-        (is (empty? (patterns/patterns rt)))
-        (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                              #"Pattern not found"
-                              (patterns/resolve-pattern rt 'dev-task)))))))
 
 (deftest json-socket-invoke-dispatch
   (with-runtime
@@ -3843,7 +3665,7 @@
         (is (= [:= [:attr :v] 2] (get (graph/queries rt) "scoped-a")))
         (is (= [:= [:attr :v] 2] (get (graph/queries rt) "scoped-b")))))))
 
-(deftest f4-unledgered-loaded-ns-module-fails-with-structured-reason
+(deftest f4-unledgered-loaded-spool-namespace-is-reacquired-through-the-ledger
   (with-runtime
     (fn [rt _db-file]
       (let [workspace (get-in rt [:metadata :config-dir])
@@ -3853,18 +3675,19 @@
         (write-local-spool-module!
          workspace root-lib ns-sym
          "(runtime/collect-module-entry! :queries \"unledgered\" [:= [:attr :v] 1])")
-        (runtime/sync! rt)
+        (spool-sync/sync-approved-spools rt)
         (weaver-runtime/with-runtime-and-spool-classloader
           rt #(require ns-sym))
         (is (empty? (filter #(= ns-sym (:namespace %))
                             (spool-sync/namespace-load-ledger rt))))
         (let [result (runtime/module! rt :unledgered
                                       {:ns ns-sym :spools [root-lib]})]
-          (is (= :partial (:status result)))
-          (is (= :failed (get-in result [:modules :unledgered :status])))
-          (is (= :unledgered-loaded-namespace
-                 (get-in result [:modules :unledgered :error :data :reason])))
-          (is (not (contains? (graph/queries rt) "unledgered"))))))))
+          (is (= :applied (:status result)))
+          (is (= :applied (get-in result [:modules :unledgered :status])))
+          (is (some #(and (= ns-sym (:namespace %))
+                          (= :unledgered (:owner %)))
+                    (spool-sync/namespace-load-ledger rt)))
+          (is (contains? (graph/queries rt) "unledgered")))))))
 
 (deftest f11-file-module-and-repl-requires-become-observed-residuals
   (with-runtime
@@ -3891,7 +3714,7 @@
                       (spool-sync/namespace-load-ledger rt)))
         (weaver-runtime/with-runtime-and-spool-classloader
           rt #(require repl-required-ns))
-        (let [ex (is (thrown? clojure.lang.ExceptionInfo (runtime/sync! rt)))
+        (let [ex (is (thrown? clojure.lang.ExceptionInfo (spool-sync/sync-approved-spools rt)))
               residuals (:residuals (spool-sync/loaded-namespace-status rt))]
           (is (= :non-additive-sync-diff (:reason (ex-data ex))))
           (is (= #{file-required-ns repl-required-ns}

@@ -22,8 +22,10 @@
   plus data-first metadata. Returns the registered entry without its resolved
   function value."
   ([runtime key types fn-sym]
-   (register-hook! runtime key types fn-sym {}))
+   (register-hook! runtime core-registry/repl-owner key types fn-sym {}))
   ([runtime key types fn-sym opts]
+   (register-hook! runtime core-registry/repl-owner key types fn-sym opts))
+  ([runtime owner key types fn-sym opts]
    (let [opts (validate-hook-opts! opts)
          entry {:key (validate-hook-key! key)
                 :types (validate-hook-types! types)
@@ -31,17 +33,19 @@
                 :fn-value (resolve-hook-fn! runtime fn-sym)
                 :order (get opts :order 0)
                 :metadata (dissoc opts :order)}]
-     (core-registry/put-entry! (access/hook-store runtime) (:key entry) entry)
+     (core-registry/put-entry! (access/hook-store runtime) owner (:key entry) entry)
      (dissoc entry :fn-value))))
 
 (defn unregister-hook!
   "Unregister a lifecycle hook by stable key from `runtime` and return that key.
 
   Unregistering an absent key is a no-op returning the validated key."
-  [runtime key]
-  (let [key (validate-hook-key! key)]
-    (core-registry/remove-entry! (access/hook-store runtime) key)
-    key))
+  ([runtime key]
+   (unregister-hook! runtime core-registry/repl-owner key))
+  ([runtime owner key]
+   (let [key (validate-hook-key! key)]
+     (core-registry/remove-entry! (access/hook-store runtime) owner key)
+     key)))
 
 (defn hooks
   "Return data-first lifecycle hook registry entries in execution order.
@@ -50,7 +54,7 @@
   never carry the resolved `:fn-value`."
   [runtime]
   (mapv #(dissoc % :fn-value)
-        (sort-by (juxt :order (comp pr-str :key)) (vals @(access/hook-registry runtime)))))
+        (sort-by (juxt :order (comp pr-str :key)) (vals (access/hook-registry runtime)))))
 
 (defn hook-provenance
   "Return owner/provenance diagnostics for `runtime`'s lifecycle hook registry.

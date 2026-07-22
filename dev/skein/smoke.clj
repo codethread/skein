@@ -468,14 +468,14 @@
                                          '[skein.api.runtime.alpha :as runtime])
                                 (let [runtime (current/runtime)]
                                   {:approved (runtime/approved runtime)
-                                   :syncs (runtime/syncs runtime)}))])
+                                   :status (runtime/status runtime)}))])
                            "weaver" "repl" "--stdin"))]
         (assert= "spools/smoke-runtime-lib"
                  (get-in loader-state [:approved :spools 'smoke/runtime-lib :local/root])
                  "live REPL runtime loader reads real approved spool config")
-        (assert= :loaded
-                 (get-in loader-state [:syncs :spools 'smoke/runtime-lib :status])
-                 "live REPL runtime loader reads real approved spool sync state"))
+        (assert= :synced
+                 (get-in loader-state [:status :root/outcomes 'smoke/runtime-lib :status])
+                 "live REPL runtime loader reads real approved root state"))
       (let [strand-id (cli-add-config! workspace "Startup transformed strand" "--attr" "owner=smoke")
             rejected-output (run-strand-config-fails! workspace "add" "Hook rejected strand" "--attr" "owner=blocked")
             _ (assert-contains rejected-output "hook/failed" "startup hook rejection reaches CLI as hook/failed")

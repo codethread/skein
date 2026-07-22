@@ -267,7 +267,7 @@
 
 (deftest state-shape-matches-declared-version
   ;; Drift alarm for the shell executor's versioned spool-state: a key added to new-state
-  ;; without a state-version bump would survive reload! as a stale map.
+  ;; without a state-version bump would survive refresh as a stale map.
   (test-support/assert-state-shape
    #'shell/new-state
    #{:scan-monitor :worker-executor :close-fn}))

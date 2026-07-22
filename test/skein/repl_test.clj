@@ -188,7 +188,7 @@
           (is (= "3" (first lines)))
           (is (= "\"ab\"" (second lines)))
           (is (str/includes? (nth lines 2) ":metadata"))
-          (is (str/includes? (nth lines 2) ":query-registry")))))))
+          (is (str/includes? (nth lines 2) ":query-store")))))))
 
 (deftest attach-stdin-preserves-out-and-value-order-per-form
   (with-runtime
@@ -245,8 +245,8 @@
                                     '[skein.api.runtime.alpha :as runtime])
                           '(def rt (current/runtime))
                           '(runtime/approved rt)
-                          '(runtime/syncs rt)
-                          '(runtime/uses rt)]))
+                          '(runtime/status rt)
+                          '(runtime/plan rt)]))
                   *out* out
                   *err* (java.io.StringWriter.)
                   *ns* (the-ns 'user)]

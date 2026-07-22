@@ -25,16 +25,16 @@ Activate it from trusted startup config after syncing approved roots:
          '[skein.api.runtime.alpha :as runtime])
 
 (def runtime (current/runtime))
-(runtime/sync! runtime)
-(runtime/use! runtime :chime
+(runtime/module! runtime :chime
   {:ns 'skein.spools.chime
    :spools ['skein.spools/chime]
-   :call 'skein.spools.chime/install!
+   :contribute 'skein.spools.chime/contribute
+   :reconcile 'skein.spools.chime/reconcile
    :required? true})
 ```
 
-`install!` registers the graph-event handler and the pre-commit barrier that
-orders mutations against rule registration. A useful setup then layers two
+The module reconciler maintains the graph-event handler and registration
+barrier. A useful setup then layers two
 things on top:
 
 - shared config (`init.clj` / a workspace spool) registers the workspace's

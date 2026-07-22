@@ -41,7 +41,7 @@
 
 (def ^:private state-version
   "Shape version for chime's runtime spool-state map. Bump whenever `new-state`'s
-  key set changes: spool-state survives `reload!`, so a post-upgrade reload would
+  key set changes: spool-state survives module refresh, so a post-upgrade refresh would
   otherwise reuse a preserved map missing the new key (docs/spools/writing-shared-spools.md
   'Versioned spool state', SPEC-004.C95). The `state-shape-matches-declared-version`
   test fails loudly if `new-state` and this version drift apart."

@@ -10,7 +10,6 @@
   (:require [clojure.java.io :as io]
             [clojure.test :refer [deftest is testing]]
             [skein.api.clock.alpha :as clock]
-            [skein.api.runtime.alpha :as runtime]
             [skein.core.db :as db]
             [skein.core.db-test :as db-test]
             [skein.core.weaver.runtime :as weaver-runtime]
@@ -349,9 +348,10 @@
       (scheduler/rearm! rt)
       (is (await-fire) "the overdue wake fires once")
       (is (await-completed (:datasource rt) "past"))
-      ;; A config reload re-arms the scheduler; a completed wake must not return.
-      (runtime/reload! rt)
-      (is (= 1 @fire-count) "a completed wake is not re-fired on reload"))))
+      ;; Resource reconciliation may re-arm the scheduler; a completed wake must
+      ;; not return.
+      (scheduler/rearm! rt)
+      (is (= 1 @fire-count) "a completed wake is not re-fired on rearm"))))
 
 (deftest stop-closes-scheduler-executor-thread
   (let [db-file (db-test/temp-db-file)

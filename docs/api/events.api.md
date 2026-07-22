@@ -35,7 +35,7 @@ Return owner/provenance diagnostics for `runtime`'s event handler registry.
   `:layer`, and `:override?`/`:effective?` flags, and its `:value` handler entry
   has the resolved `:fn-value` stripped, so no function value or internal handle
   leaves the registry (SPEC-004.C66, DELTA-OlrDrt-001.CC9).
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/events/alpha.clj#L69-L78">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/events/alpha.clj#L73-L82">Source</a></sub></p>
 
 ## <a name="skein.api.events.alpha/handlers">`handlers`</a>
 ``` clojure
@@ -48,7 +48,7 @@ Return `runtime`'s event handler registry as data-first entries.
   Each entry is `{:key :types :fn :metadata}` — never the resolved function
   value (SPEC-004.C66) — sorted by printed key so ordering is deterministic
   across mixed key types.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/events/alpha.clj#L59-L67">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/events/alpha.clj#L63-L71">Source</a></sub></p>
 
 ## <a name="skein.api.events.alpha/recent-failures">`recent-failures`</a>
 ``` clojure
@@ -62,12 +62,13 @@ Return `runtime`'s recent asynchronous handler failures, oldest first.
   each record carries `:handler/key`, `:handler/fn`, `:event/id`,
   `:event/type`, `:exception/message`, and `:failed/at`. Handler exceptions
   never fail the already-committed mutation that emitted the event.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/events/alpha.clj#L80-L88">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/events/alpha.clj#L84-L92">Source</a></sub></p>
 
 ## <a name="skein.api.events.alpha/register-handler!">`register-handler!`</a>
 ``` clojure
 (register-handler! runtime key types fn-sym)
 (register-handler! runtime key types fn-sym metadata)
+(register-handler! runtime owner key types fn-sym metadata)
 ```
 Function.
 
@@ -80,11 +81,12 @@ Register or replace an event handler in `runtime` for selected event types.
   fails registration, not dispatch); `metadata` a data-first map — swaps it
   into the registry, replacing any prior entry with the same key, and
   returns the entry as data (the resolved function value stays internal).
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/events/alpha.clj#L27-L46">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/events/alpha.clj#L27-L48">Source</a></sub></p>
 
 ## <a name="skein.api.events.alpha/unregister-handler!">`unregister-handler!`</a>
 ``` clojure
 (unregister-handler! runtime key)
+(unregister-handler! runtime owner key)
 ```
 Function.
 
@@ -93,4 +95,4 @@ Unregister the event handler stored under `key` in `runtime`.
   Validates `key` like registration, removes any entry stored under it (a
   key with no entry is a quiet no-op, so unregistration is idempotent), and
   returns `{:unregistered key}`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/events/alpha.clj#L48-L57">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/events/alpha.clj#L50-L61">Source</a></sub></p>

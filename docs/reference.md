@@ -147,7 +147,7 @@ The weaver is the application core. It is a long-lived local Clojure process tha
 - the in-memory named-query registry;
 - the in-memory weave-pattern registry;
 - the in-memory event handler registry and async dispatch worker;
-- the approved-spool sync state;
+- the approved-root acquisition state;
 - runtime module activation state.
 
 Start mill once, then start the selected workspace's weaver:
@@ -193,15 +193,16 @@ config or spool change you make takes effect, and what happens to running agent 
 is replaced. The spool classloader is created when the weaver boots and is never swapped while it
 runs, so some changes load into the live weaver and some must wait for the next generation.
 
-`runtime/sync!` classifies each change. Additive changes load into the running weaver: a newly
+`runtime/refresh!` classifies each change. Additive changes load into the running weaver: a newly
 approved root, or a coordinate that has never loaded in this generation. Non-additive changes
 cannot, because applying them would mean unloading code the running JVM has no safe way to drop:
 removing a root that already loaded, pointing an already-loaded root at different source, or bumping
-the version of a loaded Maven coordinate. `sync!` refuses those in-JVM, records a
+the version of a loaded Maven coordinate. Refresh refuses those in-JVM, records a
 `:pending-generation` entry, and reports `recorded; takes effect at the next weaver generation
-(mill-supervised restart, user sign-off)`. The pending change stays visible in `syncs` and in later
-`sync!` returns until the weaver process is replaced. If a change you expected does not take effect,
-check `syncs` for a pending generation. See daemon-runtime SPEC-004.C44c–C44f for the full
+(mill-supervised restart, user sign-off)`. The pending change stays visible in
+`runtime/status` until the weaver process is replaced. If a change you expected
+does not take effect, check status for a pending generation. See daemon-runtime
+SPEC-004.C44c–C44f for the full
 classification.
 
 Replacing a weaver ends every agent run it is supervising, so a restart is not free. `mill weaver
@@ -456,27 +457,29 @@ definitions. Application stays on the read commands: `list --query <name>` and `
 
 Named query registries are not durable by themselves. If you want a query after every weaver restart, register it from startup-loaded code.
 
-For a simple persistent query, put it directly in `init.clj`:
+For a simple persistent query, expose a complete contribution from a small
+workspace namespace:
+
+```clojure
+(ns my.workspace)
+
+(defn contribute [_ctx]
+  {:queries {"mine" [:= [:attr :owner] "ct"]}})
+```
+
+Declare that owner from `init.clj`:
 
 ```clojure
 (require '[skein.api.current.alpha :as current]
-         '[skein.api.runtime.alpha :as runtime]
-         '[skein.api.graph.alpha :as graph])
+         '[skein.api.runtime.alpha :as runtime])
 
-(def runtime (current/runtime))
-
-(runtime/sync! runtime)
-;; batteries ships on the classpath (:paths), so require it before its use!.
-(require 'skein.spools.batteries)
-(runtime/use! runtime :skein/spools-batteries
-  {:ns 'skein.spools.batteries
-   :call 'skein.spools.batteries/install!})
-(graph/register-query! runtime 'mine [:= [:attr :owner] "ct"])
+(runtime/module! (current/runtime) :my/workspace
+  {:ns 'my.workspace
+   :contribute 'my.workspace/contribute})
 ```
 
-For a workspace that already activates a local spool with `runtime/use!`, follow that existing
-pattern instead: add the `graph/register-query!` call to the spool's `install!` function so
-reload/startup installs everything from one place.
+For a workspace that already declares a local spool, add the query to that
+module's contribution so owner-complete refresh installs everything together.
 
 Defining a Clojure var that contains query data is not the same as registering a named query. A
 local var can be passed to graph helpers from your own code, but `strand list --query mine` only
@@ -587,7 +590,7 @@ are explicit built-in namespaces, not ordinary user spools; require them when ne
 ```clojure
 (require '[skein.api.current.alpha :as current]
          '[skein.api.runtime.alpha :as runtime])
-(runtime/reload! (current/runtime))
+(runtime/refresh! (current/runtime))
 ```
 
 ### Burn recovery
@@ -631,7 +634,7 @@ The weaver loads trusted startup files from the selected workspace in order — 
 handlers, activated spools) is weaver-lifetime runtime state. The full customisation story is its
 own page: [customising your workspace](./spools/customisation.md) covers the files `mill init`
 bootstraps, direct `init.clj` registrations, smoke-testing config in a disposable world,
-`reload!`/`reload-spool!` semantics, REPL hygiene in a shared weaver, promoting config to a local
+module refresh and `reload-code!` semantics, REPL hygiene in a shared weaver, promoting config to a local
 spool, and the `skein.userland.alpha` ergonomics layer. The rules change only when a spool leaves
 your machine: [writing shared spools](./spools/writing-shared-spools.md).
 

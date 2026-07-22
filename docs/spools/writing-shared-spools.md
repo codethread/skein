@@ -39,10 +39,10 @@ unpublished runtime or alongside a second runtime: it mutates the wrong world or
    Two runtimes then get two independent registries; nothing resets or races
    across runtimes.
 
-   **Versioned spool state.** Spool-state entries deliberately survive `reload!`
-   (unlike the registries a reload clears), so a preserved value outlives the
+   **Versioned spool state.** Spool-state entries deliberately survive module
+   refresh, so a preserved value can outlive the
    code that built it. If your state map's *shape* changes between deploys — a
-   new key, a swapped resource — a post-upgrade reload would otherwise reuse the
+   new key, a swapped resource — a post-upgrade refresh would otherwise reuse the
    stale map, and code reaching for the new key silently gets `nil` (this is a
    real incident: an agent-run reload once reused a map predating its executor keys
    and parked every run). Declare a `state-version` next to the builder and pass
@@ -352,15 +352,15 @@ means:
    string in the op metadata; `strand prime <op>` projects it. Generate it from the same definitions
    the spool installs so the discipline can never drift from the installed surface.
 
-### Glossary outcomes: register from `install!`, before the ops that use them
+### Glossary outcomes: contribute before the ops that use them
 
 Shared failure outcomes are defined **once** in the runtime glossary and referenced by name from each
 verb's `failure-modes`. Register your outcomes with `register-glossary-outcome!` (qualified, stable
 names; a collision fails loudly — a deliberate change uses `replace-glossary-outcome!` or, better, a
-new name) **from your spool's `install!`, before you register any op that references them**. That
-ordering is a contract: the unconditional glossary-ref existence check runs at `register-op!` time, so
-an op registered before its outcomes fails loudly. `reload!` re-runs config in the same order, and a
-spool that ships its outcomes this way carries them portably wherever it is activated.
+new name) in the module contribution that also owns the referring ops. Publication validates the
+whole contribution before replacing the owner partition, so an op whose glossary reference is
+absent fails loudly and retains the prior owner state. A spool that ships its outcomes this way
+carries them portably wherever its module is declared.
 
 ### The `:about`/`:prime` metadata shape is a compatibility boundary
 
@@ -457,7 +457,7 @@ ownership fails with `:reason :duplicate-spool-root` and names the root lib and 
 
 The public runtime validates `:skein/min` against its running release marker. If any family declares
 that floor while the running core has no annotated release marker or explicit startup claim,
-`approved` and `sync!` refuse with `:reason :release-marker-unavailable`, the declared floors, and a
+`approved` and refresh acquisition refuse with `:reason :release-marker-unavailable`, the declared floors, and a
 remedy to start the runtime with a release-marker claim. An unmarked core never treats those floors
 as satisfied.
 
@@ -610,34 +610,34 @@ selected Skein classpath. Every other source repository gets its own family entr
 
 ### README activation snippet
 
-Include an **Activation** section with the complete trusted `init.clj` snippet. The consumer owns
-the runtime, calls `sync!`, and activates modules explicitly with `use!`. Use `:spools` guards for
-every approved spool whose sync state is a prerequisite and `:after` when one activation depends on
-another. The spool in this example exposes a zero-argument `acme.priority.alpha/install!` function.
+Include an **Activation** section with the complete trusted `init.clj` snippet.
+The consumer owns the runtime and declares modules explicitly. Use `:spools`
+for every approved root prerequisite and `:after` when one module depends on
+another. The spool in this example exposes module contribution and reconcile
+entry points.
 
 ```clojure
 (require '[skein.api.current.alpha :as current]
          '[skein.api.runtime.alpha :as runtime])
 
 (def rt (current/runtime))
-(runtime/sync! rt)
 
-(runtime/use! rt :acme/priority
+(runtime/module! rt :acme/priority
   {:ns 'acme.priority.alpha
-   :spools '[acme/priority]
-   :call 'acme.priority.alpha/install!
+   :spools ['acme/priority]
+   :contribute 'acme.priority.alpha/contribute
+   :reconcile 'acme.priority.alpha/reconcile
    :required? true})
 ```
 
-`use!` is the blessed early prerequisite check. Under `:required? true`, missing, unsynced, or
-failed spool approvals throw for the surviving `:spools` skip reasons. Namespace load and `:call`
-failures also fail loudly through the normal activation path. Its returned and recorded entry
-conforms to `:skein.api.runtime.alpha/use-entry`.
+Under `:required? true`, missing or failed root prerequisites refuse refresh.
+Namespace loading, contribution, publication, and reconcile failures are
+reported in the joined refresh result and `runtime/status`.
 
 ### Maven dependencies in a spool root
 
 A spool root may declare ordinary JVM library dependencies in its top-level `deps.edn :deps`. Those
-dependencies are loaded into the live weaver during `sync!` with the same runtime dependency path
+dependencies are loaded into the live weaver during refresh with the same runtime dependency path
 used for spool roots. Runtime loading is weaver-wide: there is no per-spool dependency isolation and
 no unload semantics.
 
@@ -655,7 +655,7 @@ The policy is intentionally narrow:
   in the spool root.
 - Standard Maven refinement keys such as `:exclusions`, `:classifier`, and
   `:extension` are allowed alongside `:mvn/version`.
-- Aliases and other non-rejected top-level keys are ignored by `sync!`; no alias
+- Aliases and other non-rejected top-level keys are ignored by refresh acquisition; no alias
   activation participates in the spool contract.
 
 Example:
@@ -666,8 +666,8 @@ Example:
  :deps {camel-snake-kebab/camel-snake-kebab {:mvn/version "0.4.3"}}}
 ```
 
-`sync!` resolves all approved spool Maven deps as one universe. If two roots
-declare the same Maven lib with different coordinates, the whole sync fails and
+Refresh acquisition resolves all approved spool Maven deps as one universe. If two roots
+declare the same Maven lib with different coordinates, the whole acquisition fails and
 names the lib, roots, and coordinates. Pin that lib with a top-level
 `:mvn-overrides` map in `spools.edn` or `spools.local.edn`:
 
@@ -713,7 +713,7 @@ source coordinate. A missing `:claims` fails loudly. Run the local checkout's co
 against the claimed marker to check the claim. The Maven-only dependency policy still applies to
 every local override root.
 
-**Caution: `sync!` resolves the current approved Maven universe.** Each call
+**Caution: refresh resolves the current approved Maven universe.** Each full refresh
 reads the roots approved at that moment, validates their `deps.edn` files, and
 resolves their Maven dependencies as one stateless universe. A root removed from
 `spools.edn` is simply absent from the next resolution; there is no retained
@@ -728,8 +728,9 @@ its tests in a `:test` alias, and each required root in `:extra-deps` at the pee
 declared floor. Give the test namespace a `-main` that exits non-zero on failure so
 `clojure -M:test` works in CI.
 
-Consumer-workspace tests load the roots approved by their fixture through `sync!` in the embedded
-runtime. The test JVM does not independently pin those spool roots in Skein's `deps.edn`.
+Consumer-workspace tests declare modules guarded by the roots approved in their fixture, then run
+refresh in the embedded runtime. The test JVM does not independently pin those spool roots in
+Skein's `deps.edn`.
 
 Use `skein.test.alpha/with-weaver-world` for the consumer-workspace tier and take the runtime it
 hands you explicitly. Reach for `skein.core.weaver.runtime/with-runtime-binding` only when a test
@@ -800,7 +801,7 @@ The invariant "no `skein.*` (engine, blessed API, REPL, or shipped spool) source
 `skein.*` and shipped-spool sources. Local and third-party shared spools are held to the same rule
 by review and this guide. If abuse of the ergonomics layer by distributed spools ever shows up in
 practice, the sanctioned next step is a lint over approved spool roots at
-`skein.api.runtime.alpha/sync!` time that rejects a spool whose source requires
+module refresh time that rejects a spool whose source requires
 `skein.userland.alpha`.
 
 ## Unsafe spools

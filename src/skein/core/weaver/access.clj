@@ -8,6 +8,7 @@
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
             [skein.core.db :as db]
+            [skein.core.weaver.core-registry :as core-registry]
             [skein.core.weaver.runtime :as weaver-runtime]))
 
 (defn- normalize-row
@@ -30,9 +31,9 @@
   (:datasource runtime))
 
 (defn query-registry
-  "Return the runtime's named-query effective-projection atom."
+  "Return one immutable effective named-query snapshot."
   [runtime]
-  (:query-registry runtime))
+  (core-registry/effective (:query-store runtime)))
 
 (defn query-store
   "Return the runtime's named-query owner-partition store."
@@ -40,9 +41,9 @@
   (:query-store runtime))
 
 (defn pattern-registry
-  "Return the runtime's weave-pattern effective-projection atom."
+  "Return one immutable effective weave-pattern snapshot."
   [runtime]
-  (:pattern-registry runtime))
+  (core-registry/effective (:pattern-store runtime)))
 
 (defn pattern-store
   "Return the runtime's weave-pattern owner-partition store."
@@ -50,9 +51,9 @@
   (:pattern-store runtime))
 
 (defn op-registry
-  "Return the runtime's CLI-op effective-projection atom."
+  "Return one immutable effective CLI-op snapshot."
   [runtime]
-  (:op-registry runtime))
+  (core-registry/effective (:op-store runtime)))
 
 (defn op-store
   "Return the runtime's CLI-op owner-partition store."
@@ -70,9 +71,9 @@
   (:help-transform-slot runtime))
 
 (defn hook-registry
-  "Return the runtime's lifecycle-hook effective-projection atom."
+  "Return one immutable effective lifecycle-hook snapshot."
   [runtime]
-  (:hook-registry runtime))
+  (core-registry/effective (:hook-store runtime)))
 
 (defn hook-store
   "Return the runtime's lifecycle-hook owner-partition store."
@@ -88,11 +89,6 @@
   "Return the runtime's append-only namespace-load ledger atom."
   [runtime]
   (:namespace-load-ledger runtime))
-
-(defn module-use-state
-  "Return the runtime's module-use registry atom."
-  [runtime]
-  (:module-use-state runtime))
 
 (defn event-system
   "Return the runtime's event system."

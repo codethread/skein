@@ -14,13 +14,13 @@
   Ops adopt the discovery-tier pattern (DELTA-Dtf-003.CC2): their arg-specs drive
   help, and where it adds value they carry closed `:annotations` sub-maps
   (`use-when`/`notes`/`failure-modes`) and op-level `:about`/`:prime` prose.
-  `failure-modes` reference the batteries-owned glossary outcomes registered from
-  `install!` before the ops (the load-order contract, DELTA-Dtf-002.CC7).
+  `failure-modes` reference the batteries-owned glossary outcomes reconciled by
+  the batteries module (the load-order contract, DELTA-Dtf-002.CC7).
 
   Batteries also EXPORTS `default-help-transform` — the reference default help
   transform (DELTA-Dtf-002.CC1): one recursive renderer over the uniform fractal
   node (DELTA-Dtf-001.CC2) with no per-level branch. It is exported for trusted
-  `init.clj` election, never auto-registered from `install!`.
+  config election and never auto-registers.
 
   Attribute/edge flag semantics reproduce old SPEC-002.C6–C11: `--attr key=value`
   is a repeatable, highest-precedence string map whose values may be payload
@@ -100,17 +100,14 @@
 (s/def ::effective-coordinate #(s/valid? :skein.core.weaver.spool-sync/coordinate %))
 (s/def ::provenance #(s/valid? :skein.core.weaver.spool-sync/provenance %))
 (s/def ::claims #(s/valid? :skein.core.weaver.spool-sync/claims %))
-(s/def ::sync-entry #(s/valid? :skein.core.weaver.spool-sync/sync-root-entry %))
-(s/def ::syncs
-  (s/and (s/map-of symbol? ::sync-entry)
+(s/def ::root-outcome #(s/valid? :skein.core.weaver.spool-sync/sync-root-entry %))
+(s/def ::roots
+  (s/and (s/map-of symbol? ::root-outcome)
          #(every? (fn [[root-lib entry]] (= root-lib (:lib entry))) %)))
-(s/def ::use-entry #(s/valid? ::runtime-api/use-entry %))
-(s/def ::uses
-  (s/and (s/map-of keyword? ::use-entry)
-         #(every? (fn [[use-key entry]] (= use-key (:key entry))) %)))
+(s/def ::modules (s/map-of keyword? ::runtime-api/module-declaration))
 (s/def ::status-family
-  (s/and (s/keys :req-un [::declared ::effective-coordinate ::provenance ::claims ::syncs ::uses])
-         #(exact-keys? #{:declared :effective-coordinate :provenance :claims :syncs :uses} %)))
+  (s/and (s/keys :req-un [::declared ::effective-coordinate ::provenance ::claims ::roots ::modules])
+         #(exact-keys? #{:declared :effective-coordinate :provenance :claims :roots :modules} %)))
 (s/def ::families (s/map-of symbol? ::status-family))
 (s/def ::pending-generation (s/nilable ::runtime-api/pending-generation))
 (s/def ::release-marker ::specs/release-marker-result)
@@ -535,22 +532,15 @@
          :compare-url (compare-url (:git/url old-entry) (:git/sha old-entry) new-sha)
          :requirements (:requirements (runtime-api/declared rt))}))))
 
-(defn- family-uses [uses roots]
-  (doseq [[use-key use-entry] uses]
-    (when-not (s/valid? ::runtime-api/use-entry use-entry)
-      (throw (ex-info "Runtime use entry has an invalid shape"
-                      {:use-key use-key
-                       :use-entry use-entry
-                       :explain (s/explain-data ::runtime-api/use-entry use-entry)}))))
+(defn- family-modules [modules roots]
   (into (sorted-map)
-        (filter (fn [[_ use-entry]]
-                  (seq (set/intersection roots (set (get-in use-entry [:opts :spools]))))))
-        uses))
+        (filter (fn [[_ declaration]]
+                  (seq (set/intersection roots (set (:spools declaration))))))
+        modules))
 
 (defn- spool-status [rt]
   (let [declared (runtime-api/declared rt)
-        sync-result (runtime-api/syncs rt)
-        uses (runtime-api/uses rt)]
+        status (runtime-api/status rt)]
     {:families
      (into (sorted-map)
            (map (fn [[family projection]]
@@ -562,11 +552,11 @@
                         roots (set (keys declared-roots))]
                     [family
                      (assoc projection
-                            :syncs (select-keys (:spools sync-result) roots)
-                            :uses (family-uses uses roots))])))
+                            :roots (select-keys (:root/outcomes status) roots)
+                            :modules (family-modules (:modules status) roots))])))
            (:families declared))
      :requirements (:requirements declared)
-     :pending-generation (:pending-generation sync-result)
+     :pending-generation (:pending-generation status)
      :release-marker (runtime-api/release-marker rt)}))
 
 (defn- spool-about
@@ -1207,7 +1197,7 @@
 (def ^:private batteries-glossary
   "Batteries-owned named failure outcomes (DELTA-Dtf-002.CC5).
 
-  Registered from `install!` before any op whose `:annotations` `failure-modes`
+  Reconciled by the module before help resolves an op whose `:annotations` `failure-modes`
   reference them — the load-order contract (DELTA-Dtf-002.CC7). Each name is
   qualified and stable; a changed meaning takes a new name, never a redefinition."
   [{:name "batteries/state-invalid"
@@ -1381,7 +1371,7 @@
   The batteries reference default help transform (DELTA-Dtf-002.CC1): a full
   envelope → the string the CLI relays verbatim. It is EXPORTED for trusted
   `init.clj` election through `register-default-help-transform!` (Task 8) and is
-  deliberately NOT auto-registered from `install!`, so a fresh world keeps the
+  deliberately not auto-registered by the module, so a fresh world keeps the
   raw-JSON floor (DELTA-Dtf-002.D1).
 
   Both members of the one help-schema family render through the single uniform
@@ -1429,8 +1419,9 @@
   transform (`default-help-transform`) is NOT registered here — it is elected by
   trusted config (DELTA-Dtf-002.D1).
 
-  The no-arg arity registers into the active runtime for `use!`-style
-  installation; the explicit-runtime arity is for tests and trusted callers."
+  The no-arg arity registers into the active runtime for legacy direct callers;
+  the explicit-runtime arity is for tests and trusted callers. New startup
+  configuration declares the `contribute`/`reconcile` module entry points."
   ([] (install! (current/runtime)))
   ([rt]
    (doseq [outcome batteries-glossary]
@@ -1482,7 +1473,7 @@
   function only supplies its declarative operation partition. Each entry is
   assembled into the canonical `::op-entry` shape (string key, `:name`, `:fn`,
   provenance, deadline/hook class) exactly as `register-op!` would, so the module
-  publication path is equivalent to the eager `install!` path. Batteries ships no
+  publication path is equivalent to direct registration. Batteries ships no
   `help` op of its own — the built-in help op stays effective and batteries
   elects only the reference help transform (DELTA-Dtf-002.D1) — so the partition
   declares no overrides over the lower defaults layer."
@@ -1500,7 +1491,7 @@
   The declarative operation partition publishes through `contribute`; the
   glossary outcomes its ops' `failure-modes` reference are batteries-owned
   runtime resources (not declaration data), so the module lifecycle seeds them
-  here rather than in an eager `install!` (DELTA-OlrRepl-001.CC6). Module
+  here rather than during direct registration (DELTA-OlrRepl-001.CC6). Module
   publication does not run the direct-registration glossary-ref check, so
   publishing before this reconcile is safe; help resolves the referenced-term
   closure against the seeded outcomes."

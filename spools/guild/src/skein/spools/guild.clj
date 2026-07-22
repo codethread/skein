@@ -246,6 +246,30 @@
                          since (assoc :since since)))
                      (sort-by key @(deprecated-ops (:op/runtime ctx))))})
 
+(defn contribute
+  "Return Guild's owner-complete built-in operation contribution."
+  [_ctx]
+  {:ops
+   {:entries
+    {"guild" {:name "guild"
+              :fn 'skein.spools.guild/ops
+              :stream? false
+              :deadline-class :standard
+              :hook-class :read
+              :provenance 'skein.spools.guild
+              :doc (:doc guild-arg-spec)
+              :arg-spec guild-arg-spec
+              :returns guild-returns}}}})
+
+(defn reconcile
+  "Reset Guild's runtime-owned declarations for a freshly applied module."
+  [{:keys [runtime]}]
+  (reset! (guild-ops runtime) {})
+  (reset! (deprecated-ops runtime) {})
+  (reset! (fallback-guild-name runtime) nil)
+  (publish-declarations! runtime)
+  {:reconciled :guild})
+
 (defn install!
   "Install the built-in `guild` operation into `runtime`.
 

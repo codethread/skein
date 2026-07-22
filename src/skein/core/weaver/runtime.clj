@@ -48,11 +48,7 @@
 
 (defn- event-system-base []
   (let [handler-store (core-registry/backed-registry :events)]
-    {;; The handler store is the owner-partition source of truth; its effective
-     ;; projection stays under :handler-registry so the dispatch worker and
-     ;; `skein.api.events.alpha` keep reading the flat `{key -> entry}` map.
-     :handler-registry (:effective handler-store)
-     :handler-store handler-store
+    {:handler-store handler-store
      :recent-failures (atom [])
      :queue (ArrayBlockingQueue. event-queue-capacity)
      :running? (atom true)
@@ -110,7 +106,8 @@
                               ;; concurrent replacement is seen only by a later event
                               ;; (DELTA-OlrDrt-001.CC9). Each handler runs its captured
                               ;; :fn-value, not a re-resolved symbol (CC10).
-                              (doseq [{:keys [key types fn-value] :as handler} (vals @(:handler-registry event-system))
+                              (doseq [{:keys [key types fn-value] :as handler}
+                                      (vals (core-registry/effective (:handler-store event-system)))
                                       :when (contains? types (:event/type event))]
                                 (try
                                   (with-runtime-binding
@@ -146,31 +143,6 @@
         runtime* (assoc runtime :event-system event-system)]
     (run-event-worker! runtime* event-system)
     runtime*))
-
-(defn resume-event-system!
-  "Start event dispatch for the runtime's current event system."
-  [runtime]
-  (let [{:keys [running?] :as event-system} (:event-system runtime)]
-    (reset! running? true)
-    (run-event-worker! runtime event-system)
-    nil))
-
-(defn clear-event-system-for-reload!
-  "Stop event dispatch and clear handlers, queued events, and failures."
-  [runtime]
-  (let [{:keys [handler-store recent-failures queue running?]} (:event-system runtime)]
-    (stop-event-system! runtime)
-    (core-registry/reset-store! handler-store)
-    (reset! recent-failures [])
-    (.clear ^ArrayBlockingQueue queue)
-    (reset! running? false)
-    nil))
-
-(defn restart-event-system!
-  "Reset handlers, failures, and worker state for the runtime event system."
-  [runtime]
-  (clear-event-system-for-reload! runtime)
-  (resume-event-system! runtime))
 
 (defn- current-pid
   "Return the current OS process id."
@@ -324,63 +296,10 @@
 
   The built-in help op and its registrar live in `skein.core.weaver.help`, which
   resolves `register-op!` on the alpha op registry at call time; `requiring-resolve`
-  keeps startup and reload sharing one install path without a static require."
+  keeps startup on the same owner-explicit registration path without a static
+  require."
   [runtime]
   (with-runtime-binding runtime #((requiring-resolve 'skein.core.weaver.help/register-built-in-ops!) runtime)))
-
-(defn- clear-reload-state! [runtime]
-  (reset! (:approved-spool-sync-state runtime) {})
-  (reset! (:module-use-state runtime) {})
-  (core-registry/reset-store! (:query-store runtime))
-  (core-registry/reset-store! (:pattern-store runtime))
-  (core-registry/reset-store! (:op-store runtime))
-  (core-registry/reset-store! (:hook-store runtime))
-  (reset! (:glossary-registry runtime) {})
-  (reset! (:help-transform-slot runtime) nil)
-  (clear-event-system-for-reload! runtime)
-  (install-built-in-ops! runtime))
-
-(defn reload-config!
-  "Reload selected config-dir startup files after clearing runtime registries.
-
-  First preflights the on-disk approved spool config: a config the sync phase
-  would throw on as a whole — a non-additive diff, an invalid entry, an
-  atomically failing Maven universe — aborts here with every registry and the
-  sync state untouched (a refused non-additive diff still records its pending
-  generation), because discovering that refusal after the clear would leave a
-  world with built-in ops only and no in-JVM recovery (SPEC-004.C46). Then
-  clears every weaver-lifetime registry and the event system, reinstalls the
-  built-in ops, reloads `init.clj`/`init.local.clj`, and re-arms the scheduler
-  so handlers newly supplied by reloaded spools/config resolve before any
-  durable pending wake fires. This is `skein.api.runtime.alpha/reload!`'s
-  implementation."
-  [runtime]
-  ;; requiring-resolve keeps the require graph pointing downward: spool-sync
-  ;; sits above this namespace through the access tier, like the api-tier op
-  ;; registrar install-built-in-ops! resolves.
-  ((requiring-resolve 'skein.core.weaver.spool-sync/preflight-approved-sync!) runtime)
-  (try
-    (clear-reload-state! runtime)
-    (let [world {:config-dir (get-in runtime [:metadata :config-dir])}
-          files (load-startup-files! runtime world)]
-      (resume-event-system! runtime)
-      ;; Re-arm after config reload so handlers newly supplied by reloaded
-      ;; spools/config resolve; rearm! also discards fire envelopes the reload
-      ;; flushed from the event queue (DELTA-weaver-scheduler-runtime-001.CC5).
-      (scheduler/rearm! runtime)
-      {:status :loaded
-       :files files
-       :returns (mapv :return files)})
-    (catch Throwable t
-      ;; Do not re-clear on failure. The initial clear-reload-state! already
-      ;; reinstalled the built-in ops, and startup files register userland ops
-      ;; incrementally, so a spool install that throws midway would otherwise
-      ;; take every already-registered op down with it — the "zero useful ops
-      ;; until a manual atom reset" cliff. Leave whatever loaded so the world
-      ;; stays operable, resume dispatch, and rethrow the failure loudly.
-      (resume-event-system! runtime)
-      (scheduler/rearm! runtime)
-      (throw t))))
 
 (defn- with-spool-classloader [runtime f]
   (let [thread (Thread/currentThread)
@@ -623,17 +542,9 @@
                         :datasource ds
                         :clock (atom (clock/system-clock))
                         :clock-pumps (atom {})
-                        ;; Each core registry is an owner-partition store; its
-                        ;; effective projection stays under the historical key so
-                        ;; the access accessors and direct-key readers keep the
-                        ;; flat map shape while mutation routes through the store.
-                        :query-registry (:effective query-store)
                         :query-store query-store
-                        :pattern-registry (:effective pattern-store)
                         :pattern-store pattern-store
-                        :op-registry (:effective op-store)
                         :op-store op-store
-                        :hook-registry (:effective hook-store)
                         :hook-store hook-store
                         :glossary-registry (atom {})
                         :help-transform-slot (atom nil)
@@ -656,7 +567,6 @@
                         ;; consulting source files. Sync/source-load boundaries
                         ;; replace it when their in-memory evidence changes.
                         :namespace-load-status (atom nil)
-                        :module-use-state (atom {})
                         :module-state
                         (atom ((requiring-resolve
                                 'skein.core.weaver.module-refresh/initial-state)))

@@ -67,6 +67,19 @@
 (defn- fail! [message data]
   (throw (ex-info message data)))
 
+(defn- resolve-module-fn!
+  [module-key role callable]
+  (let [ns-sym (some-> callable namespace symbol)
+        var (or (when-let [loaded-ns (and ns-sym (find-ns ns-sym))]
+                  (ns-resolve loaded-ns (symbol (name callable))))
+                (requiring-resolve callable))]
+    (when-not (ifn? var)
+      (fail! "Module callable did not resolve to a function"
+             {:module/key module-key
+              :module/role role
+              :module/callable callable}))
+    var))
+
 (defn- normalize-kind-contribution [kind-id value]
   (when-not (keyword? kind-id)
     (fail! "Module contribution kind must be a keyword"
@@ -319,13 +332,21 @@
   [runtime with-loader key declaration previous-source]
   (if-let [ns-sym (:ns declaration)]
     (let [source-binding (latest-source-binding runtime ns-sym)
-          classpath-binding (classpath-binding runtime ns-sym)]
-      (when (and (find-ns ns-sym) (nil? source-binding) (nil? classpath-binding))
-        (fail! "Loaded module namespace has no source-ledger binding"
-               {:reason :unledgered-loaded-namespace
-                :module/key key
-                :namespace ns-sym}))
+          classpath-binding (classpath-binding runtime ns-sym)
+          synced-file (try (spool-sync/synced-namespace-file runtime ns-sym)
+                           (catch Exception _ nil))]
       (cond
+        (and source-binding
+             (not= previous-source (source-stamp source-binding)))
+        (with-loader #(load-module-file!
+                       runtime (:file source-binding)
+                       {:ns ns-sym
+                        :file (:file source-binding)
+                        :collection/reload? true}))
+
+        synced-file
+        (with-loader #(spool-sync/load-synced-namespace! runtime ns-sym key))
+
         (and (find-ns ns-sym) (nil? source-binding) classpath-binding)
         (if-let [file (classpath-source-file classpath-binding)]
           (with-loader #(load-module-file!
@@ -339,14 +360,6 @@
           ;; declaration contribution from an explicit :contribute. Report an
           ;; unchanged source rather than reloading.
           {:ns ns-sym :classpath-binding classpath-binding})
-
-        (and source-binding
-             (not= previous-source (source-stamp source-binding)))
-        (with-loader #(load-module-file!
-                       runtime (:file source-binding)
-                       {:ns ns-sym
-                        :file (:file source-binding)
-                        :collection/reload? true}))
 
         :else
         (with-loader #(spool-sync/load-synced-namespace! runtime ns-sym key))))
@@ -366,7 +379,8 @@
                           :loaded)
           contribution (if-let [contribute (:contribute declaration)]
                          (with-loader
-                           #(let [contribute-fn (requiring-resolve contribute)]
+                           #(let [contribute-fn (resolve-module-fn!
+                                                 key :contribute contribute)]
                               (contribute-fn {:runtime runtime
                                               :module/key key
                                               :module/declaration declaration})))
@@ -511,7 +525,8 @@
       {:outcome outcome}
       (try
         (let [return (with-loader
-                       #(let [reconcile-fn (requiring-resolve reconcile)]
+                       #(let [reconcile-fn (resolve-module-fn!
+                                            key :reconcile reconcile)]
                           (reconcile-fn
                            {:runtime runtime
                             :module/key key
@@ -710,11 +725,8 @@
                         #{})
               selected (or selected (set (keys graph)))
               order (module-graph/affected-modules graph selected)
-              ;; Temporary old-lifecycle startup files may still call sync!
-              ;; themselves. An empty module graph needs no second sync; this
-              ;; preserves their truthful first-load root outcomes until Task 16
-              ;; removes the scaffolding. Any desired/current module graph owns
-              ;; synchronization through the coordinator.
+              ;; An empty graph needs no acquisition pass. Any desired or current
+              ;; module graph owns synchronization through this coordinator.
               sync-result (if (:dry-run? opts)
                             (current-root-state runtime)
                             (if (or (seq graph) (seq old-graph))
@@ -801,6 +813,7 @@
      :module/outcomes (:outcomes state)
      :resource/outcomes (:resources state)
      :root/outcomes (:root-outcomes state)
+     :pending-generation @(:pending-spool-generation runtime)
      :scheduler/wakes (scheduler/wake-status runtime)
      :loaded loaded
      :last-refresh (:last-refresh state)}))

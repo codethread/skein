@@ -15,6 +15,15 @@ Reference spool for declaring a versioned public weaver operation API.
 
 
 
+## <a name="skein.spools.guild/contribute">`contribute`</a>
+``` clojure
+(contribute _ctx)
+```
+Function.
+
+Return Guild's owner-complete built-in operation contribution.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L249-L262">Source</a></sub></p>
+
 ## <a name="skein.spools.guild/deprecate!">`deprecate!`</a>
 ``` clojure
 (deprecate! runtime name opts)
@@ -57,7 +66,7 @@ Install the built-in `guild` operation into `runtime`.
   The guild name is read from runtime metadata when available. Passing
   `guild-name` records a fallback value for contexts without runtime metadata.
   Re-running is reload-safe and clears prior guild declarations in this runtime.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L249-L269">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L273-L293">Source</a></sub></p>
 
 ## <a name="skein.spools.guild/ops">`ops`</a>
 ``` clojure
@@ -67,6 +76,15 @@ Function.
 
 Return JSON-safe metadata describing the installed guild API.
 <p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L233-L247">Source</a></sub></p>
+
+## <a name="skein.spools.guild/reconcile">`reconcile`</a>
+``` clojure
+(reconcile {:keys [runtime]})
+```
+Function.
+
+Reset Guild's runtime-owned declarations for a freshly applied module.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L264-L271">Source</a></sub></p>
 
 ## <a name="skein.spools.guild/register-op!">`register-op!`</a>
 ``` clojure

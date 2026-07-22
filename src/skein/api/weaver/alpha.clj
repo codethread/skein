@@ -325,7 +325,7 @@
 (defn list-query
   "Return strands matching a registered query definition."
   [runtime query-name params]
-  (list runtime (query/query-def @(query-registry runtime) query-name) params))
+  (list runtime (query/query-def (query-registry runtime) query-name) params))
 
 (s/fdef list-query
   :args (s/cat :runtime ::runtime :query-name any? :params any?)
@@ -384,25 +384,30 @@
   Registering an already-registered name fails loudly, naming both the existing
   entry's provenance and the attempted registrant; use `replace-op!` to override
   deliberately. Registry contents live only for the current weaver lifetime and
-  are normally installed from init.clj or a live REPL; `reload!` clears the
-  registry before re-running init, so re-registration is collision-free."
+  are normally published by owner-complete modules from init.clj or registered
+  directly from a live REPL. Module refresh replaces its owner's partition;
+  direct registrations remain until explicitly replaced or removed."
   ([runtime op-name fn-sym]
-   (register-op! runtime op-name nil fn-sym))
+   (register-op! runtime core-registry/repl-owner op-name nil fn-sym))
   ([runtime op-name opts fn-sym]
+   (register-op! runtime core-registry/repl-owner op-name opts fn-sym))
+  ([runtime owner op-name opts fn-sym]
    (let [entry (validated-op-entry op-name opts fn-sym)]
      (check-op-glossary-refs! runtime entry)
-     (when-let [existing (get @(op-registry runtime) (:name entry))]
+     (when-let [existing (get (op-registry runtime) (:name entry))]
        (throw (ex-info "Operation already registered"
                        {:operation (:name entry)
                         :existing-provenance (:provenance existing)
                         :attempted-provenance (:provenance entry)})))
-     (core-registry/put-entry! (op-store runtime) (:name entry) entry)
+     (core-registry/put-entry! (op-store runtime) owner (:name entry) entry)
      entry)))
 
 (s/fdef register-op!
   :args (s/or :default (s/cat :runtime ::runtime :op-name any? :fn-sym symbol?)
               :with-opts (s/cat :runtime ::runtime :op-name any?
-                                :opts any? :fn-sym symbol?))
+                                :opts any? :fn-sym symbol?)
+              :owned (s/cat :runtime ::runtime :owner keyword? :op-name any?
+                            :opts any? :fn-sym symbol?))
   :ret map?)
 
 (defn replace-op!
@@ -411,27 +416,31 @@
   Same signature as `register-op!`. This is the deliberate override for a name
   that already exists; unlike `register-op!` it requires the name to be present."
   ([runtime op-name fn-sym]
-   (replace-op! runtime op-name nil fn-sym))
+   (replace-op! runtime core-registry/repl-owner op-name nil fn-sym))
   ([runtime op-name opts fn-sym]
+   (replace-op! runtime core-registry/repl-owner op-name opts fn-sym))
+  ([runtime owner op-name opts fn-sym]
    (let [entry (validated-op-entry op-name opts fn-sym)]
      (check-op-glossary-refs! runtime entry)
-     (when-not (contains? @(op-registry runtime) (:name entry))
+     (when-not (contains? (op-registry runtime) (:name entry))
        (throw (ex-info "Operation not registered; cannot replace"
                        {:operation (:name entry)
-                        :available (sort (keys @(op-registry runtime)))})))
-     (core-registry/put-entry! (op-store runtime) (:name entry) entry)
+                        :available (sort (keys (op-registry runtime)))})))
+     (core-registry/replace-entry! (op-store runtime) owner (:name entry) entry)
      entry)))
 
 (s/fdef replace-op!
   :args (s/or :default (s/cat :runtime ::runtime :op-name any? :fn-sym symbol?)
               :with-opts (s/cat :runtime ::runtime :op-name any?
-                                :opts any? :fn-sym symbol?))
+                                :opts any? :fn-sym symbol?)
+              :owned (s/cat :runtime ::runtime :owner keyword? :op-name any?
+                            :opts any? :fn-sym symbol?))
   :ret map?)
 
 (defn ops
   "Return registered CLI operation entries for the current weaver runtime."
   [runtime]
-  (mapv val (sort-by key @(op-registry runtime))))
+  (mapv val (sort-by key (op-registry runtime))))
 
 (s/fdef ops
   :args (s/cat :runtime ::runtime)
@@ -446,7 +455,7 @@
   (DELTA-OlrDrt-001.CC9/CC10, op symbols resolve at invocation)."
   [runtime op-name]
   (let [canonical-name (op-entry/canonical-op-name op-name)
-        registered @(op-registry runtime)]
+        registered (op-registry runtime)]
     (or (get registered canonical-name)
         (throw (ex-info "Operation not found"
                         {:operation op-name

@@ -113,7 +113,7 @@ and drops the `:after` edge — kanban no longer needs devflow to load. The join
 moves to a small trusted-config module that only exists in repos that want it:
 
 ```clojure
-(runtime/use! runtime :kanban/tracker
+(runtime/module! runtime :kanban/tracker
               {:file "kanban_tracker.clj"
                :spools ['codethread/kanban 'codethread/devflow]
                :after [:skein/spools-kanban :skein/spools-devflow]
@@ -252,7 +252,7 @@ the test classpath, and `kanban.md` documents the binding contract.
 
 ### this repo (step 2)
 
-- `.skein/init.clj:139-145` — the kanban `use!` drops `codethread/devflow` from
+- `.skein/init.clj` — the kanban module drops `codethread/devflow` from
   its guard and the `:after` devflow edge; a new `:kanban/tracker` block
   (RFC-022.D2) loads `kanban_tracker.clj`.
 - `.skein/kanban_tracker.clj` — new module, essentially:

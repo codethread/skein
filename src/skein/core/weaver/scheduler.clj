@@ -8,12 +8,11 @@
   close-on-stop hook, and never a module-level atom.
 
   Lifecycle:
-  - `rearm!` is the post-config entry point. `skein.core.weaver.runtime/start!`
-    calls it after selected startup files finish loading, and
-    `skein.core.weaver.runtime/reload-config!` calls it after config reload, so
+  - `rearm!` is the post-config entry point. Runtime startup and module resource
+    reconciliation call it after selected startup files finish loading, so
     handlers supplied by approved spools/config are resolvable before any timer
-    arms. `rearm!` cancels the in-memory timer, discards stale in-flight claims,
-    and rebuilds from durable pending rows.
+    arms. It cancels the in-memory timer, discards stale in-flight claims, and
+    rebuilds from durable pending rows.
   - Runtime stop closes the executor through the spool-state `:close-fn` before
     storage closes.
 

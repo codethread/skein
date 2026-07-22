@@ -64,17 +64,11 @@
           (is (= revised (transform/replace-default-help-transform! rt revised)))
           (is (= :owner-b (:owner (transform/default-help-transform rt)))))))))
 
-(deftest reload-clears-the-slot
-  ;; The reload-cleared contract (op-registry lifecycle, not reload-surviving
-  ;; spool-state): reload! clears the slot before config re-runs, and config may
-  ;; re-establish it.
+(deftest refresh-preserves-the-direct-slot
   (with-runtime
     (fn [rt _]
       (transform/register-default-help-transform! rt (registration 'my.spool/render))
       (is (transform/default-help-transform-registered? rt))
-      (runtime/reload! rt)
-      (is (not (transform/default-help-transform-registered? rt))
-          "reload! clears the slot, unlike reload-surviving spool-state")
-      (testing "the slot re-establishes after a reload cleared it"
-        (transform/register-default-help-transform! rt (registration 'my.spool/render))
-        (is (transform/default-help-transform-registered? rt))))))
+      (runtime/refresh! rt)
+      (is (transform/default-help-transform-registered? rt)
+          "refresh does not erase direct runtime-owned service state"))))

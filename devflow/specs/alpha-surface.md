@@ -13,8 +13,8 @@ This spec draws the line around what Skein ships as "alpha": which surface is in
 - **SPEC-005.C3:** The reference spools shipped in the Skein tree — `executors/shell`, `guild`,
   `text-search` and `workflow` — are in-contract through their spool docs at
   [`spools/*.md`](../../spools/README.md) (the shell executor's contract doc nests one level deeper,
-  at `spools/executors/shell.md`), loaded **opt-in**: an approved `spools.edn` coordinate, synced by
-  `runtime/sync!`, and activated by a `:spools`-guarded `runtime/use!`. `batteries` is the single
+  at `spools/executors/shell.md`), loaded **opt-in**: an approved `spools.edn`
+  coordinate and a `:spools`-guarded `runtime/module!` declaration. `batteries` is the single
   documented classpath exception — the non-escalating base strand command surface every world
   needs at zero config — kept on the source classpath and loaded by an explicit `require`, with its
   rationale in `spools/README.md`. No reference spool ships on the weaver classpath.

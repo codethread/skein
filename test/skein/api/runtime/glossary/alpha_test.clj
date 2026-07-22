@@ -75,16 +75,14 @@
           (is (= revised (glossary/replace-glossary-outcome! rt revised)))
           (is (= "revised" (:definition (first (glossary/glossary-outcomes rt))))))))))
 
-(deftest reload-clears-the-glossary
-  ;; The reload-cleared contract (op-registry lifecycle, not reload-surviving
-  ;; spool-state): reload! clears the registry before config re-runs.
+(deftest refresh-preserves-direct-glossary-entries
   (with-runtime
     (fn [rt _]
       (glossary/register-glossary-outcome! rt (outcome "lifecycle/timeout" 'my.spool/install))
       (is (seq (glossary/glossary-outcomes rt)))
-      (runtime/reload! rt)
-      (is (= [] (glossary/glossary-outcomes rt))
-          "reload! clears the glossary, unlike reload-surviving spool-state"))))
+      (runtime/refresh! rt)
+      (is (seq (glossary/glossary-outcomes rt))
+          "refresh does not erase direct runtime-owned service state"))))
 
 ;; --- op-registration glossary-ref existence check ---------------------------
 

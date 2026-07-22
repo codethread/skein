@@ -71,25 +71,24 @@
           (is (= {:k (value kind :low)} (effective store))
               "removing the overriding owner restores the shadowed base entry"))))))
 
-(deftest direct-per-entry-writes-carry-the-ambient-owner
+(deftest direct-per-entry-writes-require-an-explicit-owner
   (doseq [kind kinds]
     (testing kind
       (let [store (cr/backed-registry kind)]
-        (cr/put-entry! store :k (value kind :a))
+        (cr/put-entry! store :repl :k (value kind :a))
         (is (= {:k (value kind :a)} (effective store))
-            "a direct write lands under the default REPL owner")
-        (cr/put-entry! store :k2 (value kind :b))
-        (cr/remove-entry! store :k)
+            "a direct write lands under its stated owner")
+        (cr/put-entry! store :repl :k2 (value kind :b))
+        (cr/remove-entry! store :repl :k)
         (is (= {:k2 (value kind :b)} (effective store))
             "removing one key leaves the owner's other keys")
-        (cr/remove-entry! store :k2)
+        (cr/remove-entry! store :repl :k2)
         (is (= {} (effective store))
             "removing the last key empties the projection")
         (testing "a system-owned entry is shadowed loudly by a direct write"
-          (cr/with-owner* cr/system-owner cr/system-layer
-            (fn [] (cr/put-entry! store :sys (value kind :low))))
+          (cr/put-entry! store cr/system-owner :sys (value kind :low))
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"override intent"
-                                (cr/put-entry! store :sys (value kind :high))))
+                                (cr/put-entry! store :repl :sys (value kind :high))))
           (is (= {:sys (value kind :low)} (effective store))))))))
 
 (deftest explain-reports-effective-owner-provenance-and-shadowing
@@ -130,14 +129,11 @@
       (is (every? #(= 'ns/f (get-in % [:value :fn])) contenders)
           "the handler symbol stays as data"))))
 
-(deftest reset-store-clears-every-owner-partition
+(deftest effective-returns-an-immutable-derived-snapshot
   (let [store (cr/backed-registry :ops)]
     (cr/replace-owner! store :owner-a
                        {:layer :workspace :entries {:a (value :ops :a)} :overrides #{}})
-    (cr/with-owner* cr/system-owner cr/system-layer
-      (fn [] (cr/put-entry! store :s (value :ops :s))))
-    (cr/reset-store! store)
-    (is (= {} (effective store)))
-    (testing "the kind stays declared so contributions resume after a reset"
-      (cr/put-entry! store :k (value :ops :k))
-      (is (= {:k (value :ops :k)} (effective store))))))
+    (let [snapshot (effective store)]
+      (cr/put-entry! store :owner-b :b (value :ops :b))
+      (is (= {:a (value :ops :a)} snapshot))
+      (is (= {:a (value :ops :a) :b (value :ops :b)} (effective store))))))

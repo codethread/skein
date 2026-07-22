@@ -12,7 +12,7 @@ Explicit-runtime vocabulary registry: the blessed home for declaring and
   declaration is a small map (`:kind`, `:name`, `:owner`, `:doc`, plus `:keys`
   for an attribute namespace or `:family`/`:direction`/`:declared-acyclic?` for
   an edge). The registry is runtime-owned per-spool state that survives
-  `reload!`, versioned so a shape change cannot silently reuse a stale map, and
+  module refresh, versioned so a shape change cannot silently reuse a stale map, and
   seeded at init with the reflected `relations.alpha` edge catalog plus the
   core-owned `note/*` attribute namespace.
 

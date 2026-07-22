@@ -181,7 +181,7 @@ func TestWeaverReplStdinAttachesThroughMillMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("repl stdin failed: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, ":metadata") || !strings.Contains(out, ":query-registry") {
+	if !strings.Contains(out, ":metadata") || !strings.Contains(out, ":query-store") {
 		t.Fatalf("unexpected repl output: %q", out)
 	}
 	out, err = h.millCmd(dir, runDir, "(throw (ex-info \"boom from weaver\" {}))\n", "weaver", "repl", "--stdin")

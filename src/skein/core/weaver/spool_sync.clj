@@ -3,13 +3,12 @@
 
   Reads and validates the `spools.edn`/`spools.local.edn` allowlist, materializes
   git-pinned spool roots into the content-addressed cache, vets each root's
-  Maven dependencies, and loads approved roots into a runtime's spool classloader
-  while recording per-spool sync outcomes. Also resolves and loads module-use
-  targets — `:file` paths confined to the config-dir and `:ns` sources located
-  under synced roots — for `skein.api.runtime.alpha/use!`. Internal tier: the
-  trusted `skein.api.runtime.alpha` surface delegates its
-  `approved`/`declared`/`sync!`/`syncs` publics and its module loading here and
-  owns the blessed contract (SPEC-004, SPEC-005.C5)."
+  Maven dependencies, and loads approved roots into a runtime's spool
+  classloader while recording per-root outcomes. It resolves module source
+  targets for the refresh coordinator and the advanced code-only reload seam.
+  Internal tier: the trusted runtime surface delegates approved/declared reads
+  and module loading here and owns the blessed contract (SPEC-004,
+  SPEC-005.C5)."
   (:require [clojure.java.io :as io]
             [clojure.spec.alpha :as s]
             [clojure.string :as str]
@@ -1397,7 +1396,7 @@
   `:non-additive-sync-diff` failure; an invalid config, a declared-floor
   refusal, or an atomically failing Maven universe throws its own loud failure.
   Per-root `:failed` outcomes are not refusals and pass. The 1-arity resolves
-  the running release marker exactly as `skein.api.runtime.alpha/sync!` does,
+  the running release marker exactly as the module refresh coordinator does,
   so floor validation refuses the same configs. Callers use this to refuse a
   destructive operation (a registry-clearing reload) before it starts
   (SPEC-004.C46); it proves only that the sync phase would not throw now, not
@@ -1529,9 +1528,9 @@
     result))
 
 (defn module-file
-  "Resolve module-use `path` against `runtime`'s config-dir, failing on escape.
+  "Resolve module `path` against `runtime`'s config-dir, failing on escape.
 
-  Module-use `:file` targets are approved only within the selected config-dir, so
+  Module `:file` targets are approved only within the selected config-dir, so
   a path resolving outside it (via `..` or a symlink) would load code the
   operator never consented to and fails loudly."
   [runtime path]
@@ -1541,7 +1540,7 @@
         file-path (.getPath file)]
     (when-not (or (= base-path file-path)
                   (str/starts-with? file-path (str base-path java.io.File/separator)))
-      (throw (ex-info "Module use :file must stay within selected config-dir"
+      (throw (ex-info "Module :file must stay within selected config-dir"
                       {:file path
                        :config-dir base-path
                        :resolved file-path})))
@@ -1757,9 +1756,9 @@
   (let [latest (latest-namespace-load runtime ns-sym)
         disk-sha (sha256-file (io/file file))]
     (when-not (and (find-ns ns-sym)
-                   (or (nil? latest)
-                       (= [root-lib file disk-sha]
-                          [(:root-lib latest) (:file latest) (:sha256 latest)])))
+                   latest
+                   (= [root-lib file disk-sha]
+                      [(:root-lib latest) (:file latest) (:sha256 latest)]))
       (let [loaded-sha (load-source-bytes! file)]
         (record-namespace-load! runtime {:root-lib root-lib
                                          :owner owner
@@ -2124,9 +2123,9 @@
 
   Once every namespace loads, the root's fresh fingerprint is recorded in the
   generation baselines, so the completed hot bump stops classifying as a C44c
-  redefinition and later `sync!`/`reload!` calls pass. Loaded-namespace entries
+  redefinition and later refresh calls pass. Loaded-namespace entries
   hash the exact bytes compiled (`load-source-bytes!`), so a file racing the
-  reload can only make the baseline conservative — a later sync refuses, never
+  reload can only make the baseline conservative — a later refresh refuses, never
   silently accepts code that differs from what loaded. Each successful namespace
   load appends its own record immediately. If a later namespace fails, those
   earlier records remain truthful partial-load evidence, while the all-root

@@ -243,7 +243,7 @@
 
 (deftest state-shape-matches-declared-version
   ;; Drift alarm for cron's versioned spool-state: a key added to new-state
-  ;; without a state-version bump would survive reload! as a stale map and
+  ;; without a state-version bump would survive refresh as a stale map and
   ;; offload against a nil executor.
   (test-support/assert-state-shape
    ;; white-box read of the private new-state builder var, intentional here.

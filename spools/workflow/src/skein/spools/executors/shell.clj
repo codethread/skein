@@ -55,8 +55,8 @@
 
 (def ^:private state-version
   "Shape version for the shell executor's runtime spool-state map. Bump whenever
-  `new-state`'s key set changes: spool-state survives `reload!`, so a
-  post-upgrade reload would otherwise reuse a preserved map missing the new key.
+  `new-state`'s key set changes: spool-state survives module refresh, so a
+  post-upgrade refresh would otherwise reuse a preserved map missing the new key.
   The `state-shape-matches-declared-version` test guards against silent drift."
   1)
 

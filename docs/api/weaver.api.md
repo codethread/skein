@@ -160,7 +160,7 @@ Invoke a registered CLI operation with raw string argv from a root-level
   nil, fails loudly with the expected and actual labels. Raw-envelope ops (no
   `:arg-spec`) receive the context unchanged, still carrying the raw
   `:op/payloads` map.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L477-L536">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L486-L545">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/op-provenance">`op-provenance`</a>
 ``` clojure
@@ -177,7 +177,7 @@ Return owner/provenance diagnostics for `runtime`'s CLI op registry as data.
   system owner, a workspace op under the direct owner — and which lower-layer
   entries an override shadows. Op entries carry the handler symbol as data, not a
   resolved function value (DELTA-OlrDrt-001.CC9).
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L460-L471">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L469-L480">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/ops">`ops`</a>
 ``` clojure
@@ -186,7 +186,7 @@ Return owner/provenance diagnostics for `runtime`'s CLI op registry as data.
 Function.
 
 Return registered CLI operation entries for the current weaver runtime.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L431-L434">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L440-L443">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/ready">`ready`</a>
 ``` clojure
@@ -216,6 +216,7 @@ Return ready strands with oversized attributes replaced by descriptors.
 ``` clojure
 (register-op! runtime op-name fn-sym)
 (register-op! runtime op-name opts fn-sym)
+(register-op! runtime owner op-name opts fn-sym)
 ```
 Function.
 
@@ -235,14 +236,16 @@ Register a trusted weaver-side CLI operation.
   Registering an already-registered name fails loudly, naming both the existing
   entry's provenance and the attempted registrant; use `replace-op!` to override
   deliberately. Registry contents live only for the current weaver lifetime and
-  are normally installed from init.clj or a live REPL; `reload!` clears the
-  registry before re-running init, so re-registration is collision-free.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L370-L400">Source</a></sub></p>
+  are normally published by owner-complete modules from init.clj or registered
+  directly from a live REPL. Module refresh replaces its owner's partition;
+  direct registrations remain until explicitly replaced or removed.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L370-L403">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/replace-op!">`replace-op!`</a>
 ``` clojure
 (replace-op! runtime op-name fn-sym)
 (replace-op! runtime op-name opts fn-sym)
+(replace-op! runtime owner op-name opts fn-sym)
 ```
 Function.
 
@@ -250,7 +253,7 @@ Replace an already-registered op, failing loudly when the name is absent.
 
   Same signature as `register-op!`. This is the deliberate override for a name
   that already exists; unlike `register-op!` it requires the name to be present.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L408-L423">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L413-L430">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/resolve-op">`resolve-op`</a>
 ``` clojure
@@ -264,7 +267,7 @@ Return the registered CLI operation entry for `op-name`, or fail loudly.
   concurrent registry replacement takes effect only for a later resolve — the
   in-flight lookup and its not-found diagnostic share one immutable view
   (DELTA-OlrDrt-001.CC9/CC10, op symbols resolve at invocation).
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L440-L454">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L449-L463">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/show">`show`</a>
 ``` clojure

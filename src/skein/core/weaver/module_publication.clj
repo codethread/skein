@@ -119,10 +119,8 @@
      (remove-owner candidate-map owner)
      contribution)))
 
-(defn- publish-core! [{:keys [store kind]} snapshot]
-  (reset! (:kernel store) snapshot)
-  (reset! (:effective store)
-          (owner-registry/effective-values snapshot kind)))
+(defn- publish-core! [{:keys [store]} snapshot]
+  (reset! (:kernel store) snapshot))
 
 (defn- publish-domain! [{:keys [handle]} snapshot]
   ;; `registry.alpha` deliberately publishes one immutable owner-registry

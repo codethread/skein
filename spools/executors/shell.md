@@ -18,22 +18,26 @@ The shell executor is a subagent-executor sibling minus everything agent-run-spe
 
 ## Loading
 
-The shell executor ships on the weaver classpath, so it needs no `spools.edn` approval. Its `install!` registers the `:shell` executor with the workflow engine, so load the workflow spool first:
+The shell executor shares the workflow spool root. Declare workflow first, then
+order the shell module after it:
 
 ```clojure
 (require '[skein.api.current.alpha :as current]
          '[skein.api.runtime.alpha :as runtime])
 
 (def runtime (current/runtime))
-(runtime/use! runtime :skein/spools-workflow
+(runtime/module! runtime :skein/spools-workflow
   {:ns 'skein.spools.workflow
-   :call 'skein.spools.workflow/install!})
-(runtime/use! runtime :skein/spools-shell
+   :contribute 'skein.spools.workflow/contribute
+   :reconcile 'skein.spools.workflow/reconcile})
+(runtime/module! runtime :skein/spools-shell
   {:ns 'skein.spools.executors.shell
-   :call 'skein.spools.executors.shell/install!})
+   :after [:skein/spools-workflow]
+   :contribute 'skein.spools.executors.shell/contribute
+   :reconcile 'skein.spools.executors.shell/reconcile})
 ```
 
-`install!` runs an initial gate scan, so any durable ready `:shell` gate is dispatched at load time. Gate scans serialize on a runtime-owned monitor: independent weaver runtimes in one JVM scan independently and never block each other.
+Reconciliation runs an initial gate scan, so any durable ready `:shell` gate is dispatched at load time. Gate scans serialize on a runtime-owned monitor: independent weaver runtimes in one JVM scan independently and never block each other.
 
 ## Gate request attributes
 

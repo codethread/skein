@@ -35,14 +35,16 @@
   into the registry, replacing any prior entry with the same key, and
   returns the entry as data (the resolved function value stays internal)."
   ([runtime key types fn-sym]
-   (register-handler! runtime key types fn-sym {}))
+   (register-handler! runtime core-registry/repl-owner key types fn-sym {}))
   ([runtime key types fn-sym metadata]
+   (register-handler! runtime core-registry/repl-owner key types fn-sym metadata))
+  ([runtime owner key types fn-sym metadata]
    (let [entry {:key (validate-handler-key! key)
                 :types (validate-handler-types! types)
                 :fn fn-sym
                 :fn-value (resolve-handler-fn! runtime fn-sym)
                 :metadata (validate-handler-metadata! metadata)}]
-     (core-registry/put-entry! (access/handler-store runtime) (:key entry) entry)
+     (core-registry/put-entry! (access/handler-store runtime) owner (:key entry) entry)
      (dissoc entry :fn-value))))
 
 (defn unregister-handler!
@@ -51,10 +53,12 @@
   Validates `key` like registration, removes any entry stored under it (a
   key with no entry is a quiet no-op, so unregistration is idempotent), and
   returns `{:unregistered key}`."
-  [runtime key]
-  (let [key (validate-handler-key! key)]
-    (core-registry/remove-entry! (access/handler-store runtime) key)
-    {:unregistered key}))
+  ([runtime key]
+   (unregister-handler! runtime core-registry/repl-owner key))
+  ([runtime owner key]
+   (let [key (validate-handler-key! key)]
+     (core-registry/remove-entry! (access/handler-store runtime) owner key)
+     {:unregistered key})))
 
 (defn handlers
   "Return `runtime`'s event handler registry as data-first entries.
@@ -64,7 +68,7 @@
   across mixed key types."
   [runtime]
   (mapv #(dissoc % :fn-value)
-        (sort-by (comp pr-str :key) (vals @(handler-registry runtime)))))
+        (sort-by (comp pr-str :key) (vals (handler-registry runtime)))))
 
 (defn handler-provenance
   "Return owner/provenance diagnostics for `runtime`'s event handler registry.
@@ -122,12 +126,15 @@
                 :exception/message :failed/at]))
 
 (s/fdef register-handler!
-  :args (s/cat :runtime ::runtime :key ::key :types ::types :fn-sym ::fn
-               :metadata (s/? ::metadata))
+  :args (s/or :direct (s/cat :runtime ::runtime :key ::key :types ::types
+                             :fn-sym ::fn :metadata (s/? ::metadata))
+              :owned (s/cat :runtime ::runtime :owner keyword? :key ::key
+                            :types ::types :fn-sym ::fn :metadata ::metadata))
   :ret ::handler-entry)
 
 (s/fdef unregister-handler!
-  :args (s/cat :runtime ::runtime :key ::key)
+  :args (s/or :direct (s/cat :runtime ::runtime :key ::key)
+              :owned (s/cat :runtime ::runtime :owner keyword? :key ::key))
   :ret (s/keys :req-un [::unregistered]))
 
 (s/fdef handlers
@@ -145,9 +152,9 @@
 ;; --- event-system state access ------------------------------------------------
 
 (defn- handler-registry
-  "Return `runtime`'s event handler registry atom (a map keyed by handler key)."
+  "Return one immutable effective event-handler snapshot."
   [runtime]
-  (:handler-registry (access/event-system runtime)))
+  (core-registry/effective (access/handler-store runtime)))
 
 (defn- recent-failures-state
   "Return `runtime`'s bounded recent handler failure state atom (a vector)."

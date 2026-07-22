@@ -77,7 +77,7 @@ tasks:
   - id: 16
     description: Remove old lifecycle and integrate local peer roots
     task_file: tasks/016-integrated-lifecycle-cutover.md
-    status: pending
+    status: complete
     blocked_by: [11, 13, 14, 15]
   - id: 17
     description: Promote reviewed spec deltas

@@ -41,7 +41,7 @@
 
 (def ^:private state-version
   "Shape version for cron's runtime spool-state map. Bump whenever `new-state`'s
-  key set changes: spool-state survives `reload!`, so a post-upgrade reload
+  key set changes: spool-state survives module refresh, so a post-upgrade refresh
   would otherwise reuse a preserved map missing the new key and offload against
   a nil executor (docs/spools/writing-shared-spools.md 'Versioned spool state',
   SPEC-004.C95). The `state-shape-matches-declared-version` test fails loudly if
@@ -283,7 +283,7 @@
 ;;
 ;; `::job` is the declared, discoverable source of truth for `register!`'s job
 ;; map — the contract downstream config authors write against — matching the
-;; sibling reference spools (roster, delegation). `register!` gates each field
+;; sibling reference spools such as delegation. `register!` gates each field
 ;; through `require-valid!` so the specs own the shape while the contextual
 ;; loud messages survive (failing value + allowed shape, TEN-003), and closes
 ;; the key set with `reject-unknown-keys!` since `s/keys` stays open. `:id`

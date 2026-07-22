@@ -15,7 +15,7 @@
 ;;   nvd_scan.clj      — NVD scan cron job
 ;;   analytics.clj     — agent-run cost/usage rollups (`strand feature-costs`)
 ;;   kanban_tracker.clj— devflow<->kanban tracker binding
-;;   module_adapters.clj — BRANCH-ONLY install! adapters for peer spools (Task 16)
+;;   module_adapters.clj — repo election of the batteries help transform
 ;;
 ;; Gitignored init.local.clj is layered after this file on startup and every
 ;; refresh; a module key it redeclares shadows the one here and wins, and it binds
@@ -36,10 +36,7 @@
                  {:ns 'skein.spools.batteries
                   :contribute 'skein.spools.batteries/contribute
                   :reconcile 'skein.spools.batteries/reconcile})
-;; module_adapters.clj hosts the branch-only peer install! adapters plus this
-;; world's election of the batteries reference help transform (config-election
-;; only, DELTA-Dtf-002.D1) — reconciled here after batteries loads. Every peer
-;; module below depends on it so its contribution/reconcile symbols resolve.
+;; This repo elects the batteries reference help transform after batteries loads.
 (runtime/module! runtime :module-adapters
                  {:file "module_adapters.clj"
                   :reconcile 'module-adapters/reconcile-help-transform
@@ -73,13 +70,12 @@
 ;; devflow is an external git-distributed spool: activation is gated on the
 ;; approved codethread/devflow coordinate (spools.edn pin or a developer's
 ;; spools.local.edn checkout), never on an incidental classpath copy. It still
-;; registers imperatively through the branch-only install! adapter (Task 16).
+;; publishes and reconciles through the peer spool's module entry points.
 (runtime/module! runtime :skein/spools-devflow
                  {:ns 'ct.spools.devflow
                   :spools ['codethread/devflow]
-                  :contribute 'module-adapters/nil-contribution
-                  :reconcile 'module-adapters/reconcile-devflow
-                  :after [:module-adapters]
+                  :contribute 'ct.spools.devflow/contribute
+                  :reconcile 'ct.spools.devflow/reconcile
                   :required? true})
 
 ;; --- workspace authoring macros (skein.macros/macros root) ------------------
@@ -111,33 +107,32 @@
                   :after [:macros/patterns]
                   :required? true})
 
-;; --- peer coordination spools (branch-only install! adapters) ---------------
+;; --- peer coordination spools -----------------------------------------------
 (runtime/module! runtime :skein/spools-shuttle
                  {:ns 'ct.spools.agent-run
                   :spools ['ct.spools/agent-run]
-                  :contribute 'module-adapters/nil-contribution
-                  :reconcile 'module-adapters/reconcile-shuttle
-                  :after [:module-adapters]
+                  :contribute 'ct.spools.agent-run/contribute
+                  :reconcile 'ct.spools.agent-run/reconcile
                   :required? true})
 (runtime/module! runtime :skein/spools-delegation
                  {:ns 'ct.spools.delegation
                   :spools ['ct.spools/delegation]
-                  :contribute 'module-adapters/nil-contribution
-                  :reconcile 'module-adapters/reconcile-delegation
-                  :after [:module-adapters :skein/spools-shuttle]
+                  :contribute 'ct.spools.delegation/contribute
+                  :reconcile 'ct.spools.delegation/reconcile
+                  :after [:skein/spools-shuttle]
                   :required? true})
 (runtime/module! runtime :skein/spools-bench
                  {:ns 'ct.spools.bench
                   :spools ['ct.spools/bench]
-                  :contribute 'module-adapters/nil-contribution
-                  :reconcile 'module-adapters/reconcile-bench
-                  :after [:module-adapters :skein/spools-shuttle]
+                  :contribute 'ct.spools.bench/contribute
+                  :reconcile 'ct.spools.bench/reconcile
+                  :after [:skein/spools-shuttle]
                   :required? true})
 
 ;; --- repo policy over the peer spools ---------------------------------------
-;; harnesses.clj registers seats over the :pi harness that shuttle's install!
-;; seeds, and consumes the delegation review/task contract text, so it reconciles
-;; after both peers; its reconcile calls the file's branch-only install!.
+;; harnesses.clj registers seats over the :pi harness that agent-run reconciles,
+;; and consumes the delegation review/task contract text, so it reconciles after
+;; both peers; its reconcile calls the file's branch-only install!.
 (runtime/module! runtime :harnesses
                  {:file "harnesses.clj"
                   :spools ['ct.spools/delegation 'ct.spools/agent-run]
@@ -172,15 +167,13 @@
                   :required? true})
 
 ;; --- kanban board + devflow tracker binding ---------------------------------
-;; kanban is an external git-distributed spool. The board loads independently
-;; (branch-only install! adapter); the repo tracker binding below joins it to
-;; devflow after both spools are active.
+;; kanban is an external git-distributed spool. The board loads independently;
+;; the repo tracker binding below joins it to devflow after both spools are active.
 (runtime/module! runtime :skein/spools-kanban
                  {:ns 'ct.spools.kanban
                   :spools ['codethread/kanban]
-                  :contribute 'module-adapters/nil-contribution
-                  :reconcile 'module-adapters/reconcile-kanban
-                  :after [:module-adapters]
+                  :contribute 'ct.spools.kanban/contribute
+                  :reconcile 'ct.spools.kanban/reconcile
                   :required? true})
 (runtime/module! runtime :kanban/tracker
                  {:file "kanban_tracker.clj"
@@ -236,14 +229,14 @@
                   :reconcile 'workflows/reconcile
                   :required? true})
 
-;; The subagent gate executor installs last: its install! runs an initial gate
+;; The subagent gate executor reconciles last: its reconcile runs an initial gate
 ;; scan, so every harness alias harnesses.clj registers must already exist or a
 ;; durable ready gate would be stamped gate/error on every cold start.
 (runtime/module! runtime :skein/spools-treadle
                  {:ns 'ct.spools.executors.subagent
                   :spools ['ct.spools/agent-run]
-                  :contribute 'module-adapters/nil-contribution
-                  :reconcile 'module-adapters/reconcile-subagent
-                  :after [:module-adapters :skein/spools-shuttle
-                          :skein/spools-workflow :harnesses :workflows]
+                  :contribute 'ct.spools.executors.subagent/contribute
+                  :reconcile 'ct.spools.executors.subagent/reconcile
+                  :after [:skein/spools-shuttle :skein/spools-workflow
+                          :harnesses :workflows]
                   :required? true})

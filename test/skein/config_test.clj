@@ -20,6 +20,7 @@
             [skein.core.weaver.module-graph :as module-graph]
             [skein.core.weaver.module-publication :as publication]
             [skein.core.weaver.runtime :as weaver-runtime]
+            [skein.core.weaver.spool-sync :as spool-sync]
             [skein.spools.test-support :as test-support]))
 
 (defn- delete-directory!
@@ -43,13 +44,29 @@
   (spit (io/file target "spools.edn")
         (pr-str (test-support/embedded-spools-edn ".skein/spools.edn"))))
 
+(defn- write-peer-overlays!
+  "Point a disposable config directory at the Task 16 peer feature roots."
+  [target]
+  (spit (io/file target "spools.local.edn")
+        (pr-str
+         {:spools
+          {'ct.spools/agent-run
+           {:local/root "/Users/ct/dev/projects/agent-harness.spool__feat--owner-scoped-live-refresh"
+            :claims "v9"}
+           'codethread/kanban
+           {:local/root "/Users/ct/dev/projects/kanban.spool__feat--owner-scoped-live-refresh"
+            :claims "v5"}
+           'codethread/devflow
+           {:local/root "/Users/ct/dev/projects/devflow.spool__feat--owner-scoped-live-refresh"
+            :claims "v2"}}})))
+
 (defn- with-runtime-loader
   "Run f with runtime's ambient binding and synced spool classloader."
   [rt f]
   (weaver-runtime/with-runtime-and-spool-classloader
     rt
     (fn []
-      (runtime/sync! rt)
+      (spool-sync/sync-approved-spools rt)
       (f))))
 
 (defn- load-module-source!
@@ -66,6 +83,21 @@
                                             module-key contribution)]
     (publication/publish! backends candidates)))
 
+(defn- publish-module-contribution!
+  "Replace one fixture module owner from its data-first contribution function."
+  [rt module-key contribute]
+  (let [contribution (update-vals
+                      (contribute {:runtime rt :module/key module-key})
+                      (fn [partition]
+                        (if (contains? partition :entries)
+                          partition
+                          {:entries partition :overrides #{}})))
+        backends (publication/backends rt)
+        candidates (publication/stage-owner
+                    backends (publication/candidates backends) module-key
+                    contribution)]
+    (publication/publish! backends candidates)))
+
 (defn- with-config-runtime
   "Run f with an isolated runtime and the repo-local .skein config loaded.
 
@@ -79,26 +111,33 @@
         config-dir (str "/tmp/skein-config-test-" (java.util.UUID/randomUUID))]
     (.mkdirs (java.io.File. config-dir))
     (write-embedded-spools! config-dir)
+    (write-peer-overlays! config-dir)
     (let [rt (weaver-runtime/start! db-file {:world (test-world config-dir)
                                              :publish? false})]
       (try
         (with-runtime-loader
           rt
           (fn []
-            ;; harnesses.clj's worker alias layers over the shipped :pi harness,
-            ;; which shuttle/install! registers in real startups; this fixture
-            ;; loads the config files alone, so register the defaults here.
-            ((requiring-resolve 'ct.spools.agent-run/register-default-harnesses!))
+            (spool-sync/load-synced-namespace!
+             rt 'ct.spools.agent-run :skein/spools-shuttle)
+            (publish-module-contribution!
+             rt :skein/spools-shuttle
+             (requiring-resolve 'ct.spools.agent-run/contribute))
+            ((requiring-resolve 'skein.spools.workflow/contribute)
+             {:runtime rt :module/key :skein/spools-workflow})
+            ((requiring-resolve 'skein.spools.workflow/reconcile)
+             {:runtime rt :module/key :skein/spools-workflow})
+            (spool-sync/load-synced-namespace!
+             rt 'ct.spools.devflow :skein/spools-devflow)
+            (publish-module-contribution!
+             rt :skein/spools-devflow
+             (requiring-resolve 'ct.spools.devflow/contribute))
             (load-module-source! rt :config ".skein/config.clj")
             (load-file ".skein/harnesses.clj")
             (load-file ".skein/workflows.clj")
             (load-module-source! rt :analytics ".skein/analytics.clj")
             ((requiring-resolve 'harnesses/install!))
             ((requiring-resolve 'workflows/install!))
-            ;; devflow's stage workflows register from its install! (init.clj
-            ;; wires this via runtime/use!); the runtime-owned registry needs a
-            ;; scoped runtime, so requiring the ns no longer registers them.
-            ((requiring-resolve 'ct.spools.devflow/install!))
             (f rt)))
         (finally
           (weaver-runtime/stop! rt)
@@ -116,6 +155,10 @@
   ;; The copied config dir would reinterpret repo-relative local roots. Git
   ;; families remain byte-for-byte sourced from the checked-in approvals.
   (write-embedded-spools! target)
+  ;; Task 16 integration fixtures exercise the approved peer feature roots.
+  ;; Absolute paths remain disposable-world inputs; canonical overlays are never
+  ;; read or changed.
+  (write-peer-overlays! target)
   ;; The shipped config leaves chime's notifier to each developer's personal
   ;; init.local.clj. Bind an inert command through that same overlay hook
   ;; (loaded after init.clj on startup and on every reload) so the test also
@@ -1132,9 +1175,18 @@
       (assert-treadle-installed-after-runtime-dependencies rt)
       (assert-workflow-spool-consent-edges rt)
       (assert-kanban-tracker-installed rt)
+      (is (map? (op! "help" ["agent"])))
+      (is (seq (op! "agent" ["harnesses"])))
+      (is (= "bench about" (:operation (op! "bench" ["about"]))))
+      (is (str/includes? (:tracker (op! "kanban" ["about"]))
+                         "Bound tracker: devflow"))
       (op! "devflow-start" ["startup-feature" "already-in-worktree-ok"])
+      (let [refresh-result (runtime/refresh! rt)]
+        (is (contains? #{:applied :unchanged} (:status refresh-result))))
       (let [refresh-result (runtime/refresh! rt {:only #{:config}})]
         (is (contains? #{:applied :unchanged} (:status refresh-result))))
+      (is (every? #(= :applied (:status %))
+                  (vals (:resource/outcomes (runtime/status rt)))))
       (assert-config-registrations rt)
       (assert-workflow-spool-consent-edges rt)
       (assert-kanban-tracker-installed rt)
@@ -1209,7 +1261,7 @@
                   (let [deps (edn/read-string (slurp (io/file root "deps.edn")))
                         paths (or (:paths deps) ["src"])]
                     [coord (mapv #(io/file root %) paths)]))))
-        (:spools (runtime/syncs rt))))
+        (:spools (spool-sync/approved-spool-syncs rt))))
 
 (defn- ns->source-relative-path
   "Return the classpath-relative source path for a namespace symbol."

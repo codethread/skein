@@ -97,22 +97,20 @@ file holds the `:handler` plus an `install!` that performs the `register!` call.
   ;; ... do the work ...
   {:outcome :reported})
 
-(defn- register-report-job! []
-  (cron/register! (current/runtime)
-    {:id :nightly-report
-     :interval-ms (* 24 60 60 1000)
-     :jitter-ms   (* 60 60 1000)
-     :handler     'report-job/report-tick}))
+(cron/defjob :nightly-report
+  {:interval-ms (* 24 60 60 1000)
+   :jitter-ms   (* 60 60 1000)
+   :handler     'report-job/report-tick})
 
-(defn install! [] {:jobs (register-report-job!)})
-
-;; init.clj — cron is synced and activated before the job module registers.
-(runtime/use! runtime :skein/spools-cron
+;; init.clj — cron owns the registry kind before the job contributes.
+(runtime/module! runtime :skein/spools-cron
   {:ns 'skein.spools.cron :spools ['skein.spools/cron]
-   :call 'skein.spools.cron/install! :required? true})
-(runtime/use! runtime :report-job
+   :contribute 'skein.spools.cron/contribute
+   :reconcile 'skein.spools.cron/reconcile
+   :required? true})
+(runtime/module! runtime :report-job
   {:file "report_job.clj" :after [:skein/spools-cron]
-   :call 'report-job/install! :required? true})
+   :required? true})
 ```
 
 **Why this shape.**

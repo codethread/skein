@@ -3,9 +3,9 @@
   (:require [clojure.java.io :as io]
             [clojure.set :as set]
             [clojure.test :refer [deftest is testing]]
-            [skein.api.runtime.alpha :as runtime]
             [skein.api.weaver.alpha :as weaver]
             [skein.core.weaver.runtime :as weaver-runtime]
+            [skein.core.weaver.spool-sync :as spool-sync]
             [skein.spools.test-support :as test-support]
             [skein.test.alpha :as t]))
 
@@ -50,7 +50,7 @@
      (weaver-runtime/with-runtime-and-spool-classloader
        runtime
        #(do
-          (runtime/sync! runtime)
+          (spool-sync/sync-approved-spools runtime)
           (f runtime))))))
 
 (defn- return-case-leaves [operation context return-case]

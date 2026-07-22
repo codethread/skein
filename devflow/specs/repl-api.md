@@ -57,7 +57,7 @@ weave!
 - **SPEC-003.C15:** `ready` returns active strands whose direct `depends-on` dependencies are not active and may be further filtered by an ad hoc or registered query. This is equivalent to `[:and [:= :state "active"] [:not [:edge/out "depends-on" [:= :state "active"]]]]`.
 - **SPEC-003.C15a:** `declare-acyclic-relation!` declares a valid relation name acyclic in durable storage and is idempotent. It fails loudly if edges of that relation already exist. `acyclic-relations` lists declared acyclic relation names.
 - **SPEC-003.C16:** Blessed spool-workspace helpers live in explicit `skein.api.runtime.alpha`, not in the preloaded `skein.repl` helper namespace.
-- **SPEC-003.C17:** `skein.api.runtime.alpha` exposes approved spool config helpers, approved-local-root sync helpers, resilient module activation with `use!`, weaver-lifetime sync/use introspection, a blessed runtime-local spool-state accessor for trusted spools, `clock` for the runtime-owned Clock, and `now` for its current `java.time.Instant` (SPEC-004.C1a).
+- **SPEC-003.C17:** `skein.api.runtime.alpha` exposes approved spool configuration, owner-complete module declaration and refresh, module/root status and planning, advanced code-only reload, a blessed runtime-local spool-state accessor for trusted spools, `clock` for the runtime-owned Clock, and `now` for its current `java.time.Instant` (SPEC-004.C1a).
 - **SPEC-003.C17a:** `skein.api.clock.alpha` exposes the Clock capability — a validated value, not a protocol, so re-evaluating the namespace never strands a live clock the runtime already holds. `(now clock)` returns a `java.time.Instant`, and `(sleep! clock duration)` sleeps or advances for a non-negative `java.time.Duration` and returns nil. Zero Duration is valid. `(clock now-fn sleep-fn)` builds one, `(clock? value)` tests one, and `(system-clock)` returns the real production implementation. Invalid durations fail loudly.
 - **SPEC-003.C17b:** `(skein.api.spool.alpha/poll-until! clock opts)` accepts exactly `:timeout-ms`, `:poll-ms`, `:check`, `:pred->result`, and `:on-timeout`. Timeout is a non-negative integer and cadence is a positive integer. It derives an Instant deadline from the supplied Clock, checks immediately, returns the first non-nil projected result, calls `on-timeout` with the last value at or after the deadline, and otherwise sleeps on the Clock before checking again. It validates the Clock and complete option boundary before polling.
 - **SPEC-003.C18:** `skein.api.runtime.alpha` helpers all take the target runtime as their first argument. Trusted startup/config/spool code that needs the active in-process runtime captures it with `(skein.api.current.alpha/runtime)` at an entry point and threads it explicitly. Connected-client workflows do not route through `skein.api.runtime.alpha`; humans use `skein.repl`, and trusted tests or tools use `skein.core.client` with explicit workspace arguments.
@@ -116,51 +116,32 @@ coordinate applies to the whole family and inherits its root map and compatibili
 claim states which release contract the local tree satisfies. Relative local roots resolve against
 the selected workspace; absolute paths and home expansion remain explicit approvals. Normalized
 approved config is keyed by root lib. Each value has `:kind`, kind-specific source fields, effective
-`:root`, and source metadata. `sync!` adds `:lib`, owning `:family`, normalized family `:coordinate`,
-provenance, and `:status`; failures also carry `:reason` and reason-specific diagnostics. Missing
+`:root`, and source metadata. Refresh root outcomes add `:lib`, owning `:family`, normalized family
+`:coordinate`, provenance, and `:status`; failures also carry `:reason` and reason-specific diagnostics. Missing
 roots, expected git/I/O acquisition failures, and tag mismatches are per-root outcomes. Unexpected
 JVM throwables and atomic Maven-resolution failures escape loudly.
 
-Spool metadata and spool prerequisites are documentation, not REPL API grammar. Shared spool authors document prerequisites, suggested pins, and activation order in their README using the convention described by `docs/spools/writing-shared-spools.md`. Runtime approval, sync, and activation ignore a source tree's `spool.edn`; `spools.edn` in the selected workspace remains authoritative. The batteries `spool add` helper may read a producer's optional advisory `spool.edn` only while constructing a new workspace entry (SPEC-003.C63a).
+Spool metadata and spool prerequisites are documentation, not REPL API grammar. Shared spool authors document prerequisites, suggested pins, and module order in their README using the convention described by `docs/spools/writing-shared-spools.md`. Runtime approval and refresh acquisition ignore a source tree's `spool.edn`; `spools.edn` in the selected workspace remains authoritative. The batteries `spool add` helper may read a producer's optional advisory `spool.edn` only while constructing a new workspace entry (SPEC-003.C63a).
 
 Helpers include:
 
 - `(runtime/approved runtime)` returns normalized approved config.
-- `(runtime/sync! runtime)` materializes approved git coordinates into the content-addressed cache, uses Clojure runtime dependency tooling to add each entry's effective root, and returns structured results for loaded, already-available, and failed approved spools, including fetch and runtime-add/dependency-policy failure data where applicable.
-- `(runtime/syncs runtime)` returns weaver-lifetime approved-spool sync state.
-- `(runtime/reload-spool! runtime root-lib)` resolves a root-lib from a family's effective `:roots`
+- `(runtime/module! runtime key opts)` declares one owner under a stable keyword, with exactly one `:ns` or `:file` source, optional `:spools` and `:after` prerequisites, optional `:contribute` and `:reconcile` symbols, and optional `:required?` policy.
+- `(runtime/refresh! runtime)` re-reads the layered startup graph, acquires approved roots, reloads changed module source, publishes owner-complete contributions, and reconciles resources. Its targeted arity accepts `{:only [...]}`.
+- `(runtime/plan runtime)` returns the same joined intention shape without acquisition, publication, reconciliation, or coordinator-state mutation.
+- `(runtime/status runtime)` returns the offline joined graph, contribution, module, resource, root, loaded-code, residual, conflict, pending-generation, and last-refresh state.
+- `(runtime/reload-code! runtime root-lib)` resolves a root-lib from a family's effective `:roots`
   map through its per-root successful sync state and reloads that root's source files in dependency
-  order. It reloads code only; activation and registry changes require a later targeted `use!` or
-  `reload!`.
-- `(runtime/reload! runtime)` clears weaver-lifetime approved-spool sync state, module-use state, named queries, patterns, lifecycle hooks, event handlers, queued events, and recent event failures, then reloads selected workspace startup files in order (`init.clj`, then `init.local.clj`) inside the active weaver and returns loaded file metadata plus final return values. Missing startup files are skipped; present failing files throw with file context. Event dispatch resumes after the fully layered config loads. Reload does not unload already-loaded Clojure namespaces or vars.
-- `(runtime/use! runtime key opts)` records one weaver-lifetime module-use attempt under keyword `key`; duplicate keys replace prior state for reload workflows.
-- `(runtime/uses runtime)` and `(runtime/use-entry runtime key)` expose weaver-lifetime module-use state.
+  order. It reloads code only; publication and resource reconciliation require refresh.
 - `(runtime/clock runtime)` returns the runtime-owned `skein.api.clock.alpha/Clock` used for time reads and sleeps (SPEC-004.C1a).
 - `(runtime/now runtime)` returns that Clock's current `java.time.Instant`. It remains the convenient data-first read for trusted spools and takes the runtime first (SPEC-003.C18).
 
-`use!` options identify exactly one load target with `:ns` for weaver-side namespace loading or
-`:file` for selected workspace-relative weaver-side `load-file`; `:file` must be relative and must
-resolve within the selected workspace. For `:ns`, the weaver searches synced local-root classpath
-entries from each root's `deps.edn :paths` (defaulting to `["src"]`) and `load-file`s the located
-namespace source using Clojure's hyphen-to-underscore path mapping. When no synced root holds the
-namespace it fails loudly with a "Could not locate namespace source in synced spool roots" error
-naming the searched roots. Code resident on the mill-resolved source classpath — blessed
-`skein.api.*.alpha` namespaces and the single `batteries` spool exception — is loaded by an explicit
-top-level `require`, not through this `:ns` search. `require`'s already-loaded short-circuit means an
-explicit require placed above a matching `use!` lets that `use!` still record module state and run
-its `:call` without reaching the loader. Options may include `:spools`, a vector or set of root-lib
-symbols from family-effective `:roots` that must be approved and available before target loading;
-`:after`, a vector of prior loaded `use!` keys; `:call`, a fully qualified zero-arity function symbol
-to resolve and call after successful load; and `:required? true` for strict load/call failure
-behavior.
-
-Malformed `use!` options always throw. Unmet root-lib requirements in `:spools` record and return
-`{:status :skipped ...}` before target loading, with reasons including `:not-approved`, `:not-synced`,
-or `:sync-failed` when known; under `:required? true`, each of those three skip reasons throws as a
-required skipped activation. Unmet `:after` requirements record and return `{:status :skipped ...}`
-with reason `:missing-after`. Load or call exceptions record and return `{:status :failed ...}` by
-default; `:required? true` rethrows after recording. Raw `require` remains the strict fail-fast path
-for required config.
+Module `:file` targets are selected-workspace relative and may not escape the
+workspace. Module `:ns` targets are ledger-loaded from the complete synchronized
+root closure, including roots reached through `:after` dependencies. Classpath
+modules such as batteries declare no `:spools`. A full refresh removes an owner
+by omission; targeted refresh includes affected dependents and cannot remove an
+unselected owner.
 
 Maven dependencies declared in an approved spool root's top-level `deps.edn :deps` are part of the spool sync contract described by SPEC-004. Version ranges, alternate approved-spool config files, source fetching beyond approved spool coordinates, and direct explicit-client `require` of newly synced weaver spools remain outside the REPL API contract.
 
@@ -172,14 +153,13 @@ Maven dependencies declared in an approved spool root's top-level `deps.edn :dep
 - **SPEC-003.C61:** Payload reference resolution is a parser contract: a **whole** argv value of `:stdin` or `:payload/<name>` resolves to the named envelope payload string; no substring interpolation. A reference without a matching payload fails loudly; an attached payload nothing references fails loudly. An arg may declare `:parse :json`/`:jsonl` to parse the resolved payload, failing loudly with context on malformed input. Ops registered without an arg-spec receive the raw envelope and own their argv/payload handling.
 - **SPEC-003.C62:** Op registration/override from trusted config and REPL uses `skein.api.weaver.alpha/register-op!` (loud on name collision) and `replace-op!` (explicit override); entries carry op metadata, including optional `:returns`, and registry-recorded provenance (SPEC-004.C63a–d). Workspace `defop` and direct spool registrations pass `:returns` through the same metadata route; there is no second macro or registry.
 - **SPEC-003.C63:** The shipped `skein.spools.batteries` reference spool (classpath, `skein.spools.*` tier) registers the public strand command surface as parser-backed ops; its behavior contract lives at `spools/batteries.md`. Workspaces may mask or replace batteries; a workspace without it retains core `help` discovery and loud unknown-op errors.
-- **SPEC-003.C63a:** Batteries registers `spool add <git-url> [--tag vN] [--lib family]`, `spool bump <family> [--to vN]`, and the separate read op `spool-status`. Add and bump contact the Git remote to list annotated release tags; add also fetches the optional advisory `spool.edn` at the selected peeled commit. Both accept only `vN` tags for positive integer `N`, resolve `refs/tags/vN^{}` to the peeled commit SHA, and write the tag/SHA pair through the validated comment-preserving atomic `spools.edn` write verb. A supplied `--lib` must match a root symbol in a present advisory manifest; without a manifest it confirms or overrides the implicit URL-basename root at `.`. `spool-status` is offline and read-only: it performs no Git call, file write, sync, reload, or adoption action while joining declared, overlay, sync, use, pending-generation, and running release-marker state.
+- **SPEC-003.C63a:** Batteries registers `spool add <git-url> [--tag vN] [--lib family]`, `spool bump <family> [--to vN]`, and the separate read op `spool-status`. Add and bump contact the Git remote to list annotated release tags; add also fetches the optional advisory `spool.edn` at the selected peeled commit. Both accept only `vN` tags for positive integer `N`, resolve `refs/tags/vN^{}` to the peeled commit SHA, and write the tag/SHA pair through the validated comment-preserving atomic `spools.edn` write verb. A supplied `--lib` must match a root symbol in a present advisory manifest; without a manifest it confirms or overrides the implicit URL-basename root at `.`. `spool-status` is offline and read-only: it performs no Git call, file write, refresh, or adoption action while joining declared families with root outcomes, modules, pending generation, and the running release marker.
 - **SPEC-003.C63b:** A successful spool bump always returns `:compare-url`. GitHub HTTPS,
   SSH, and SCP remotes become HTTPS web URLs before the compare path is added. Other HTTP(S)
   remotes retain their transport URL without a trailing `.git`; unrecognized non-HTTP(S) remotes
-  return nil because no usable web URL can be inferred. `spool-status` validates every runtime use
-  entry before family filtering and fails with the use key and value when an entry violates
-  `:skein.api.runtime.alpha/use-entry`.
-- **SPEC-003.C63f:** Approved opt-in reference spools may layer their own explicit-runtime helpers and parser-backed ops on this surface. `skein.spools.workflow` is a worked example: an approved opt-in spool (`spools.edn` coordinate → `runtime/sync!` → `:spools`-guarded `runtime/use!`) with explicit-runtime helpers and a parser-backed op. Its behavior contract lives at `spools/workflow.md`, not in this spec.
+  return nil because no usable web URL can be inferred. `spool-status` validates
+  its complete closed result after joining family root and module projections.
+- **SPEC-003.C63f:** Approved opt-in reference spools may layer their own explicit-runtime helpers and parser-backed ops on this surface. `skein.spools.workflow` is a worked example: an approved opt-in spool declared by a `:spools`-guarded module, with explicit-runtime helpers and a parser-backed op. Its behavior contract lives at `spools/workflow.md`, not in this spec.
 - **SPEC-003.C64:** An arg-spec may declare `:subcommands`: a map of subcommand name (string) to a nested arg-spec carrying its own `:doc`, `:flags`, and `:positionals`. Subcommands are one level deep — a nested spec declaring `:subcommands` fails loudly — and an arg-spec declaring `:subcommands` may not also declare top-level `:flags` or `:positionals` (loud failure keeps routing unambiguous). One shared structural validator owns these rules: `parse` and `explain` consult it, and the op registry reuses it for registration-time failure (SPEC-004.C63d). Flat arg-specs are also structurally validated at registration time, including flag/positional container shape, keyword names, and supported `:type` values.
 - **SPEC-003.C65:** Parsing a subcommand arg-spec routes on the first argv token: the token selects the nested spec, the remaining argv parses against it, and the parsed map is the nested result merged with `:subcommand` (the matched name). `:subcommand` is a reserved arg name; a nested spec declaring a flag or positional named `subcommand` fails loudly. A missing or unknown first token throws a loud structured error carrying the op name, the offending token, and the available subcommand names. Payload references and `:parse` declarations (SPEC-003.C61) apply unchanged inside nested specs, and `explain` renders declared subcommands (name, doc, per-subcommand flags/positionals) as JSON-safe data. `help`, `-h`, and `--help` are reserved subcommand names: the shared structural validator rejects declaring them at every seam (parse, explain, registration), keeping them free for the invocation help alias (SPEC-004.C63e).
 - **SPEC-003.C66 (help envelope/node projection):** The help envelope (SPEC-002.C39/C44) is built by a **level-aware projection**. Op-wide facts — `provenance`, `stream?`, `deadline-class`, `hook-class`, `raw-envelope`, and the resolved `source` (SPEC-004.C107) — are lifted into the response envelope's `operation` and `source`, **not** onto the recursive node. The node is normalized from the arg-spec `explain` rendering (SPEC-003.C64/C65) and the per-case return-shape `explain` (SPEC-003.C60b) into the uniform node shape (SPEC-002.C44): a flat op yields a root node with empty `children` and `invocation.mode "declared"` carrying its flags/positionals; a subcommand op yields a root node with empty `invocation` flags/positionals and one child node per declared subcommand, each the **same shape** with its own flags/positionals and routed return case; a raw-envelope op yields a root node with `invocation.mode "raw-envelope"`. "No per-level branches" constrains the reference **renderer** (one recursive function over the uniform node), not this projection.
@@ -225,18 +205,18 @@ Maven dependencies declared in an approved spool root's top-level `deps.edn :dep
 
 ## SPEC-003.P6 Example spool init
 
-Selected workspace startup files (`init.clj`, then `init.local.clj`) may sync approved local roots and activate optional modules:
+Selected workspace startup files (`init.clj`, then `init.local.clj`) declare the desired module graph:
 
 ```clojure
 (require '[skein.api.current.alpha :as current]
          '[skein.api.runtime.alpha :as runtime])
 
 (def runtime (current/runtime))
-(runtime/sync! runtime)
-(runtime/use! runtime :my/module
+(runtime/module! runtime :my/module
   {:ns 'my.module.alpha
-   :spools #{'my/module}
-   :call 'my.module.alpha/install!})
+   :spools ['my/module]
+   :contribute 'my.module.alpha/contribute
+   :reconcile 'my.module.alpha/reconcile})
 ```
 
 A selected workspace `spools.edn` approves local roots:
