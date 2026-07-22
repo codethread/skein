@@ -92,7 +92,7 @@ tasks:
   - id: 19
     description: Prepare peer compatibility exception releases
     task_file: tasks/019-peer-release-preparation.md
-    status: pending
+    status: complete
     blocked_by: [18]
   - id: 20
     description: "[HITL] Publish peer breaking successor markers"

@@ -112,6 +112,36 @@ No open question blocks task generation.
 
 ## PLAN-Olr-001.P9 Developer Notes
 
+### PLAN-Olr-001.DN27 Peer release-preparation packet (Task 19): 2026-07-22
+
+- Candidate set: Skein `91bec8ac0caf1cb21bf1119d4b253d4601159ecb`; agent-harness `ef6a92359749a9b9d11fb49938006512f60a6c51` (proposed annotated `v10`); kanban `b13d256f0ad7f145dd73f070ec5efc9bcbcd1d48` (proposed annotated `v6`); devflow `b966e540624a19c547093b6f2468fa3bb5d71103` (proposed annotated `v3`). Each candidate is clean and locally publishable; no tag or push has occurred.
+- Exception records: `agent-harness.spool/release-exception.md`, `kanban.spool/release-exception.md`, and `devflow.spool/release-exception.md` are committed with their candidates. They retain immutable old pins: agent-harness `v9^{}` = `befad44de36509cf3636242d14fc39bab35d85c2`; kanban `v5^{}` = `e4bb7b64d600052cd32c3e3728231f7bba9ad67e`; devflow `v2^{}` = `1e65e1bc5ce43cbea462a33f51b24b669928ef4b` (a lightweight old marker). The sole known consumer is this Skein repository; the required Skein range is `b8be0c8..91bec8a`.
+- Compatibility alarms: agent-harness `bin/compat-alarm v9` stops at archived `shuttle/install!`, and devflow `bin/compat-alarm v2` stops at archived `devflow/register-workflows!`; both are the approved lifecycle/API break. Kanban `bin/compat-alarm v5` passed 73 tests/423 assertions. Devflow's alarm now supplies the same Skein/workflow roots as its test alias; no unrelated candidate failure remains.
+- Owner suites against Skein `91bec8a`: agent-harness `clojure -M:test` and `clojure -M:format` passed (the runner has no aggregate count); kanban `clojure -M:test` passed 75 tests/427 assertions and `make fmt-check lint` passed; devflow `clojure -M:test` passed 23 tests/160 assertions. For every peer, the temporary `deps.edn` override made `clojure -A:test -Spath | tr ':' '\n' | grep skein-src` show only `/Users/ct/dev/projects/skein-src__feat--owner-scoped-live-refresh` paths; each `deps.edn` was restored.
+- Publisher commands, run only after HITL approval:
+
+  ```sh
+  cd /Users/ct/dev/projects/agent-harness.spool__feat--owner-scoped-live-refresh
+  git tag -a v10 ef6a92359749a9b9d11fb49938006512f60a6c51 -m "v10: owner-scoped live refresh"
+  git push origin ef6a92359749a9b9d11fb49938006512f60a6c51
+  git push origin v10
+  git rev-parse 'v10^{}'
+
+  cd /Users/ct/dev/projects/kanban.spool__feat--owner-scoped-live-refresh
+  git tag -a v6 b13d256f0ad7f145dd73f070ec5efc9bcbcd1d48 -m "v6: owner-scoped live refresh"
+  git push origin b13d256f0ad7f145dd73f070ec5efc9bcbcd1d48
+  git push origin v6
+  git rev-parse 'v6^{}'
+
+  cd /Users/ct/dev/projects/devflow.spool__feat--owner-scoped-live-refresh
+  git tag -a v3 b966e540624a19c547093b6f2468fa3bb5d71103 -m "v3: owner-scoped live refresh"
+  git push origin b966e540624a19c547093b6f2468fa3bb5d71103
+  git push origin v3
+  git rev-parse 'v3^{}'
+  ```
+
+- Consumer-pin plan only; do not edit it in this task: in `.skein/spools.edn`, change `ct.spools/agent-run` from `:git/tag "v9"` / SHA `befad44de36509cf3636242d14fc39bab35d85c2` to `v10` / the verified `v10^{}` SHA; `codethread/kanban` from `v5` / `e4bb7b64d600052cd32c3e3728231f7bba9ad67e` to `v6` / verified `v6^{}`; and `codethread/devflow` from `v2` / `1e65e1bc5ce43cbea462a33f51b24b669928ef4b` to `v3` / verified `v3^{}`. Keep all `:roots` mappings unchanged. Roll back by retaining or restoring the three old tag/SHA pairs; do not move old markers and do not restart a weaver for this preparation step.
+
 ### PLAN-Olr-001.DN26 Cross-repository acceptance matrix (Task 18): 2026-07-22
 
 - Candidate set: Skein `b8be0c8`; agent-harness `c52cc45`; kanban `285c69e`; devflow `ca2404b`. Every head was verified before testing. For each peer, `deps.edn` was temporarily redirected so every Skein `:local/root` and test `:extra-paths` reference used `/Users/ct/dev/projects/skein-src__feat--owner-scoped-live-refresh`; `clojure -A:test -Spath | tr ':' '\n' | grep skein-src` showed only feature-worktree paths. The edits were restored after the run, and all four worktrees ended clean.
