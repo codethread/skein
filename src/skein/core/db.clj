@@ -436,43 +436,46 @@
 
 (declare bootstrap-acyclic-relation!)
 
-(defn- initialize-schema!
-  [ds schema-statements binary-generation additive-objects]
-  (let [reference (reference-schema schema-statements)
-        found-generation (schema-generation ds)
-        classification (classify-generation found-generation
-                                            binary-generation
-                                            (database-empty? ds (:object-keys reference)))]
-    (case classification
-      (:refuse-newer :refuse-older)
-      (incompatible-generation! classification found-generation binary-generation)
-
-      :bootstrap
-      (do
-        (doseq [statement schema-statements]
-          (execute! ds statement))
-        (validate-schema! ds reference :full additive-objects found-generation binary-generation)
-        (stamp-generation! ds binary-generation))
-
-      (:adopt :proceed)
-      (do
-        (validate-schema! ds reference :pre-ddl additive-objects found-generation binary-generation)
-        (doseq [statement schema-statements]
-          (execute! ds statement))
-        (validate-schema! ds reference :full additive-objects found-generation binary-generation)
-        (when (= :adopt classification)
-          (stamp-generation! ds binary-generation))))))
-
 (defn init!
   "Initialize ds with the current schema and shipped acyclic relations.
 
   Existing compatible unstamped schemas are adopted as generation 1. Schema
-  mismatches and generation skew throw before initialization writes."
-  [ds]
-  (initialize-schema! ds schema-sql current-generation #{})
-  (doseq [relation shipped-acyclic-relations]
-    (bootstrap-acyclic-relation! ds relation))
-  ds)
+  mismatches and generation skew throw before initialization writes. The
+  4-arity runs the schema orchestration alone against explicit statements, a
+  binary generation, and a declared-additive object set; it is the seam for
+  exercising generations and additive sets that cannot occur in production,
+  where only the 1-arity is called."
+  ([ds]
+   (init! ds schema-sql current-generation #{})
+   (doseq [relation shipped-acyclic-relations]
+     (bootstrap-acyclic-relation! ds relation))
+   ds)
+  ([ds schema-statements binary-generation additive-objects]
+   (let [reference (reference-schema schema-statements)
+         found-generation (schema-generation ds)
+         classification (classify-generation found-generation
+                                             binary-generation
+                                             (database-empty? ds (:object-keys reference)))]
+     (case classification
+       (:refuse-newer :refuse-older)
+       (incompatible-generation! classification found-generation binary-generation)
+
+       :bootstrap
+       (do
+         (doseq [statement schema-statements]
+           (execute! ds statement))
+         (validate-schema! ds reference :full additive-objects found-generation binary-generation)
+         (stamp-generation! ds binary-generation))
+
+       (:adopt :proceed)
+       (do
+         (validate-schema! ds reference :pre-ddl additive-objects found-generation binary-generation)
+         (doseq [statement schema-statements]
+           (execute! ds statement))
+         (validate-schema! ds reference :full additive-objects found-generation binary-generation)
+         (when (= :adopt classification)
+           (stamp-generation! ds binary-generation)))))
+   ds))
 
 (declare get-strand update-strand! add-edge! strands-by-ids require-updated-strand require-existing-strand-ids! placeholders)
 

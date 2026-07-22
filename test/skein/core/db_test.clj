@@ -26,7 +26,7 @@
       (finally
         (delete-sqlite-family! db-file)))))
 
-(defn with-raw-db [f]
+(defn- with-raw-db [f]
   (let [db-file (temp-db-file)
         ds (db/datasource db-file)]
     (try
@@ -34,28 +34,28 @@
       (finally
         (delete-sqlite-family! db-file)))))
 
-(defn pragma-value [ds pragma]
+(defn- pragma-value [ds pragma]
   (first (vals (db/execute-one! ds [(str "PRAGMA " pragma)]))))
 
-(defn private-db-var [symbol]
+(defn- private-db-var [symbol]
   (or (ns-resolve 'skein.core.db symbol)
       (throw (ex-info "Missing private database test seam" {:symbol symbol}))))
 
-(defn schema-statements []
+(defn- schema-statements []
   @(private-db-var 'schema-sql))
 
-(defn execute-schema! [ds statements]
+(defn- execute-schema! [ds statements]
   (doseq [statement statements]
     (db/execute! ds statement)))
 
-(defn replace-schema-sql [statements needle replacement]
+(defn- replace-schema-sql [statements needle replacement]
   (mapv (fn [[sql]]
           [(if (str/includes? sql needle)
              (str/replace sql needle replacement)
              sql)])
         statements))
 
-(defn caught-ex-info [f]
+(defn- caught-ex-info [f]
   (try
     (f)
     nil
@@ -100,7 +100,7 @@
     (is (thrown? clojure.lang.ExceptionInfo (classify 0 0 true)))
     (is (thrown? clojure.lang.ExceptionInfo (classify 0 1 nil)))))
 
-(def managed-table-order
+(def ^:private managed-table-order
   [["strands" "id"]
    ["attributes" "strand_id, key"]
    ["strand_edges" "from_strand_id, to_strand_id, edge_type"]
@@ -108,13 +108,13 @@
    ["scheduler_wakes" "key"]
    ["scheduler_history" "id"]])
 
-(defn logical-managed-rows [ds]
+(defn- logical-managed-rows [ds]
   (into {}
         (map (fn [[table order-by]]
                [table (db/execute! ds [(str "SELECT * FROM " table " ORDER BY " order-by)])]))
         managed-table-order))
 
-(defn populate-managed-tables! [ds]
+(defn- populate-managed-tables! [ds]
   (db/execute! ds ["INSERT INTO strands (id, title) VALUES ('a', 'A'), ('b', 'B')"])
   (db/execute! ds ["INSERT INTO attributes (strand_id, key, value) VALUES ('a', 'owner', '\"agent\"')"])
   (db/execute! ds ["INSERT INTO strand_edges (from_strand_id, to_strand_id, edge_type) VALUES ('a', 'b', 'depends-on')"])
@@ -177,16 +177,16 @@
               (is (= 1 (:expected-generation (ex-data error))))
               (is (zero? (pragma-value ds "user_version"))))))))))
 
-(def synthetic-additive-sql
+(def ^:private synthetic-additive-sql
   ["CREATE TABLE IF NOT EXISTS synthetic_aux (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL CHECK (length(value) > 0)
     )"])
 
-(def synthetic-additive-object #{[:table "synthetic_aux"]})
+(def ^:private synthetic-additive-object #{[:table "synthetic_aux"]})
 
-(defn initialize-synthetic-schema! [ds generation]
-  ((private-db-var 'initialize-schema!)
+(defn- initialize-synthetic-schema! [ds generation]
+  (db/init!
    ds
    (conj (schema-statements) synthetic-additive-sql)
    generation
@@ -253,8 +253,7 @@
         (execute-schema! ds (schema-statements))
         (db/execute! ds ["INSERT INTO strands (id, title) VALUES ('kept', 'Kept')"])
         (db/execute! ds ["PRAGMA user_version = 1"])
-        (let [error (caught-ex-info #((private-db-var 'initialize-schema!)
-                                      ds (schema-statements) 2 #{}))]
+        (let [error (caught-ex-info #(db/init! ds (schema-statements) 2 #{}))]
           (is (str/includes? (ex-message error) "maintained forward-migration path"))
           (is (= {:reason :older-schema-generation
                   :found-generation 1
