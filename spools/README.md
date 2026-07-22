@@ -115,10 +115,7 @@ sha-pinned family and map its root within the checkout — an entry in the consu
 
 ## External spool consumption
 
-How to apply and verify entries like these: [Writing shared
-spools](../docs/spools/writing-shared-spools.md) covers the coordinate shape and publishing;
-[customisation](../docs/spools/customisation.md) covers activating config changes against a
-running weaver; `strand spool-status` shows what the runtime actually serves.
+How to apply and verify entries like these: [Writing shared spools](../docs/spools/writing-shared-spools.md) covers the coordinate shape and publishing; [customisation](../docs/spools/customisation.md) covers activating config changes against a running weaver; `strand spool status` shows what the runtime actually serves.
 
 `ct.spools.devflow` is consumed from
 [`codethread/devflow.spool`](https://github.com/codethread/devflow.spool) by git coordinate rather
@@ -160,7 +157,7 @@ The override inherits the shared family's `:roots`, `:requires`, and `:skein/min
 
 | Spool | Contract doc | API reference | Purpose |
 |---|---|---|---|
-| `skein.spools.batteries` | [batteries.md](./batteries.md) | [batteries.api.md](./batteries.api.md) · [cookbook](./batteries.cookbook.md) | Shipped core strand command surface as registered ops: add/update/show/supersede/burn/list/ready/subgraph plus `weave` and the `query`/`pattern`/`vocab` registry-introspection reads, all parser-backed. |
+| `skein.spools.batteries` | [batteries.md](./batteries.md) | [batteries.api.md](./batteries.api.md) · [cookbook](./batteries.cookbook.md) | Shipped core strand command surface as registered ops: add/update/show/supersede/burn/list/ready/subgraph plus `weave`, the `query`/`pattern`/`vocab` registry reads, and `spool` verbs including the folded `spool status` read. Invocable arg-spec leaves declare their own hook and deadline classes. |
 
 `batteries` is the base strand command surface every fresh `mill init` world needs at zero config — a fresh workspace seeds `spools.edn` as `{:spools {}}`, yet must still get add/update/show/supersede/burn/list/ready/subgraph plus the `weave`/`query`/`pattern`/`vocab` reads. It is non-escalating (a CRUD/query surface, not a capability escalation like the agent-run harness spawn), which is why it earns a classpath exception rather than an approved coordinate: bootstrap cannot write a source-relative `spools.edn` coordinate without persisting a machine-specific source-checkout path, which the weaver runtime spec forbids. `batteries` therefore ships on the weaver's source classpath (its own root, `spools/batteries/src`, on `deps.edn` `:paths`) and is declared as a classpath module after an explicit `(require 'skein.spools.batteries)` in `init.clj` — an honest require, not a hidden loader fallback. Every other spool loads through the approved `spools.edn` → `:spools`-guarded module path.
 

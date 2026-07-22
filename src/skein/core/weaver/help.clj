@@ -13,11 +13,16 @@
   projected (SPEC-002.C39, DELTA-Dtf-001.D1). Every response is the response
   envelope `{schema-version, operation, source, glossary, node}` (the no-arg
   catalog is the same schema family, `{schema-version, ops[]}`), and `node` is
-  the uniform fractal node (`{name, doc, invocation, returns, use-when, notes,
-  failure-modes, children}`) at every depth. The projection normalizes today's
-  registry data — the op envelope, the arg-spec `explain` (SPEC-003.C64/C65), and
-  the per-case return-shape `explain` (SPEC-003.C60b) — into that schema; nothing
-  here re-models or hand-writes usage.
+  the uniform fractal node (`{name, doc, invocation, returns, hook-class,
+  deadline-class, use-when, notes, failure-modes, children}`) at every depth,
+  recursing to the arg-spec's declared depth. `hook-class`/`deadline-class` are
+  node keys with per-kind null semantics (DELTA-Lhc-003.CC1): class strings on
+  an invocable leaf node (a flat or raw-envelope op's root node is its leaf —
+  from the leaf's declared metadata or, in this accretive slice, the op-entry
+  fallback), `null` on interior nodes and subcommand-op roots. The projection
+  normalizes today's registry data — the op envelope, the arg-spec `explain`
+  (SPEC-003.C64/C65), and the per-case return-shape `explain` (SPEC-003.C60b)
+  — into that schema; nothing here re-models or hand-writes usage.
 
   `source` is the op-wide handler pointer resolved best-effort at projection
   (DELTA-Dtf-002.CC2): `requiring-resolve` under the runtime spool classloader,
@@ -59,8 +64,10 @@
   "Positive integer versioning the help-schema contract itself.
 
   Bumps only when the envelope/node shape changes; independent of release/build
-  identity and of `protocol_version` (DELTA-Dtf-001.D3)."
-  1)
+  identity and of `protocol_version` (DELTA-Dtf-001.D3). v2: per-leaf
+  `hook-class`/`deadline-class` became node keys and left the envelope's
+  `operation` facts (DELTA-Lhc-003.CC1/CC2)."
+  2)
 
 (defn- registered-op-entries
   "Return `runtime`'s registered op entries sorted by canonical name.
@@ -137,13 +144,13 @@
 
   These are the facts that are not per-verb — `name` and the registry envelope
   metadata — so they live in the response envelope, never on the recursive node
-  (DELTA-Dtf-001.CC1). `raw-envelope` marks an op that declares no arg-spec."
+  (DELTA-Dtf-001.CC1). `hook-class`/`deadline-class` are per-leaf node keys and
+  no longer envelope facts (DELTA-Lhc-003.CC1). `raw-envelope` marks an op that
+  declares no arg-spec."
   [entry]
   {:name (:name entry)
    :provenance (str (:provenance entry))
    :stream? (:stream? entry)
-   :deadline-class (name (:deadline-class entry))
-   :hook-class (name (:hook-class entry))
    :raw-envelope (not (contains? entry :arg-spec))})
 
 (defn- node
@@ -155,39 +162,24 @@
   `{:use-when :notes :failure-modes}` sub-map (nil for a node with none, e.g. a
   raw-envelope or catalog summary node); `failure-modes` carries outcome-name
   references only, and the envelope resolves their definitions once
-  (DELTA-Dtf-002.CC5)."
-  [name doc invocation returns annotations children]
+  (DELTA-Dtf-002.CC5). `hook-class`/`deadline-class` are class strings on
+  invocable leaf nodes and nil elsewhere (DELTA-Lhc-003.CC1)."
+  [name doc invocation returns annotations hook-class deadline-class children]
   {:name name
    :doc (or doc "")
    :invocation invocation
    :returns returns
+   :hook-class hook-class
+   :deadline-class deadline-class
    :use-when (vec (:use-when annotations))
    :notes (vec (:notes annotations))
    :failure-modes (vec (:failure-modes annotations))
    :children children})
 
-(defn- routed-return-explain
-  "Render the return-shape `explain` for one subcommand's routed case, or nil.
-
-  A subcommand op may declare `:returns {:subcommands {..}}`; the case for
-  `subcommand` projects to that child node's `returns`. Ops that declare no
-  routed returns yield nil (SPEC-003.C60b)."
-  [returns subcommand]
-  (when (and (map? returns) (contains? returns :subcommands))
-    (when-let [return-case (get (:subcommands returns) subcommand)]
-      (return-shape/explain return-case))))
-
-(defn- child-node
-  "Project one declared subcommand into a child node of the same fractal shape.
-
-  `annotations` is the subcommand's own arg-spec `:annotations` sub-map (nil when
-  it declares none)."
-  [returns annotations {:keys [name doc flags positionals]}]
-  (node name doc
-        {:mode "declared" :flags flags :positionals positionals}
-        (routed-return-explain returns name)
-        annotations
-        []))
+(defn- leaf-class
+  "Return the projected class string from one invocable leaf's metadata."
+  [raw-node key]
+  (some-> (get raw-node key) name))
 
 (defn- node-doc
   "The declared doc for an op's root node.
@@ -197,62 +189,79 @@
   [entry explained]
   (or (:doc explained) (:doc entry)))
 
+(defn- arg-node
+  "Project one arg-spec node into the uniform fractal node, recursing over its
+  declared subcommands to any depth (DELTA-Lhc-001.CC5).
+
+  `raw` is the arg-spec node (the source of annotations and leaf class
+  metadata), `explained` its `cli/explain` projection, and `returns` the
+  return-tree node mirroring this position (nil when the op declares none) —
+  an interior return node routes to the children, a leaf case renders."
+  [entry node-name doc raw explained returns]
+  (let [interior? (contains? raw :subcommands)
+        routed-returns? (and (map? returns) (contains? returns :subcommands))]
+    (node node-name doc
+          {:mode "declared"
+           :flags (:flags explained)
+           :positionals (:positionals explained)}
+          (when (and (not interior?) (some? returns) (not routed-returns?))
+            (return-shape/explain returns))
+          (:annotations raw)
+          (when-not interior? (leaf-class raw :hook-class))
+          (when-not interior? (leaf-class raw :deadline-class))
+          (mapv (fn [{child-name :name :as child-explained}]
+                  (arg-node entry child-name (:doc child-explained)
+                            (get-in raw [:subcommands child-name])
+                            child-explained
+                            (when routed-returns?
+                              (get-in returns [:subcommands child-name]))))
+                (:subcommands explained)))))
+
 (defn- op-node
   "Project one op registry entry into its root fractal node.
 
-  A flat op yields a root node carrying its own flags/positionals with empty
-  `children`; a subcommand op yields a root node with empty invocation
-  flags/positionals and one child per declared subcommand (each the same shape
-  with its routed return case); a raw-envelope op (no declared arg-spec) yields a
-  `raw-envelope` root node. Op-wide facts stay in the envelope, never here."
+  An arg-spec op projects its node tree recursively: leaves carry their own
+  flags/positionals, routed return case, and class strings; interior nodes
+  carry children and null classes. A raw-envelope op (no declared arg-spec)
+  yields a `raw-envelope` root node whose root IS its leaf, so its classes
+  populate from the entry. Op-wide facts stay in the envelope, never here."
   [entry]
-  (let [returns (:returns entry)
-        node-returns (when (contains? entry :returns) (return-shape/explain returns))
-        arg-spec (:arg-spec entry)
-        explained (when arg-spec (cli/explain arg-spec))
-        doc (node-doc entry explained)]
-    (cond
-      (nil? arg-spec)
-      (node (:name entry) doc
+  (let [arg-spec (:arg-spec entry)
+        returns (when (contains? entry :returns) (:returns entry))]
+    (if (nil? arg-spec)
+      (node (:name entry) (:doc entry)
             {:mode "raw-envelope" :flags [] :positionals []}
-            node-returns
+            (when (contains? entry :returns) (return-shape/explain returns))
             ;; A raw-envelope op has no arg-spec node, so its root annotations
             ;; come from the op's `:annotations` metadata (MI1a); an arg-spec op
-            ;; sources them from its arg-spec node below.
+            ;; sources them from its arg-spec nodes.
             (:annotations entry)
+            (leaf-class entry :hook-class)
+            (leaf-class entry :deadline-class)
             [])
-
-      (:subcommands explained)
-      (node (:name entry) doc
-            {:mode "declared" :flags [] :positionals []}
-            nil
-            (:annotations arg-spec)
-            (mapv #(child-node returns
-                               (get-in arg-spec [:subcommands (:name %) :annotations])
-                               %)
-                  (:subcommands explained)))
-
-      :else
-      (node (:name entry) doc
-            {:mode "declared"
-             :flags (:flags explained)
-             :positionals (:positionals explained)}
-            node-returns
-            (:annotations arg-spec)
-            []))))
+      (let [explained (cli/explain arg-spec)]
+        (arg-node entry (:name entry) (node-doc entry explained)
+                  arg-spec explained returns)))))
 
 (defn- summary-node
   "Project the shallow catalog node for one op (DELTA-Dtf-001.CC3).
 
   `name` and `doc` populated; `invocation` at its declared mode with empty
-  flags/positionals; `returns` null, annotations `[]`, `children` `[]`."
+  flags/positionals; `returns` null, annotations `[]`, `children` `[]`.
+  Classes follow the node rule (DELTA-Lhc-003.CC1): populated only when the
+  summary node is itself the leaf — a flat or raw-envelope op — and null for
+  subcommand-op roots."
   [entry]
-  (let [explained (when (:arg-spec entry) (cli/explain (:arg-spec entry)))]
+  (let [arg-spec (:arg-spec entry)
+        explained (when arg-spec (cli/explain arg-spec))
+        leaf? (not (contains? arg-spec :subcommands))]
     (node (:name entry) (node-doc entry explained)
-          {:mode (if (:arg-spec entry) "declared" "raw-envelope")
+          {:mode (if arg-spec "declared" "raw-envelope")
            :flags [] :positionals []}
           nil
           nil
+          (when leaf? (leaf-class (or arg-spec entry) :hook-class))
+          (when leaf? (leaf-class (or arg-spec entry) :deadline-class))
           [])))
 
 (defn- referenced-outcomes
@@ -311,22 +320,37 @@
   [runtime entry]
   (envelope runtime entry (op-node entry)))
 
-(defn- verb-envelope
-  "Build the detail envelope sliced to one subcommand verb's node.
+(defn- node-at-path
+  "Slice a projected node tree to the node a verb path names
+  (DELTA-Lhc-001.CC6).
+
+  Walks `root`'s children token by token; interior and leaf nodes are both
+  valid targets. A token that names no child fails loudly with the canonical
+  error context (`:op`, `:path`, `:token`, `:available`)."
+  [entry root path]
+  (loop [node root
+         walked []]
+    (if (= (count walked) (count path))
+      node
+      (let [token (nth path (count walked))
+            child (some #(when (= token (:name %)) %) (:children node))]
+        (when-not child
+          (throw (ex-info "Help verb not found"
+                          {:op (:name entry)
+                           :path walked
+                           :token token
+                           :available (mapv :name (:children node))})))
+        (recur child (conj walked token))))))
+
+(defn- path-envelope
+  "Build the detail envelope sliced to the node a verb path names.
 
   Op-wide facts (`operation`, `source`) are unchanged; `node` narrows to the
-  named verb's child node — the same fractal shape (DELTA-Dtf-001.CC2) — and
-  `glossary` narrows with it to that subtree's referenced outcomes. An unknown
-  verb fails loudly with the available verbs."
-  [runtime entry verb]
-  (let [root (op-node entry)
-        child (some #(when (= verb (:name %)) %) (:children root))]
-    (when-not child
-      (throw (ex-info "Help verb not found"
-                      {:operation (:name entry)
-                       :verb verb
-                       :available-verbs (mapv :name (:children root))})))
-    (envelope runtime entry child)))
+  named node — the same fractal shape at any depth, interior nodes included
+  (DELTA-Lhc-001.CC6) — and `glossary` narrows with it to that subtree's
+  referenced outcomes."
+  [runtime entry path]
+  (envelope runtime entry (node-at-path entry (op-node entry) path)))
 
 (defn- catalog-entry
   "Project one op registry entry into a shallow catalog envelope entry.
@@ -446,10 +470,13 @@
   token before it and no attached payloads — rewrites to the `help` op for every
   op class (flat, subcommand, and raw-envelope). It resolves to the SAME node as
   `strand help <op> <verb...>`: a bare `<op> --help` yields the op's detail
-  envelope, and a verb token before the flag narrows it to that verb's sliced
-  node (DELTA-Dtf-002.CC3). Both `op!` and the socket transport consult this
-  before hook gating, so the rewrite is a read-class projection and the target
-  op's mutating hooks never fire.
+  envelope, and verb tokens before the flag narrow it to the node that path
+  names, composing to any declared depth (DELTA-Lhc-002.CC6) — a token naming
+  no child fails loudly with the canonical error context, so `spool add <url>
+  --help` fails naming `add`'s children as none, never silently parsing. Both
+  `op!` and the socket transport consult this before hook gating, so the
+  rewrite is a read-class projection and the target op's mutating hooks never
+  fire.
 
   Everything else is not a rewrite. The bare word `help`/`about`/`prime` in verb
   position is the retired `<op> help`/`about`/`prime` sugar (TEN-000@1) and fails
@@ -479,10 +506,9 @@
     (cond
       clean-trailing?
       (let [verbs (pop argv)]
-        (cond
-          (empty? verbs) (render-help runtime (op-envelope runtime entry) false)
-          (= 1 (count verbs)) (render-help runtime (verb-envelope runtime entry (first verbs)) false)
-          :else (help-grammar-redirect! entry "`--help` takes at most one verb.")))
+        (if (empty? verbs)
+          (render-help runtime (op-envelope runtime entry) false)
+          (render-help runtime (path-envelope runtime entry (vec verbs)) false)))
 
       (and (contains? retired-sugar-tokens head)
            (not (contains? retired-sugar-tokens (:name entry)))
@@ -500,11 +526,13 @@
   "Project the op registry as canonical help, rendered through the transform slot.
 
   With no positional op name, build the versioned catalog `{schema-version,
-  ops[]}` of shallow per-op envelopes sorted by name. With one op name, build that
-  op's detail envelope `{schema-version, operation, source, glossary, node}`. With
-  an op name and a verb, slice `node` to that verb's child node. Unknown op names
-  fail loudly through `resolve-op` (carrying available names); an unknown verb
-  fails loudly carrying the available verbs.
+  ops[]}` of shallow per-op envelopes sorted by name. With one op name, build
+  that op's detail envelope `{schema-version, operation, source, glossary,
+  node}`. With an op name and trailing verb tokens, slice `node` to the node
+  that path names, live to the arg-spec's declared depth — interior nodes are
+  valid targets (DELTA-Lhc-001.CC6). Unknown op names fail loudly through
+  `resolve-op` (carrying available names); a token naming no child fails loudly
+  with the canonical error context.
 
   The result is then rendered through the registered default help transform
   (`render-help`); `--json` bypasses the slot back to the raw envelope. `--json`
@@ -513,29 +541,30 @@
   grammar."
   [ctx]
   (let [runtime (:op/runtime ctx)
-        {:keys [op verb json]} (:op/args ctx)]
+        {:keys [op verbs json]} (:op/args ctx)]
     (when (and json (not= "--json" (first (:op/argv ctx))))
       (throw (ex-info "`--json` must lead the help surface. Run `strand help --json ...` instead."
                       {:code "discovery/help-grammar"})))
     (render-help runtime
                  (cond
-                   (and op verb) (verb-envelope runtime (resolve-entry runtime op) verb)
+                   (and op (seq verbs)) (path-envelope runtime (resolve-entry runtime op)
+                                                       (vec verbs))
                    op (op-envelope runtime (resolve-entry runtime op))
                    :else (op-catalog runtime))
                  (boolean json))))
 
 (def ^:private help-arg-spec
   "Arg-spec for the built-in `help` op: a leading `--json` flag, an optional op
-  name, and an optional verb.
+  name, and an optional trailing verb path.
 
   This makes `help` the first parser-consuming op, so `op!` parses its argv and
-  supplies the resolved positionals as `:op/args`. A trailing `verb` slices the
-  detail envelope's node to one subcommand (DELTA-Dtf-001.CC2). `--json` is the
-  sole opt-out to the raw canonical envelope and is leading-only (the handler
-  rejects a non-leading `--json`); no other flags are valid on the help surface
-  (DELTA-Dtf-001.CC4)."
+  supplies the resolved positionals as `:op/args`. Trailing `verbs` slice the
+  detail envelope's node to the node that path names, to any declared depth
+  (DELTA-Lhc-001.CC6). `--json` is the sole opt-out to the raw canonical
+  envelope and is leading-only (the handler rejects a non-leading `--json`);
+  no other flags are valid on the help surface (DELTA-Dtf-001.CC4)."
   {:op "help"
-   :doc "Show the help catalog, one op's detail envelope, or one verb's node."
+   :doc "Show the help catalog, one op's detail envelope, or one node's slice."
    :flags {:json {:type :boolean
                   :doc (format-alpha/reflow
                         "|Bypass any registered help transform and emit the raw
@@ -546,21 +575,23 @@
                   :doc (format-alpha/reflow
                         "|Optional op name; when given, return that op's detail
                          |envelope instead of the catalog.")}
-                 {:name :verb
+                 {:name :verbs
                   :type :string
                   :required? false
+                  :variadic? true
                   :doc (format-alpha/reflow
-                        "|Optional subcommand name; slices the detail envelope's
-                         |node to that verb.")}]})
+                        "|Optional subcommand path; slices the detail envelope's
+                         |node to the node the tokens name, at any depth.")}]
+   :hook-class :read
+   :deadline-class :standard})
 
 (def ^:private operation-return-shape
-  "Declared return shape for the op-wide `operation` map (DELTA-Dtf-001.CC1)."
+  "Declared return shape for the op-wide `operation` map (DELTA-Dtf-001.CC1);
+  per-leaf classes are node keys, not envelope facts (DELTA-Lhc-003.CC1)."
   {:type :map
    :required {:name :string
               :provenance :string
               :stream? :boolean
-              :deadline-class :string
-              :hook-class :string
               :raw-envelope :boolean}})
 
 (def ^:private node-return-shape
@@ -568,7 +599,8 @@
 
   `returns` and `children` items are `:json` here: the per-case return-shape
   explain and the recursive child nodes are arbitrary JSON-safe data, not a
-  fixed leaf shape."
+  fixed leaf shape. `hook-class`/`deadline-class` are class strings on leaf
+  nodes and null on interior and subcommand-root nodes (DELTA-Lhc-003.CC1)."
   {:type :map
    :required {:name :string
               :doc :string
@@ -577,6 +609,8 @@
                                       :flags {:type :collection :items :json}
                                       :positionals {:type :collection :items :json}}}
               :returns :json
+              :hook-class [:nullable :string]
+              :deadline-class [:nullable :string]
               :use-when {:type :collection :items :string}
               :notes {:type :collection :items :string}
               :failure-modes {:type :collection :items :string}
@@ -658,7 +692,9 @@
                   :variadic? true
                   :doc (format-alpha/reflow
                         (str "|Reserved: " field " is op-level, so a trailing verb
-                             |fails loudly and redirects to `help`."))}]})
+                             |fails loudly and redirects to `help`."))}]
+   :hook-class :read
+   :deadline-class :standard})
 
 (def ^:private about-arg-spec (meta-verb-arg-spec "about" "about"))
 (def ^:private prime-arg-spec (meta-verb-arg-spec "prime" "prime"))
@@ -687,19 +723,16 @@
   (let [register-op! (requiring-resolve 'skein.api.weaver.alpha/register-op!)]
     (register-op! runtime core-registry/system-owner 'help
                   {:doc (:doc help-arg-spec)
-                   :hook-class :read
                    :arg-spec help-arg-spec
                    :returns help-return-shape}
                   'skein.core.weaver.help/op-help-handler)
     (register-op! runtime core-registry/system-owner 'about
                   {:doc (:doc about-arg-spec)
-                   :hook-class :read
                    :arg-spec about-arg-spec
                    :returns (meta-verb-return-shape :about)}
                   'skein.core.weaver.help/op-about-handler)
     (register-op! runtime core-registry/system-owner 'prime
                   {:doc (:doc prime-arg-spec)
-                   :hook-class :read
                    :arg-spec prime-arg-spec
                    :returns (meta-verb-return-shape :prime)}
                   'skein.core.weaver.help/op-prime-handler)))

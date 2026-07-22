@@ -145,6 +145,27 @@
        (sort-by pr-str)
        vec))
 
+(defn candidate-ops
+  "Return the effective op entries in `candidate-map`."
+  [backends candidate-map]
+  (let [storage (get-in backends [:ops :storage])]
+    (vals (owner-registry/effective-values (get candidate-map storage) :ops))))
+
+(defn validate-op-candidates!
+  "Validate every effective operation in `candidate-map` before publication."
+  [backends candidate-map]
+  (let [validate! (requiring-resolve 'skein.api.weaver.alpha/validate-op-entry!)]
+    (run! validate! (candidate-ops backends candidate-map)))
+  candidate-map)
+
+(defn validate-op-glossary-refs!
+  "Validate candidate operation glossary refs after generation reconciliation."
+  [runtime backends candidate-map]
+  (let [validate! (requiring-resolve
+                   'skein.api.weaver.alpha/validate-op-glossary-refs!)]
+    (run! #(validate! runtime %) (candidate-ops backends candidate-map)))
+  candidate-map)
+
 (defn publish!
   "Publish all changed candidate snapshots and return changed kind ids.
 

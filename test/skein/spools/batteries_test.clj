@@ -49,11 +49,14 @@
     #{[operation context]}))
 
 (defn- op-return-leaves [{:keys [name returns]}]
-  (if (and (map? returns) (contains? returns :subcommands))
-    (into #{} (mapcat (fn [[subcommand return-case]]
-                        (return-case-leaves name {:subcommand subcommand} return-case)))
-          (:subcommands returns))
-    (return-case-leaves name {} returns)))
+  (letfn [(leaves [return-node path]
+            (if (and (map? return-node) (contains? return-node :subcommands))
+              (mapcat (fn [[subcommand child]] (leaves child (conj path subcommand)))
+                      (:subcommands return-node))
+              (return-case-leaves name
+                                  (if (seq path) {:subcommand path} {})
+                                  return-node)))]
+    (set (leaves returns []))))
 
 (defn- owner-return-coverage [rt checked-leaves]
   (let [entries (filterv #(= 'skein.spools.batteries (:provenance %)) (weaver/ops rt))
@@ -94,29 +97,52 @@
     (fn [rt]
       (testing "all shipped ops are registered under batteries provenance"
         (doseq [op-name ['add 'update 'show 'supersede 'burn 'list 'ready 'subgraph
-                         'weave 'query 'pattern 'note 'notes 'vocab 'spool 'spool-status]]
+                         'weave 'query 'pattern 'note 'notes 'vocab 'spool]]
           (let [entry (op-entry rt op-name)]
             (is (some? entry) (str op-name " should be registered"))
             (is (= 'skein.spools.batteries (:provenance entry)))
             (is (string? (:doc entry)))
             (is (some? (:arg-spec entry))))))
-      (testing "hook classes match read/mutating intent"
-        (is (= :mutating (:hook-class (op-entry rt 'add))))
-        (is (= :mutating (:hook-class (op-entry rt 'update))))
-        (is (= :mutating (:hook-class (op-entry rt 'supersede))))
-        (is (= :mutating (:hook-class (op-entry rt 'burn))))
-        (is (= :mutating (:hook-class (op-entry rt 'weave))))
-        (is (= :read (:hook-class (op-entry rt 'show))))
-        (is (= :read (:hook-class (op-entry rt 'list))))
-        (is (= :read (:hook-class (op-entry rt 'ready))))
-        (is (= :read (:hook-class (op-entry rt 'subgraph))))
-        (is (= :read (:hook-class (op-entry rt 'query))))
-        (is (= :read (:hook-class (op-entry rt 'pattern))))
-        (is (= :mutating (:hook-class (op-entry rt 'note))))
-        (is (= :read (:hook-class (op-entry rt 'notes))))
-        (is (= :read (:hook-class (op-entry rt 'vocab))))
-        (is (= :mutating (:hook-class (op-entry rt 'spool))))
-        (is (= :read (:hook-class (op-entry rt 'spool-status))))))))
+      (testing "the separate spool-status op is retired (DELTA-Lhc-001.CC8)"
+        (is (nil? (op-entry rt 'spool-status))))
+      (testing "flat leaves carry classes"
+        (doseq [[op-name hook-class] {'add :mutating
+                                      'update :mutating
+                                      'show :read
+                                      'supersede :mutating
+                                      'burn :mutating
+                                      'list :read
+                                      'ready :read
+                                      'subgraph :read
+                                      'weave :mutating
+                                      'note :mutating
+                                      'notes :read
+                                      'vocab :read}]
+          (let [entry (op-entry rt op-name)]
+            (is (= hook-class (get-in entry [:arg-spec :hook-class])))
+            (is (= :standard (get-in entry [:arg-spec :deadline-class]))))))
+      (testing "read subcommand leaves carry classes"
+        (doseq [op-name ['query 'pattern]
+                verb ["list" "explain"]]
+          (let [leaf (get-in (op-entry rt op-name) [:arg-spec :subcommands verb])]
+            (is (= :read (:hook-class leaf)))
+            (is (= :standard (:deadline-class leaf))))))
+      (testing "contribution preserves leaf classes without entry defaults"
+        (let [entry (get-in (batteries/contribute {}) [:ops :entries "add"])]
+          (is (= :mutating (get-in entry [:arg-spec :hook-class])))
+          (is (= :standard (get-in entry [:arg-spec :deadline-class])))
+          (is (nil? (:hook-class entry)))
+          (is (nil? (:deadline-class entry)))))
+      (testing "spool authors classes single-source on its arg-spec leaves (MI7)"
+        (let [subcommands (get-in (op-entry rt 'spool) [:arg-spec :subcommands])]
+          (is (= {"about" [:read :standard]
+                  "add" [:mutating :standard]
+                  "bump" [:mutating :standard]
+                  "status" [:read :standard]}
+                 (into {}
+                       (map (fn [[verb leaf]]
+                              [verb [(:hook-class leaf) (:deadline-class leaf)]]))
+                       subcommands))))))))
 
 (deftest production-return-coverage-is-derived-from-batteries-provenance
   (with-batteries
@@ -134,9 +160,10 @@
                       (swap! checked conj [(name operation) {}])
                       value)
                      ([operation subcommand value]
-                      (t/check-op-return! rt operation {:subcommand subcommand} (wire-value value))
-                      (swap! checked conj [(name operation) {:subcommand subcommand}])
-                      value))
+                      (let [path (if (vector? subcommand) subcommand [subcommand])]
+                        (t/check-op-return! rt operation {:subcommand path} (wire-value value))
+                        (swap! checked conj [(name operation) {:subcommand path}])
+                        value)))
             first-row (check! 'add (weaver/op! rt 'add ["First"]))
             replacement (weaver/add! rt {:title "Replacement" :attributes {}})
             burnable (weaver/add! rt {:title "Burnable" :attributes {}})
@@ -156,7 +183,7 @@
         (check! 'spool "about" (weaver/op! rt 'spool ["about"]))
         (check! 'spool "add" (weaver/op! rt 'spool ["add" "https://example.invalid/demo.git"]))
         (check! 'spool "bump" (weaver/op! rt 'spool ["bump" "demo" "--to" "v1"]))
-        (check! 'spool-status (weaver/op! rt 'spool-status []))
+        (check! 'spool "status" (weaver/op! rt 'spool ["status"]))
         (check! 'supersede (weaver/op! rt 'supersede [(:id first-row) (:id replacement)]))
         (check! 'burn (weaver/op! rt 'burn [(:id burnable)]))
         (let [{:keys [missing required unchecked]} (owner-return-coverage rt @checked)]
@@ -388,7 +415,7 @@
        rt
        {:ls-remote (fn [_] (throw (ex-info "network called" {})))
         :manifest-at (fn [_ _] (throw (ex-info "network called" {})))})
-      (let [result (weaver/op! rt 'spool-status [])
+      (let [result (weaver/op! rt 'spool ["status"])
             family (get-in result [:families 'demo/family])]
         (is (= {:provenance :local-overlay :claims "v3"}
                (select-keys family [:provenance :claims])))
@@ -408,7 +435,7 @@
                        :requirements {:valid? true :pending-validations []}})]
         (is (thrown-with-msg? clojure.lang.ExceptionInfo
                               #"Declared spool family has no roots"
-                              (weaver/op! rt 'spool-status [])))))))
+                              (weaver/op! rt 'spool ["status"])))))))
 
 (deftest spool-status-rejects-malformed-nested-results
   (testing "malformed effective coordinate"
@@ -427,8 +454,8 @@
                                     [:families 'demo/family :effective-coordinate]
                                     {:kind :git}))]
             (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                                  #"spool-status returned an invalid result"
-                                  (weaver/op! rt 'spool-status []))))))))
+                                  #"spool status returned an invalid result"
+                                  (weaver/op! rt 'spool ["status"]))))))))
   (testing "malformed per-root outcome"
     (with-batteries
       (fn [rt]
@@ -445,8 +472,8 @@
                                  :root/outcomes {'demo/root {:lib 'demo/root
                                                              :status :loaded}}))]
             (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                                  #"spool-status returned an invalid result"
-                                  (weaver/op! rt 'spool-status []))))))))
+                                  #"spool status returned an invalid result"
+                                  (weaver/op! rt 'spool ["status"]))))))))
   (testing "malformed runtime module declaration"
     (with-batteries
       (fn [rt]
@@ -462,8 +489,8 @@
                           (assoc (status runtime)
                                  :modules {:demo/module {:spools ['demo/root]}}))]
             (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                                  #"spool-status returned an invalid result"
-                                  (weaver/op! rt 'spool-status [])))))))))
+                                  #"spool status returned an invalid result"
+                                  (weaver/op! rt 'spool ["status"])))))))))
 
 (deftest spool-contracts-and-dispatch-fail-loudly
   (is (s/valid? ::batteries/advisory-manifest
@@ -473,18 +500,21 @@
                  :skein/min "v1"}))
   (is (not (s/valid? ::batteries/advisory-manifest
                      {:spool/format 1 :roots {'demo/root {:root "."}} :extra true})))
-  (let [about (batteries/spool-op {:op/args {:subcommand "about"}})]
+  (let [about (batteries/spool-op {:op/args {:subcommand ["about"]}})]
     (is (= ["strand spool add <git-url> [--tag vN] [--lib family]"
             "strand spool bump <family> [--to vN]"
-            "strand spool-status"]
+            "strand spool status"]
            (mapv :form (:commands about))))
     (is (s/valid? ::batteries/spool-about-result about)))
   (let [error (is (thrown? clojure.lang.ExceptionInfo
                            (batteries/spool-op {:op/args {:subcommand :unexpected}})))]
     (is (= ::batteries/spool-op-context (:spec (ex-data error)))))
+  (testing "a legacy scalar subcommand is no longer a valid context (path vectors only)"
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"invalid operation context"
+                          (batteries/spool-op {:op/args {:subcommand "about"}}))))
   (is (thrown-with-msg? clojure.lang.ExceptionInfo #"invalid operation context"
                         (batteries/spool-op
-                         {:op/args {:subcommand "add" :git-url "https://example.invalid/x"}}))))
+                         {:op/args {:subcommand ["add"] :git-url "https://example.invalid/x"}}))))
 
 (deftest add-happy-path-and-json-shape
   (with-batteries
@@ -807,7 +837,7 @@
                                       (weaver/op! rt 'query ["bogus"])))]
           (is (= :unknown-subcommand (:reason (ex-data e))))
           (is (= "bogus" (:token (ex-data e))))
-          (is (= ["explain" "list"] (:available-subcommands (ex-data e))))))
+          (is (= ["explain" "list"] (:available (ex-data e))))))
       (testing "query explain without a name fails loudly"
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Missing required"
                               (weaver/op! rt 'query ["explain"]))))
@@ -832,7 +862,7 @@
                                       (weaver/op! rt 'pattern ["bogus"])))]
           (is (= :unknown-subcommand (:reason (ex-data e))))
           (is (= "bogus" (:token (ex-data e))))
-          (is (= ["explain" "list"] (:available-subcommands (ex-data e))))))
+          (is (= ["explain" "list"] (:available (ex-data e))))))
       (testing "pattern explain without a name fails loudly"
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Missing required"
                               (weaver/op! rt 'pattern ["explain"]))))
@@ -930,13 +960,15 @@
 ;; --- reference help renderer + discovery-tier adoption ----------------------
 
 (defn- synthetic-node
-  "A uniform fractal node (DELTA-Dtf-001.CC2) with empty defaults, for hand-built
-  renderer fixtures."
+  "A uniform fractal node (DELTA-Dtf-001.CC2) with empty defaults and null
+  classes (DELTA-Lhc-003.CC1), for hand-built renderer fixtures."
   [node-name doc children]
   {:name node-name
    :doc doc
    :invocation {:mode "declared" :flags [] :positionals []}
    :returns nil
+   :hook-class nil
+   :deadline-class nil
    :use-when []
    :notes []
    :failure-modes []
@@ -949,10 +981,10 @@
 
 (deftest reference-renderer-renders-arbitrary-depth
   ;; DELTA-Dtf-003.CC3: arbitrary-depth children[] recursion is a schema
-  ;; INVARIANT, proven here with a hand-built node tree deeper than any live op
-  ;; (no live op nests past one level; validation rejects nested :subcommands).
-  ;; One recursive renderer, no per-level special-casing: the depth-3 leaf must
-  ;; render through the same body as the root, only more deeply indented.
+  ;; INVARIANT, proven here with a hand-built node tree (live ops now nest to
+  ;; their declared depth too — DELTA-Lhc-001.CC1). One recursive renderer, no
+  ;; per-level special-casing: the depth-3 leaf must render through the same
+  ;; body as the root, only more deeply indented.
   (let [leaf (-> (synthetic-node "leaf" "deepest leaf doc" [])
                  (assoc :invocation
                         {:mode "declared"
@@ -960,12 +992,13 @@
                                   :required false :repeat false :parse nil
                                   :doc "flag at depth three"}]
                          :positionals []}
+                        :hook-class "read"
+                        :deadline-class "standard"
                         :failure-modes ["synthetic/leaf-outcome"]))
         mid (synthetic-node "mid" "middle doc" [leaf])
         root (synthetic-node "root" "root doc" [mid])
-        envelope {:schema-version 1
+        envelope {:schema-version 2
                   :operation {:name "root" :provenance "test" :stream? false
-                              :deadline-class "standard" :hook-class "read"
                               :raw-envelope false}
                   :source nil
                   :glossary {"synthetic/leaf-outcome"
@@ -980,6 +1013,9 @@
       (is (str/includes? rendered "--deep <string>  flag at depth three")
           "the depth-3 leaf's own flags render, so recursion reached the deepest node")
       (is (str/includes? rendered "- synthetic/leaf-outcome")))
+    (testing "leaf classes render on the leaf only; null interiors stay silent"
+      (is (str/includes? rendered "hook-class: read   deadline: standard"))
+      (is (= 1 (count (filter #(str/includes? % "hook-class:") lines)))))
     (testing "depth drives strictly increasing indentation, no per-level branch"
       (is (< (head-indent lines "root — root doc")
              (head-indent lines "mid — middle doc")
@@ -1012,11 +1048,17 @@
         (is (str/includes? (:about (weaver/op! rt 'about ["add"])) "create verb"))
         (is (str/includes? (:prime (weaver/op! rt 'prime ["weave"])) "pattern list")))
       (testing "the reference transform renders every live envelope family"
-        (doseq [argv [[] ["add"] ["spool"] ["spool" "add"] ["query"] ["weave"]]]
+        (doseq [argv [[] ["add"] ["spool"] ["spool" "add"] ["spool" "status"]
+                      ["query"] ["weave"]]]
           (let [text (batteries/default-help-transform (weaver/op! rt 'help argv))]
             (is (string? text))
             (is (not (str/blank? text)))
-            (is (str/includes? text "strand help — schema v1")))))
+            (is (str/includes? text "strand help — schema v2")))))
+      (testing "the folded spool status leaf projects as a read leaf node"
+        (let [status (weaver/op! rt 'help ["spool" "status"])]
+          (is (= "status" (get-in status [:node :name])))
+          (is (= "read" (get-in status [:node :hook-class])))
+          (is (= "standard" (get-in status [:node :deadline-class])))))
       (testing "rendered detail includes authored annotations verbatim"
         (let [text (batteries/default-help-transform (weaver/op! rt 'help ["add"]))]
           (is (str/includes? text "use-when:"))

@@ -143,31 +143,31 @@
 
 (s/def ::spool-about-args
   (s/and #(exact-spool-args? #{:subcommand} #{} %)
-         #(= "about" (:subcommand %))))
+         #(= ["about"] (:subcommand %))))
 (s/def ::spool-add-args
   (s/and #(exact-spool-args? #{:subcommand :git-url} #{:tag :lib} %)
-         #(= "add" (:subcommand %))
+         #(= ["add"] (:subcommand %))
          #(s/valid? ::non-blank-string (:git-url %))
          #(or (nil? (:tag %)) (s/valid? ::non-blank-string (:tag %)))
          #(or (nil? (:lib %)) (s/valid? ::non-blank-string (:lib %)))))
 (s/def ::spool-bump-args
   (s/and #(exact-spool-args? #{:subcommand :family} #{:to} %)
-         #(= "bump" (:subcommand %))
+         #(= ["bump"] (:subcommand %))
          #(s/valid? ::non-blank-string (:family %))
          #(or (nil? (:to %)) (s/valid? ::non-blank-string (:to %)))))
+(s/def ::spool-status-args
+  (s/and #(exact-spool-args? #{:subcommand} #{} %)
+         #(= ["status"] (:subcommand %))))
 (s/def ::spool-args
   (s/or :about ::spool-about-args
         :add ::spool-add-args
-        :bump ::spool-bump-args))
+        :bump ::spool-bump-args
+        :status ::spool-status-args))
 (s/def ::spool-op-context
   (s/and map?
          #(s/valid? ::spool-args (:op/args %))
-         #(or (= "about" (get-in % [:op/args :subcommand]))
+         #(or (= ["about"] (get-in % [:op/args :subcommand]))
               (some? (:op/runtime %)))))
-(s/def ::spool-status-op-context
-  (s/and map?
-         #(= {} (:op/args %))
-         #(some? (:op/runtime %))))
 
 (defn- require-valid! [spec value message]
   (when-not (s/valid? spec value)
@@ -587,7 +587,7 @@
                 "|Queries remote annotated tags, selects a requested, floor-driven,
                  |or latest release, then atomically rewrites its tag and peeled
                  |commit pin together.")}
-    {:form "strand spool-status"
+    {:form "strand spool status"
      :behavior (format-alpha/reflow
                 "|Reads runtime and workspace state only. It performs no network,
                  |file write, sync, reload, or other adoption action.")}]
@@ -604,34 +604,27 @@
       |declared and adopted state without attempting sync or reload.")]})
 
 (defn spool-op
-  "Dispatch validated `strand spool about|add|bump` inputs and results.
+  "Dispatch validated `strand spool about|add|bump|status` inputs and results.
 
   Input uses `::spool-op-context`; results use `::spool-about-result`,
-  `::spool-add-result`, or `::spool-bump-result`. Producer manifests use
-  `::advisory-manifest`. Each closed result/manifest map also uses the named
-  `exact-keys?` predicate because `clojure.spec.alpha/keys` accepts extra keys."
+  `::spool-add-result`, `::spool-bump-result`, or `::spool-status-result`.
+  Producer manifests use `::advisory-manifest`. Each closed result/manifest map
+  also uses the named `exact-keys?` predicate because `clojure.spec.alpha/keys`
+  accepts extra keys. The `status` read leaf keeps the retired `spool-status`
+  op's offline, no-network, closed-result contract verbatim
+  (DELTA-Lhc-001.CC8)."
   [ctx]
   (require-valid! ::spool-op-context ctx "spool received an invalid operation context")
-  (case (:subcommand (:op/args ctx))
+  (case (first (:subcommand (:op/args ctx)))
     "about" (require-valid! ::spool-about-result (spool-about)
                             "spool about returned an invalid result")
     "add" (require-valid! ::spool-add-result (assoc (add-spool-op ctx) :operation "spool add")
                           "spool add returned an invalid result")
     "bump" (require-valid! ::spool-bump-result (assoc (bump-spool-op ctx) :operation "spool bump")
-                           "spool bump returned an invalid result")))
-
-(defn spool-status-op
-  "Return validated offline spool declaration and adoption status.
-
-  Input uses `::spool-status-op-context`; the result uses
-  `::spool-status-result`. Its closed result maps also use the named
-  `exact-keys?` predicate because `clojure.spec.alpha/keys` accepts extra keys."
-  [ctx]
-  (require-valid! ::spool-status-op-context ctx
-                  "spool-status received an invalid operation context")
-  (require-valid! ::spool-status-result
-                  (assoc (spool-status (:op/runtime ctx)) :operation "spool-status")
-                  "spool-status returned an invalid result"))
+                           "spool bump returned an invalid result")
+    "status" (require-valid! ::spool-status-result
+                             (assoc (spool-status (:op/runtime ctx)) :operation "spool status")
+                             "spool status returned an invalid result")))
 
 ;; The blessed parser's :parse :json uses clojure.data.json/read-str, which
 ;; silently returns the first value and ignores trailing input, so it cannot
@@ -833,7 +826,7 @@
   [ctx]
   (let [rt (:op/runtime ctx)
         {:keys [subcommand] nm :name} (:op/args ctx)]
-    (case subcommand
+    (case (first subcommand)
       "list" (json-safe-value (query-list-entries rt))
       "explain" (do (when (str/blank? nm)
                       (throw (ex-info "query explain requires a query name" {})))
@@ -844,7 +837,7 @@
   [ctx]
   (let [rt (:op/runtime ctx)
         {:keys [subcommand] nm :name} (:op/args ctx)]
-    (case subcommand
+    (case (first subcommand)
       "list" (patterns/patterns rt)
       "explain" (do (when (str/blank? nm)
                       (throw (ex-info "pattern explain requires a pattern name" {})))
@@ -885,6 +878,8 @@
 (def ^:private add-arg-spec
   {:op "add"
    :doc "Create a strand with attributes, lifecycle state, and outgoing edges."
+   :hook-class :mutating
+   :deadline-class :standard
    :flags {:state {:type :string
                    :doc "Lifecycle state: active (default) or closed."}
            :attr {:type :map
@@ -904,6 +899,8 @@
 (def ^:private update-arg-spec
   {:op "update"
    :doc "Update one strand's title, state, attributes, and outgoing edges. Attributes merge-patch, they do not replace the whole map."
+   :hook-class :mutating
+   :deadline-class :standard
    :flags {:title {:type :string
                    :doc "New strand title."}
            :state {:type :string
@@ -925,23 +922,31 @@
 (def ^:private show-arg-spec
   {:op "show"
    :doc "Return one strand by id."
+   :hook-class :read
+   :deadline-class :standard
    :positionals [{:name :id :type :string :required? true :doc "Strand id."}]
    :annotations {:use-when ["Fetching one strand's full normalized shape by id, including its typed attributes."]}})
 
 (def ^:private supersede-arg-spec
   {:op "supersede"
    :doc "Replace one strand with another, marking the old replaced and rewiring dependencies."
+   :hook-class :mutating
+   :deadline-class :standard
    :positionals [{:name :old-id :type :string :required? true :doc "Strand being replaced."}
                  {:name :replacement-id :type :string :required? true :doc "Replacement strand."}]})
 
 (def ^:private burn-arg-spec
   {:op "burn"
    :doc "Physically delete one strand and its incident edges."
+   :hook-class :mutating
+   :deadline-class :standard
    :positionals [{:name :id :type :string :required? true :doc "Strand id."}]})
 
 (def ^:private list-arg-spec
   {:op "list"
    :doc "List lean-projected strands, optionally filtered by state and/or a named query."
+   :hook-class :read
+   :deadline-class :standard
    :flags {:state {:type :string
                    :doc "Filter by lifecycle state: active, closed, or replaced."}
            :query {:type :string
@@ -956,6 +961,8 @@
 (def ^:private ready-arg-spec
   {:op "ready"
    :doc "List lean-projected ready strands, optionally from a named query result set."
+   :hook-class :read
+   :deadline-class :standard
    :flags {:query {:type :string
                    :doc "Weaver-registered named query."}
            :param {:type :map
@@ -968,6 +975,8 @@
 (def ^:private subgraph-arg-spec
   {:op "subgraph"
    :doc "Return a relation-scoped subgraph rooted at a strand."
+   :hook-class :read
+   :deadline-class :standard
    :flags {:relation {:type :string
                       :doc "Declared acyclic relation type (defaults to parent-of)."}}
    :positionals [{:name :root-id :type :string :required? true :doc "Root strand id."}]})
@@ -975,6 +984,8 @@
 (def ^:private weave-arg-spec
   {:op "weave"
    :doc "Apply a registered create-only weave pattern to one JSON input value."
+   :hook-class :mutating
+   :deadline-class :standard
    :flags {:pattern {:type :string
                      :required? true
                      :doc "Registered weave pattern name."}
@@ -988,29 +999,39 @@
   {:op "query"
    :doc "Introspect registered named queries: list all or explain one."
    :annotations {:use-when ["Discovering which named queries the runtime exposes before driving list or ready."]}
-   :subcommands {"list" {:doc "List registered named query metadata."}
+   :subcommands {"list" {:doc "List registered named query metadata."
+                         :hook-class :read
+                         :deadline-class :standard}
                  "explain" {:doc "Explain one registered named query."
                             :positionals [{:name :name
                                            :type :string
                                            :required? true
                                            :doc "Query name."}]
+                            :hook-class :read
+                            :deadline-class :standard
                             :annotations {:failure-modes ["batteries/query-unknown"]}}}})
 
 (def ^:private pattern-arg-spec
   {:op "pattern"
    :doc "Introspect registered weave patterns: list all or explain one."
    :annotations {:use-when ["Discovering which weave patterns the runtime exposes before calling weave."]}
-   :subcommands {"list" {:doc "List registered weave pattern metadata."}
+   :subcommands {"list" {:doc "List registered weave pattern metadata."
+                         :hook-class :read
+                         :deadline-class :standard}
                  "explain" {:doc "Explain one registered weave pattern."
                             :positionals [{:name :name
                                            :type :string
                                            :required? true
                                            :doc "Pattern name."}]
+                            :hook-class :read
+                            :deadline-class :standard
                             :annotations {:failure-modes ["batteries/pattern-unknown"]}}}})
 
 (def ^:private note-arg-spec
   {:op "note"
    :doc "Append a note to a target strand's memory; its note/text/note/at content is write-once."
+   :hook-class :mutating
+   :deadline-class :standard
    :flags {:by {:type :string
                 :doc "Author attribution recorded on the note."}
            :round {:type :int
@@ -1023,6 +1044,8 @@
 (def ^:private notes-arg-spec
   {:op "notes"
    :doc "Return a target strand's notes in note/at order from every writer."
+   :hook-class :read
+   :deadline-class :standard
    :flags {:round {:type :int
                    :doc "Filter to notes from one review round."}}
    :positionals [{:name :id :type :string :required? true :doc "Target strand id."}]})
@@ -1030,16 +1053,26 @@
 (def ^:private vocab-arg-spec
   {:op "vocab"
    :doc "List the declared attribute-namespace and edge vocabulary."
+   :hook-class :read
+   :deadline-class :standard
    :flags {:kind {:type :string
                   :doc "Narrow to one declaration kind: attr-namespace or edge."}}})
 
 (def ^:private spool-arg-spec
+  "The spool op's fractal node tree: every leaf declares both classes in the
+  arg-spec (DELTA-Lhc-001.CC2 single-source authoring; no registration-opts
+  classes). `status` is the folded-in read leaf that keeps the retired
+  `spool-status` op's offline contract verbatim (DELTA-Lhc-001.CC8)."
   {:op "spool"
    :doc "Add and bump validated spool family coordinates. Run `strand spool about` for conventions."
    :annotations {:use-when ["Pinning or advancing an annotated Git spool release in the workspace spools.edn."]}
    :subcommands
-   {"about" {:doc "Return spool helper conventions and status semantics."}
+   {"about" {:doc "Return spool helper conventions and status semantics."
+             :hook-class :read
+             :deadline-class :standard}
     "add" {:doc "Add one annotated Git spool release to spools.edn."
+           :hook-class :mutating
+           :deadline-class :standard
            :flags {:tag {:type :string
                          :doc "Annotated release tag vN; defaults to the highest release."}
                    :lib {:type :string
@@ -1050,17 +1083,18 @@
                           :doc "Git repository URL."}]
            :annotations {:failure-modes ["batteries/spool-release-unresolved"]}}
     "bump" {:doc "Bump one Git spool family atomically to an annotated release."
+            :hook-class :mutating
+            :deadline-class :standard
             :flags {:to {:type :string
                          :doc "Target annotated release tag vN; defaults from floors or latest."}}
             :positionals [{:name :family
                            :type :string
                            :required? true
                            :doc "Declared spool family symbol."}]
-            :annotations {:failure-modes ["batteries/spool-release-unresolved"]}}}})
-
-(def ^:private spool-status-arg-spec
-  {:op "spool-status"
-   :doc "Join declared, overlay, sync, use, pending, and running release state without network access."})
+            :annotations {:failure-modes ["batteries/spool-release-unresolved"]}}
+    "status" {:doc "Join declared, overlay, sync, use, pending, and running release state without network access."
+              :hook-class :read
+              :deadline-class :standard}}})
 
 (def ^:private attributes-return
   {:type :map :extra :json})
@@ -1169,10 +1203,10 @@
                               :entry :json :requirements :json}}
             "bump" {:type :map
                     :required {:operation :string :status :string :family :string :old :json :new :json
-                               :compare-url [:nullable :string] :requirements :json}}}}
-   'spool-status {:type :map
-                  :required {:operation :string :families :json :requirements :json
-                             :pending-generation :json :release-marker :json}}})
+                               :compare-url [:nullable :string] :requirements :json}}
+            "status" {:type :map
+                      :required {:operation :string :families :json :requirements :json
+                                 :pending-generation :json :release-marker :json}}}}})
 
 ;; --- op-level about/prime prose ---------------------------------------------
 
@@ -1309,12 +1343,17 @@
   over `:children`. No branch keys off the node's depth or kind — that uniformity
   is the schema's forcing function (DELTA-Dtf-003.D1). If a level ever needed its
   own case, the schema would be wrong, not this renderer."
-  [depth {:keys [name doc invocation returns use-when notes failure-modes children]}]
+  [depth {:keys [name doc invocation returns hook-class deadline-class
+                 use-when notes failure-modes children]}]
   (let [field (inc depth)
         entry (inc field)]
     (concat
      [(str (indent depth) name (when (seq doc) (str " — " doc)))
       (str (indent field) "invocation: " (:mode invocation))]
+     ;; classes render only where they exist: invocable leaf nodes
+     ;; (DELTA-Lhc-003.CC1); interior nodes carry null and stay silent.
+     (when hook-class
+       [(str (indent field) "hook-class: " hook-class "   deadline: " deadline-class)])
      (when (seq (:flags invocation))
        (cons (str (indent field) "flags:")
              (map #(flag-line entry %) (:flags invocation))))
@@ -1330,14 +1369,14 @@
      (mapcat #(render-node field %) children))))
 
 (defn- operation-lines
-  "Render the op-wide envelope facts (DELTA-Dtf-001.CC1) that stay off the node."
+  "Render the op-wide envelope facts (DELTA-Dtf-001.CC1) that stay off the node;
+  hook/deadline classes are per-leaf node facts, not op-wide ones
+  (DELTA-Lhc-003.CC1)."
   [operation source]
   [(str "operation: " (:name operation) "  [" (:provenance operation) "]")
-   (str (indent 1) "hook-class:   " (:hook-class operation)
-        "   deadline: " (:deadline-class operation)
-        "   streaming: " (:stream? operation)
+   (str (indent 1) "streaming: " (:stream? operation)
         "   raw-envelope: " (:raw-envelope operation))
-   (str (indent 1) "source:       " (source-label source))])
+   (str (indent 1) "source:    " (source-label source))])
 
 (defn- glossary-lines
   "Render the referenced-term glossary closure (DELTA-Dtf-002.CC5), or nil when
@@ -1398,27 +1437,27 @@
 ;; --- registration -----------------------------------------------------------
 
 (def ^:private op-registrations
-  "Each shipped op: [op-name arg-spec hook-class handler-symbol op-meta?].
+  "Each shipped op: [op-name arg-spec handler-symbol op-meta?].
 
   The optional trailing `op-meta` map carries extra registration metadata merged
   over the derived defaults — today the `:about`/`:prime` prose (DELTA-Dtf-002.CC4)
-  a few ops declare."
-  [['add add-arg-spec :mutating 'skein.spools.batteries/add-op add-meta]
-   ['update update-arg-spec :mutating 'skein.spools.batteries/update-op]
-   ['show show-arg-spec :read 'skein.spools.batteries/show-op]
-   ['supersede supersede-arg-spec :mutating 'skein.spools.batteries/supersede-op]
-   ['burn burn-arg-spec :mutating 'skein.spools.batteries/burn-op]
-   ['list list-arg-spec :read 'skein.spools.batteries/list-op]
-   ['ready ready-arg-spec :read 'skein.spools.batteries/ready-op]
-   ['subgraph subgraph-arg-spec :read 'skein.spools.batteries/subgraph-op]
-   ['weave weave-arg-spec :mutating 'skein.spools.batteries/weave-op weave-meta]
-   ['query query-arg-spec :read 'skein.spools.batteries/query-op]
-   ['pattern pattern-arg-spec :read 'skein.spools.batteries/pattern-op]
-   ['note note-arg-spec :mutating 'skein.spools.batteries/note-op]
-   ['notes notes-arg-spec :read 'skein.spools.batteries/notes-op]
-   ['vocab vocab-arg-spec :read 'skein.spools.batteries/vocab-op]
-   ['spool spool-arg-spec :mutating 'skein.spools.batteries/spool-op]
-   ['spool-status spool-status-arg-spec :read 'skein.spools.batteries/spool-status-op]])
+  a few ops declare. Every row carries its classes single-source on arg-spec
+  leaves (DELTA-Lhc-002.CC1)."
+  [['add add-arg-spec 'skein.spools.batteries/add-op add-meta]
+   ['update update-arg-spec 'skein.spools.batteries/update-op]
+   ['show show-arg-spec 'skein.spools.batteries/show-op]
+   ['supersede supersede-arg-spec 'skein.spools.batteries/supersede-op]
+   ['burn burn-arg-spec 'skein.spools.batteries/burn-op]
+   ['list list-arg-spec 'skein.spools.batteries/list-op]
+   ['ready ready-arg-spec 'skein.spools.batteries/ready-op]
+   ['subgraph subgraph-arg-spec 'skein.spools.batteries/subgraph-op]
+   ['weave weave-arg-spec 'skein.spools.batteries/weave-op weave-meta]
+   ['query query-arg-spec 'skein.spools.batteries/query-op]
+   ['pattern pattern-arg-spec 'skein.spools.batteries/pattern-op]
+   ['note note-arg-spec 'skein.spools.batteries/note-op]
+   ['notes notes-arg-spec 'skein.spools.batteries/notes-op]
+   ['vocab vocab-arg-spec 'skein.spools.batteries/vocab-op]
+   ['spool spool-arg-spec 'skein.spools.batteries/spool-op]])
 
 (defn install!
   "Register the batteries core strand ops into a weaver runtime.
@@ -1438,12 +1477,11 @@
      (glossary/register-glossary-outcome! rt (assoc outcome :owner 'skein.spools.batteries)))
    {:installed true
     :namespace 'skein.spools.batteries
-    :ops (mapv (fn [[op-name arg-spec hook-class handler op-meta]]
+    :ops (mapv (fn [[op-name arg-spec handler op-meta]]
                  (weaver/register-op! rt op-name
                                       (merge {:doc (:doc arg-spec)
                                               :arg-spec arg-spec
-                                              :returns (get op-returns op-name)
-                                              :hook-class hook-class}
+                                              :returns (get op-returns op-name)}
                                              op-meta)
                                       handler))
                op-registrations)}))
@@ -1454,21 +1492,17 @@
   A blessed spool may not reach the weaver's internal op-entry plumbing
   (SPEC-003.C19a), so this mirrors the assembly the eager `register-op!` path
   performs (a peer of `skein.macros.ops/declaration-entry`): a string `:name`,
-  the handler `:fn`, provenance, and stream/deadline/hook defaults, keyed by the
+  the handler `:fn`, provenance, and authored arg-spec node metadata, keyed by the
   canonical string op name so the effective registry stays string-keyed."
-  [op-name arg-spec hook-class handler op-meta]
+  [op-name arg-spec handler op-meta]
   (let [opts (merge {:doc (:doc arg-spec)
                      :arg-spec arg-spec
-                     :returns (get op-returns op-name)
-                     :hook-class hook-class}
-                    op-meta)
-        stream? (boolean (:stream? opts))]
+                     :returns (get op-returns op-name)}
+                    op-meta)]
     (cond-> {:name (name op-name)
              :fn handler
-             :stream? stream?
-             :deadline-class (or (:deadline-class opts) (if stream? :unbounded :standard))
-             :hook-class (or (:hook-class opts) :mutating)
              :provenance (symbol (namespace handler))}
+      (:stream? opts) (assoc :stream? true)
       (:doc opts) (assoc :doc (:doc opts))
       (some? (:arg-spec opts)) (assoc :arg-spec (:arg-spec opts))
       (contains? opts :returns) (assoc :returns (:returns opts))
@@ -1482,17 +1516,16 @@
   The classpath spool remains explicitly required by workspace startup; this
   function only supplies its declarative operation partition. Each entry is
   assembled into the canonical `::op-entry` shape (string key, `:name`, `:fn`,
-  provenance, deadline/hook class) exactly as `register-op!` would, so the module
+  provenance, and arg-spec node metadata) exactly as `register-op!` would, so the module
   publication path is equivalent to direct registration. Batteries ships no
   `help` op of its own — the built-in help op stays effective and batteries
   elects only the reference help transform (DELTA-Dtf-002.D1) — so the partition
   declares no overrides over the lower defaults layer."
   [_ctx]
   {:ops {:entries (into {}
-                        (map (fn [[op-name arg-spec hook-class handler op-meta]]
+                        (map (fn [[op-name arg-spec handler op-meta]]
                                [(name op-name)
-                                (op-contribution-entry op-name arg-spec hook-class
-                                                       handler op-meta)]))
+                                (op-contribution-entry op-name arg-spec handler op-meta)]))
                         op-registrations)}})
 
 (defn reconcile

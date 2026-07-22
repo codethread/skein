@@ -40,9 +40,7 @@ declare its module:
    :reconcile 'skein.spools.batteries/reconcile})
 ```
 
-The contribution owns every op below plus its glossary outcomes. Each op carries
-`{:doc … :arg-spec … :returns … :hook-class …}` metadata; owner-complete refresh replaces the
-whole batteries partition atomically.
+The contribution owns every op below plus its glossary outcomes. Each op carries `{:doc … :arg-spec … :returns …}` metadata; its invocable `:arg-spec` leaves carry `:hook-class` and `:deadline-class`. Owner-complete refresh replaces the whole batteries partition atomically.
 
 ## 2. Invocation and payloads
 
@@ -64,10 +62,7 @@ whole batteries partition atomically.
   - `weave --input :stdin` replaces reading raw stdin for `weave`.
 Loud rules (SPEC-003-D003.C2): a reference naming no attached payload fails `:missing-payload`; an
 attached payload that no reference consumed fails `:unused-payloads`.
-- **BAT-C3 (hook classes):** Each op declares a `:hook-class` used for
-  metadata-driven gating (SPEC-004-D003): `:mutating` for `add`, `update`,
-  `supersede`, `burn`, `note`, `weave`, `spool`; `:read` for `show`, `list`,
-  `ready`, `notes`, `subgraph`, `query`, `pattern`, `vocab`, `spool-status`.
+- **BAT-C3 (hook classes):** Each invocable arg-spec leaf declares `:hook-class` and `:deadline-class` for metadata-driven gating (SPEC-004-D003). The mutating leaves are `add`, `update`, `supersede`, `burn`, `note`, `weave`, and `spool add`/`spool bump`; the read leaves are `show`, `list`, `ready`, `notes`, `subgraph`, every `query` and `pattern` verb, `vocab`, and `spool about`/`spool status`. All batteries leaves use `:deadline-class :standard`.
   Mutating ops pass a request context
   `{:request/source :json-socket :request/operation <op-kw>}` so hooks and
   events observe the same data the old socket dispatch supplied.
@@ -298,20 +293,12 @@ rows carry `kind`, `name`, `owner`, `doc`, and an advisory `keys` list. Edge row
 strand spool about
 strand spool add <git-url> [--tag vN] [--lib family]
 strand spool bump <family> [--to vN]
-strand spool-status
+strand spool status
 ```
 
-`spool about` returns the command forms and conventions as data. `spool add` and `spool bump` are
-mutating subcommands under one op. The offline projection is the separate read op `spool-status`,
-so read hooks do not inherit mutation gating: an op's hook class covers every subcommand, so a
-`status` subcommand under the mutating `spool` op would be mutation-gated despite touching
-nothing. The split mirrors `kanban`/`kanban-export`; if per-subcommand hook classes ever land in
-the op registry, folding `spool-status` back in is an accretion-safe follow-up.
+`spool about` returns the command forms and conventions as data. `spool add` and `spool bump` are mutating leaves, while the offline `spool status` projection is a read leaf. Per-leaf hook classes keep status free of mutation gating.
 
-The public boundary specs are `::spool-op-context`, `::spool-status-op-context`,
-`::spool-about-result`, `::spool-add-result`, `::spool-bump-result`, `::spool-status-result`, and
-`::advisory-manifest` in `skein.spools.batteries`. Closed result and manifest maps also use the named
-`exact-keys?` predicate because `clojure.spec.alpha/keys` accepts extra keys.
+The public boundary specs are `::spool-op-context`, `::spool-about-result`, `::spool-add-result`, `::spool-bump-result`, `::spool-status-result`, and `::advisory-manifest` in `skein.spools.batteries`. Closed result and manifest maps also use the named `exact-keys?` predicate because `clojure.spec.alpha/keys` accepts extra keys.
 
 Add lists the remote tags and accepts annotated `vN` tags only, where `N` is a positive integer.
 It resolves the peeled `refs/tags/vN^{}` commit and records that 40-character commit sha, never the
@@ -334,11 +321,7 @@ before the compare path is added. Other HTTP(S) remotes keep their transport URL
 `.git`. An unrecognized non-HTTP(S) remote produces a nil `compare-url`, because batteries cannot
 infer a usable web URL. The hint does not claim that the compared releases are compatible.
 
-`spool-status` performs no Git call, file write, refresh, or adoption action. It
-joins the declared family projection with local-overlay provenance and claims,
-root outcomes, module declarations, pending generation, requirement outcome,
-and release marker. The result reports current truth; it does not try to repair
-or adopt anything.
+`spool status` performs no Git call, file write, refresh, or adoption action. It joins the declared family projection with local-overlay provenance and claims, root outcomes, module declarations, pending generation, requirement outcome, and release marker. The result reports current truth; it does not try to repair or adopt anything.
 
 ### 3.4 Discovery — help, about, prime — BAT-C25
 

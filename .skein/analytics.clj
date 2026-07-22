@@ -135,6 +135,8 @@
   Pure data by design — no formatting, no rounding — so one payload serves a
   rich doc, a CSV, or an in-chat summary. Fails loudly on an unknown root."
   {:returns feature-costs-return :arg-spec {:op "feature-costs"
+                                            :hook-class :read
+                                            :deadline-class :standard
                                             :doc "Show the agent-run cost and usage rollup beneath a work root."
                                             :positionals [{:name :root-id
                                                            :type :string

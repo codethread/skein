@@ -12,6 +12,7 @@
   (:require [clojure.data.json :as json]
             [clojure.string :as str]
             [clojure.java.io :as io]
+            [skein.api.cli.alpha :as cli]
             [skein.core.db :as db]
             [skein.core.weaver.help :as help]
             [skein.core.weaver.protocol :as protocol])
@@ -178,14 +179,32 @@
     (contains? args "git_common_dir") (assoc :git-common-dir (get args "git_common_dir"))
     (contains? args "timeout") (assoc :timeout (get args "timeout"))))
 
+(defn- invoked-leaf-classes
+  "Resolve the invoked leaf's hook/deadline classes for one invoke
+  (DELTA-Lhc-002.CC3/CC4).
+
+  Walks the envelope argv's routing tokens through the op's arg-spec to the
+  invoked leaf. A missing or unknown
+  verb token at any depth throws loudly here — before any hook runs, the same
+  pre-hook policy as an unknown op name — carrying the canonical
+  `:op`/`:path`/`:token`/`:available` context. Flat ops resolve their own root
+  leaf; raw-envelope ops (no arg-spec) gate on the entry classes."
+  [entry argv]
+  (if-let [arg-spec (:arg-spec entry)]
+    (select-keys (:node (cli/resolve-leaf arg-spec argv))
+                 [:hook-class :deadline-class])
+    (select-keys entry [:hook-class :deadline-class])))
+
 (defn- run-payload-hooks-if-mutating!
   "Gate a mutating invoke behind `:payload/received` hooks (SPEC-004-D003.C4).
 
-  Read-class ops skip payload hooks. The hook context carries the decoded
-  envelope as `:request/args` plus the canonical op name; hooks may reject but
-  not transform, so a throw here surfaces as a domain error before dispatch."
-  [runtime entry request-id args options]
-  (when (= :mutating (:hook-class entry))
+  `hook-class` is the invoked leaf's resolved class (DELTA-Lhc-002.CC3):
+  `:read` leaves skip payload hooks, `:mutating` leaves run them. The hook
+  context carries the decoded envelope as `:request/args` plus the canonical op
+  name; hooks may reject but not transform, so a throw here surfaces as a
+  domain error before dispatch."
+  [runtime entry hook-class request-id args options]
+  (when (= :mutating hook-class)
     ((requiring-resolve 'skein.core.weaver.lifecycle/run-payload-received-hooks!)
      runtime {:request/source :json-socket
               :request/operation :invoke
@@ -197,11 +216,12 @@
 (defn- effective-deadline-ms
   "Effective deadline for a single-result invoke (SPEC-004-D003.C5).
 
-  Envelope `timeout` overrides the op's deadline class; `:unbounded` yields nil."
-  [entry envelope]
+  `deadline-class` is the invoked leaf's resolved class (DELTA-Lhc-002.CC4).
+  Envelope `timeout` overrides it; `:unbounded` yields nil."
+  [deadline-class envelope]
   (cond
     (contains? envelope :timeout) (:timeout envelope)
-    (= :unbounded (:deadline-class entry)) nil
+    (= :unbounded deadline-class) nil
     :else default-standard-deadline-ms))
 
 (defn- invoke-op! [runtime op-name argv envelope]
@@ -245,15 +265,17 @@
 (defn- handle-stream-invoke!
   "Serve a `:stream? true` op: header frame, emitted NDJSON lines, terminator.
 
-  Payload gating runs before the header; a hook rejection yields a single error
-  frame (no header). Once the header is written the op's own failure becomes an
-  error terminator. Stream ops run unbounded on the connection thread; the
-  handler's `:op/emit!` writes one flushed line per value and its return value
-  becomes the success terminator payload (SPEC-004-D003.C2)."
-  [runtime request-id args entry envelope write-frame!]
+  Payload gating by the invoked leaf's `hook-class` runs before the header; a
+  hook rejection yields a single error frame (no header). Once the header is
+  written the op's own failure becomes an error terminator. Stream ops run
+  unbounded on the connection thread; the handler's `:op/emit!` writes one
+  flushed line per value and its return value becomes the success terminator
+  payload (SPEC-004-D003.C2)."
+  [runtime request-id args entry classes envelope write-frame!]
   (let [op-name (:name entry)
         hook-error (try
-                     (run-payload-hooks-if-mutating! runtime entry request-id args {})
+                     (run-payload-hooks-if-mutating! runtime entry (:hook-class classes)
+                                                     request-id args {})
                      nil
                      (catch Exception e (error-frame request-id e)))]
     (if hook-error
@@ -270,20 +292,23 @@
                                              (get (error-frame request-id e) "error")))))))))
 
 (defn- handle-single-invoke!
-  "Serve a single-result op: gate, dispatch under the effective deadline, and
-  write exactly one response frame."
-  [runtime request-id args entry envelope write-frame!]
+  "Serve a single-result op: gate by the invoked leaf's hook class, dispatch
+  under the leaf's effective deadline, and write exactly one response frame."
+  [runtime request-id args entry classes envelope write-frame!]
   (write-frame!
    (try
-     (run-payload-hooks-if-mutating! runtime entry request-id args {})
+     (run-payload-hooks-if-mutating! runtime entry (:hook-class classes)
+                                     request-id args {})
      (success request-id
               (invoke-with-deadline runtime (:name entry) (get args "argv")
-                                    envelope (effective-deadline-ms entry envelope)))
+                                    envelope (effective-deadline-ms
+                                              (:deadline-class classes) envelope)))
      (catch Exception e (error-frame request-id e)))))
 
 (defn- handle-invoke!
-  "Dispatch an invoke request. Unknown ops fail loudly before any hook or
-  dispatch (SPEC-004-D003.C4), carrying the registry's available names."
+  "Dispatch an invoke request. Unknown ops — and unresolvable verb tokens of a
+  subcommand op (DELTA-Lhc-002.CC3) — fail loudly before any hook or dispatch
+  (SPEC-004-D003.C4), carrying the available names."
   [runtime request-id args write-frame!]
   (let [op-name (get args "name")
         entry (try {:ok ((api 'resolve-op) runtime (symbol op-name))}
@@ -296,12 +321,21 @@
             ;; hook gating; a retired-sugar or malformed shape redirects loudly
             ;; here (DELTA-Dtf-002.CC3) rather than reaching the handler.
             alias (try {:result (help/help-alias-result runtime entry (get args "argv") envelope)}
-                       (catch Exception e {:error (error-frame request-id e)}))]
+                       (catch Exception e {:error (error-frame request-id e)}))
+            ;; The leaf walk resolves the gating/deadline classes pre-hook; an
+            ;; unresolvable verb fails here, after the alias check so `--help`
+            ;; shapes never reach the walk.
+            classes (when-not (or (:error alias) (some? (:result alias)))
+                      (try {:ok (invoked-leaf-classes entry (get args "argv"))}
+                           (catch Exception e {:error (error-frame request-id e)})))]
         (cond
           (:error alias) (write-frame! (:error alias))
           (some? (:result alias)) (write-frame! (success request-id (:result alias)))
-          (:stream? entry) (handle-stream-invoke! runtime request-id args entry envelope write-frame!)
-          :else (handle-single-invoke! runtime request-id args entry envelope write-frame!))))))
+          (:error classes) (write-frame! (:error classes))
+          (:stream? entry) (handle-stream-invoke! runtime request-id args entry
+                                                  (:ok classes) envelope write-frame!)
+          :else (handle-single-invoke! runtime request-id args entry
+                                       (:ok classes) envelope write-frame!))))))
 
 (defn handle-request!
   "Handle one newline-delimited JSON protocol request, writing one or more

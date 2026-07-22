@@ -50,6 +50,24 @@
 ;; A runtime is an opaque, non-nil handle; callers select it and pass it first.
 (s/def ::runtime some?)
 
+(s/def ::op-name
+  (s/and #(or (symbol? %) (keyword? %)) #(nil? (namespace %))))
+(s/def ::doc (s/and string? (complement str/blank?)))
+(s/def ::arg-spec map?)
+(s/def ::returns any?)
+(s/def ::stream? boolean?)
+(s/def ::deadline-class op-entry/op-deadline-classes)
+(s/def ::hook-class op-entry/op-hook-classes)
+(s/def ::about (s/and string? (complement str/blank?)))
+(s/def ::prime (s/and string? (complement str/blank?)))
+(s/def ::annotations map?)
+(s/def ::op-metadata-map
+  (s/and (s/keys :opt-un [::doc ::arg-spec ::returns ::stream? ::deadline-class
+                          ::hook-class ::about ::prime ::annotations])
+         #(every? op-entry/op-metadata-keys (keys %))))
+(s/def ::op-metadata
+  (s/nilable (s/or :legacy-doc ::doc :metadata ::op-metadata-map)))
+
 ;; --- schema init ------------------------------------------------------------
 
 (defn init
@@ -376,10 +394,12 @@
   The third positional argument is either a doc string or an op metadata map
   with keys `:doc`, `:arg-spec` (parser spec, structurally validated at
   registration), `:returns` (validated return-shape declaration), `:stream?`
-  (default false), `:deadline-class` (`:standard`/`:unbounded`, defaulting to
-  `:unbounded` for stream ops), and `:hook-class` (`:read`/`:mutating`, default
-  `:mutating`); unknown keys fail loudly. Provenance (the registering namespace)
-  is recorded from the handler symbol and must never be caller-supplied.
+  (default false), `:deadline-class` (`:standard`/`:unbounded`), and
+  `:hook-class` (`:read`/`:mutating`); unknown keys fail loudly. Arg-spec ops
+  declare both classes on every leaf and may not declare them in this metadata
+  map. Raw-envelope ops declare both classes here. Provenance (the registering
+  namespace) is recorded from the handler symbol and must never be
+  caller-supplied.
 
   Registering an already-registered name fails loudly, naming both the existing
   entry's provenance and the attempted registrant; use `replace-op!` to override
@@ -403,11 +423,11 @@
      entry)))
 
 (s/fdef register-op!
-  :args (s/or :default (s/cat :runtime ::runtime :op-name any? :fn-sym symbol?)
-              :with-opts (s/cat :runtime ::runtime :op-name any?
-                                :opts any? :fn-sym symbol?)
-              :owned (s/cat :runtime ::runtime :owner keyword? :op-name any?
-                            :opts any? :fn-sym symbol?))
+  :args (s/or :default (s/cat :runtime ::runtime :op-name ::op-name :fn-sym symbol?)
+              :with-opts (s/cat :runtime ::runtime :op-name ::op-name
+                                :opts ::op-metadata :fn-sym symbol?)
+              :owned (s/cat :runtime ::runtime :owner keyword? :op-name ::op-name
+                            :opts ::op-metadata :fn-sym symbol?))
   :ret map?)
 
 (defn replace-op!
@@ -430,17 +450,52 @@
      entry)))
 
 (s/fdef replace-op!
-  :args (s/or :default (s/cat :runtime ::runtime :op-name any? :fn-sym symbol?)
-              :with-opts (s/cat :runtime ::runtime :op-name any?
-                                :opts any? :fn-sym symbol?)
-              :owned (s/cat :runtime ::runtime :owner keyword? :op-name any?
-                            :opts any? :fn-sym symbol?))
+  :args (s/or :default (s/cat :runtime ::runtime :op-name ::op-name :fn-sym symbol?)
+              :with-opts (s/cat :runtime ::runtime :op-name ::op-name
+                                :opts ::op-metadata :fn-sym symbol?)
+              :owned (s/cat :runtime ::runtime :owner keyword? :op-name ::op-name
+                            :opts ::op-metadata :fn-sym symbol?))
   :ret map?)
 
 (defn ops
   "Return registered CLI operation entries for the current weaver runtime."
   [runtime]
   (mapv val (sort-by key (op-registry runtime))))
+
+(defn ^:no-doc validate-op-entry!
+  "Validate one assembled registry `entry`, returning its canonical form.
+
+  This is the publication-side entrance to the same op-entry validator direct
+  registration uses (DELTA-Lhc-002.CC2). It validates the closed entry shape,
+  provenance, arg-spec structure and leaf classes, stream deadlines, and
+  returns alignment; glossary references are generation-order dependent and
+  are checked separately by `validate-op-glossary-refs!`."
+  [entry]
+  (when-not (map? entry)
+    (throw (ex-info "Operation registry entry must be a map" {:entry entry})))
+  (let [entry-keys (into #{:name :fn :provenance} op-entry/op-metadata-keys)
+        unknown (seq (remove entry-keys (keys entry)))
+        missing (seq (remove #(contains? entry %) [:name :fn :provenance]))]
+    (when unknown
+      (throw (ex-info "Operation registry entry contains unknown keys"
+                      {:keys (vec unknown) :entry entry})))
+    (when missing
+      (throw (ex-info "Operation registry entry is missing required keys"
+                      {:keys (vec missing) :entry entry})))
+    (let [opts (select-keys entry op-entry/op-metadata-keys)
+          canonical (validated-op-entry (symbol (:name entry)) opts (:fn entry))]
+      (when-not (= (:provenance canonical) (:provenance entry))
+        (throw (ex-info "Operation registry entry provenance does not match its handler"
+                        {:operation (:name canonical)
+                         :provenance (:provenance entry)
+                         :expected-provenance (:provenance canonical)})))
+      canonical)))
+
+(defn ^:no-doc validate-op-glossary-refs!
+  "Require every glossary reference in assembled registry `entry` to resolve."
+  [runtime entry]
+  (check-op-glossary-refs! runtime entry)
+  entry)
 
 (s/fdef ops
   :args (s/cat :runtime ::runtime)
@@ -502,7 +557,7 @@
   `<op> help`/`about`/`prime` sugar and malformed `--help` shapes redirect loudly
   (DELTA-Dtf-002.CC3). Subcommand map results receive a
   canonical `:operation` label containing the registered op name and full
-  resolved path, including a nested `:action`. A handler-supplied `:operation`
+  resolved subcommand path. A handler-supplied `:operation`
   equal to the derived label is preserved; any other value, including explicit
   nil, fails loudly with the expected and actual labels. Raw-envelope ops (no
   `:arg-spec`) receive the context unchanged, still carrying the raw
@@ -639,6 +694,9 @@
       (op-entry/validate-op-doc! (:doc opts)))
     (when (some? (:arg-spec opts))
       (validate-op-arg-spec! op-name (:arg-spec opts)))
+    (op-entry/validate-op-classes! op-name opts)
+    (when (some? (:arg-spec opts))
+      (op-entry/validate-stream-leaf-deadlines! op-name stream? (:arg-spec opts)))
     (when (contains? opts :annotations)
       (validate-op-annotations! op-name (:annotations opts)))
     (when (contains? opts :returns)
@@ -672,11 +730,12 @@
 
 (defn- arg-spec-failure-modes
   "Return every `failure-modes` outcome name referenced across `arg-spec`'s
-  annotation sub-maps — the flat/root node plus each declared subcommand's node."
+  annotation sub-maps, walking the fractal node tree to every depth
+  (DELTA-Lhc-001.CC5)."
   [arg-spec]
   (when (map? arg-spec)
     (into (vec (get-in arg-spec [:annotations :failure-modes]))
-          (mapcat (fn [[_ nested]] (get-in nested [:annotations :failure-modes])))
+          (mapcat (fn [[_ nested]] (arg-spec-failure-modes nested)))
           (:subcommands arg-spec))))
 
 (defn- entry-failure-modes
@@ -711,7 +770,9 @@
 ;; -- op dispatch helpers --
 
 (defn- operation-label
-  "Return the canonical label for a parsed subcommand invocation."
+  "Return the canonical label for a parsed subcommand invocation.
+
+  The registered op name and the full `:subcommand` path vector joined with
+  spaces (DELTA-Lhc-002.CC5)."
   [op-name parsed-args]
-  (str/join " " (cond-> [op-name (:subcommand parsed-args)]
-                  (contains? parsed-args :action) (conj (:action parsed-args)))))
+  (str/join " " (into [op-name] (:subcommand parsed-args))))

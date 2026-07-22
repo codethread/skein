@@ -723,8 +723,9 @@
 (defn land-op
   "Dispatch parsed `strand land ...` subcommands over the land workflow."
   [ctx]
-  (let [{:keys [subcommand feature choice tail] :as args} (:op/args ctx)]
-    (condp = subcommand
+  (let [{:keys [subcommand feature choice tail] :as args} (:op/args ctx)
+        verb (first subcommand)]
+    (condp = verb
       "about" (land-about)
       "start" (land-result feature
                            (merge {:feature feature}
@@ -803,12 +804,14 @@
 
 (def ^:private land-arg-spec
   "Declared command surface for the `land` op (one level of subcommands; the
-  handler dispatches on the routed `:subcommand`, never a hand-written usage)."
+  handler dispatches on the first routed subcommand, never a hand-written usage)."
   {:op "land"
    :doc "Drive the coordinator landing workflow for a feature branch. Run `strand land about` for the discipline manual."
    :subcommands
-   {"about" {:doc "Return the landing discipline manual: purpose, step map, and coordinator-only note."}
+   {"about" {:doc "Return the landing discipline manual: purpose, step map, and coordinator-only note."
+             :hook-class :read :deadline-class :standard}
     "start" {:doc "Pour and start the land run for a feature branch."
+             :hook-class :mutating :deadline-class :standard
              :flags {:branch {:required? true
                               :doc "Feature branch to land."}
                      :worktree {:required? true
@@ -818,10 +821,12 @@
                             :required? true
                             :doc "Feature/branch slug; the land run id."}]}
     "next" {:doc "Show ready land step views, including checkpoint choice input details."
+            :hook-class :read :deadline-class :standard
             :positionals [{:name :feature
                            :required? true
                            :doc "Land run id (feature/branch slug)."}]}
     "complete" {:doc "Close a land step; checkpoint results include choice input details."
+                :hook-class :mutating :deadline-class :standard
                 :positionals [{:name :feature
                                :required? true
                                :doc "Land run id."}
@@ -829,6 +834,7 @@
                                :variadic? true
                                :doc "Optional notes and a trailing step=<id> selector."}]}
     "choose" {:doc "Decide sign-off: approved requires a squash subject/body; abort requires a reason."
+              :hook-class :mutating :deadline-class :standard
               :positionals [{:name :feature
                              :required? true
                              :doc "Land run id."}
@@ -843,10 +849,12 @@
                                     |requires {\"reason\":\"...\"}. A trailing
                                     |step=<id> selector is optional.")}]}
     "status" {:doc "Show land state and ready steps, including checkpoint choice input details."
+              :hook-class :read :deadline-class :standard
               :positionals [{:name :feature
                              :required? true
                              :doc "Land run id."}]}
     "break-lock" {:doc "Explicitly break a stale merge lock with a reason."
+                  :hook-class :mutating :deadline-class :standard
                   :positionals [{:name :tail
                                  :required? true
                                  :variadic? true
@@ -1140,8 +1148,9 @@
   need no op of their own."
   [ctx]
   (let [{:keys [subcommand run-id workflow choice tail] :as _args} (:op/args ctx)
-        op-result (fn [m] (assoc m :operation (str "flow " subcommand)))]
-    (condp = subcommand
+        verb (first subcommand)
+        op-result (fn [m] (assoc m :operation (str "flow " verb)))]
+    (condp = verb
       "start" (let [raw-params (first tail)
                     _ (when (> (count tail) 1)
                         (throw (ex-info "flow start accepts at most one JSON params argument"
@@ -1204,6 +1213,7 @@
    :doc "Drive any registered workflow: start by name, then next/complete/choose/status by run-id."
    :subcommands
    {"start" {:doc "Pour and start a registered workflow for a run-id with JSON params."
+             :hook-class :mutating :deadline-class :standard
              :flags {:workflow {:required? true
                                 :doc "Registered workflow name (e.g. story)."}}
              :positionals [{:name :run-id
@@ -1213,19 +1223,23 @@
                             :variadic? true
                             :doc "One JSON object of workflow params."}]}
     "next" {:doc "Show ready step views and done state for a run."
+            :hook-class :read :deadline-class :standard
             :positionals [{:name :run-id :required? true :doc "Workflow run id."}]}
     "complete" {:doc "Close the current non-checkpoint step of a run."
+                :hook-class :mutating :deadline-class :standard
                 :positionals [{:name :run-id :required? true :doc "Workflow run id."}
                               {:name :tail
                                :variadic? true
                                :doc "Optional notes and a trailing step=<id> selector."}]}
     "choose" {:doc "Record a checkpoint choice on a run."
+              :hook-class :mutating :deadline-class :standard
               :positionals [{:name :run-id :required? true :doc "Workflow run id."}
                             {:name :choice :required? true :doc "Checkpoint choice key."}
                             {:name :tail
                              :variadic? true
                              :doc "Optional JSON input and a trailing step=<id> selector."}]}
     "status" {:doc "Show run state, ready steps, and history."
+              :hook-class :read :deadline-class :standard
               :positionals [{:name :run-id :required? true :doc "Workflow run id."}]}}})
 
 (def ^:private flow-returns
@@ -1253,8 +1267,6 @@
   {:ops {"land" {:name "land"
                  :fn 'workflows/land-op
                  :stream? false
-                 :deadline-class :standard
-                 :hook-class :mutating
                  :provenance 'workflows
                  :doc (:doc land-arg-spec)
                  :arg-spec land-arg-spec
@@ -1262,8 +1274,6 @@
          "flow" {:name "flow"
                  :fn 'workflows/flow-op
                  :stream? false
-                 :deadline-class :standard
-                 :hook-class :mutating
                  :provenance 'workflows
                  :doc (:doc flow-arg-spec)
                  :arg-spec flow-arg-spec

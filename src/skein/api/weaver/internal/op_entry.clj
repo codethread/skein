@@ -4,7 +4,7 @@
   Plumbing behind `skein.api.weaver.alpha`'s `register-op!`/`replace-op!`: it
   normalizes the metadata argument, validates the structural fields, checks
   returns/arg-spec routing alignment, and assembles the registry entry with
-  derived provenance and metadata defaults. These are plain public defns on an
+  derived provenance and explicit leaf classes. These are plain public defns on an
   internal tier (SPEC-005.C5b); the alpha module composes them into its
   registration story and owns the reaches into the `skein.api.cli.alpha` and
   `skein.api.return-shape.alpha` contracts (an internal namespace never
@@ -104,6 +104,47 @@
                     {:annotations (:annotations opts)})))
   opts)
 
+(defn validate-op-classes!
+  "Require one canonical class source for `op-name`, returning `opts`.
+
+  Arg-spec operations declare both classes on every leaf and never in
+  registration metadata. Raw-envelope operations declare both classes in
+  registration metadata. Node-level failures carry the canonical routing
+  context (DELTA-Lhc-001.CC2/CC3, DELTA-Lhc-002.CC1)."
+  [op-name opts]
+  (let [op (canonical-op-name op-name)
+        context (fn [path extra]
+                  (merge {:operation op :op op :path path
+                          :token nil :available []}
+                         extra))]
+    (if-let [arg-spec (:arg-spec opts)]
+      (do
+        (when-let [classes (seq (filter #(contains? opts %)
+                                        [:hook-class :deadline-class]))]
+          (throw (ex-info
+                  "Arg-spec operation classes belong on leaves, not registration metadata"
+                  (context [] {:fields (vec classes)}))))
+        (letfn [(walk! [node path]
+                  (if-let [subcommands (:subcommands node)]
+                    (doseq [[subcommand child] subcommands]
+                      (walk! child (conj path subcommand)))
+                    (doseq [key [:hook-class :deadline-class]]
+                      (when-not (contains? node key)
+                        (throw (ex-info (str "Operation leaf requires " key)
+                                        (context path {:field key})))))))]
+          (walk! arg-spec [])))
+      (do
+        (doseq [key [:hook-class :deadline-class]]
+          (when-not (contains? opts key)
+            (throw (ex-info (str "Raw-envelope operation requires " key)
+                            (context [] {:field key})))))
+        (when (and (:stream? opts) (not= :unbounded (:deadline-class opts)))
+          (throw (ex-info
+                  "Stream operation leaves must declare :deadline-class :unbounded"
+                  (context [] {:reason :stream-leaf-deadline
+                               :deadline-class (:deadline-class opts)}))))))
+    opts))
+
 (defn invalid-returns!
   "Throw a canonicalized `:returns` validation error for `op-name`."
   [op-name reason message data]
@@ -126,62 +167,92 @@
                       "Operation :returns does not align with :stream?"
                       (assoc context :stream? stream? :returns return-case))))
 
-(defn validate-returns-alignment!
-  "Require the `returns` declaration's routing to align with the op, returning it.
-
-  Checks that `:subcommands` routing matches the arg-spec's subcommands exactly
-  and that each case's stream marker aligns with `stream?`. Purely structural:
-  the return-shape contract itself is validated in alpha, which owns the reach
-  into `skein.api.return-shape.alpha`."
-  [op-name arg-spec stream? returns]
-  (let [arg-subcommands (:subcommands arg-spec)
-        return-subcommands (when (and (map? returns) (contains? returns :subcommands))
-                             (:subcommands returns))]
+(defn- align-returns-node!
+  "Recursively align one arg-spec node with its return node at `path`."
+  [op-name stream? arg-node return-node path]
+  (let [arg-subcommands (:subcommands arg-node)
+        return-subcommands (when (and (map? return-node)
+                                      (contains? return-node :subcommands))
+                             (:subcommands return-node))]
     (if arg-subcommands
       (do
         (when-not return-subcommands
           (invalid-returns! op-name
                             :return-routing-misalignment
                             "Subcommand operation :returns must declare :subcommands"
-                            {:returns returns}))
+                            {:path path :returns return-node}))
         (let [expected (set (keys arg-subcommands))
               actual (set (keys return-subcommands))]
           (when-not (= expected actual)
             (invalid-returns! op-name
                               :return-subcommand-misalignment
                               "Operation :returns subcommands must exactly match :arg-spec"
-                              {:expected-subcommands (vec (sort expected))
+                              {:path path
+                               :expected-subcommands (vec (sort expected))
                                :actual-subcommands (vec (sort actual))})))
-        (doseq [[subcommand return-case] return-subcommands]
-          (validate-return-case-alignment! op-name stream? return-case
-                                           {:subcommand subcommand})))
+        (doseq [[subcommand arg-child] arg-subcommands]
+          (align-returns-node! op-name stream? arg-child
+                               (get return-subcommands subcommand)
+                               (conj path subcommand))))
       (do
         (when return-subcommands
           (invalid-returns! op-name
                             :return-routing-misalignment
-                            "Flat operation :returns cannot declare :subcommands"
-                            {:returns returns}))
-        (validate-return-case-alignment! op-name stream? returns {}))))
+                            "Operation :returns routes :subcommands at an arg-spec leaf"
+                            {:path path :returns return-node}))
+        (validate-return-case-alignment! op-name stream? return-node {:path path})))))
+
+(defn validate-returns-alignment!
+  "Require the `returns` declaration's routing to align with the op, returning it.
+
+  Checks that `:subcommands` routing mirrors the arg-spec's node tree exactly at
+  every depth (DELTA-Lhc-001.CC4) and that each leaf case's stream marker aligns
+  with `stream?`; misalignments carry the node `:path`. Purely structural: the
+  return-shape contract itself is validated in alpha, which owns the reach into
+  `skein.api.return-shape.alpha`."
+  [op-name arg-spec stream? returns]
+  (align-returns-node! op-name stream? arg-spec returns [])
   returns)
+
+(defn validate-stream-leaf-deadlines!
+  "Require every leaf `:deadline-class` of a stream op to be
+  `:unbounded`, returning `arg-spec`.
+
+  Streams stay explicitly unbounded (DELTA-Lhc-001.CC2): a stream-class op's
+  leaf may not opt into a standard deadline."
+  [op-name stream? arg-spec]
+  (when (and stream? (map? arg-spec))
+    (letfn [(walk! [node path]
+              (if-let [subcommands (:subcommands node)]
+                (doseq [[subcommand child] subcommands]
+                  (walk! child (conj path subcommand)))
+                (when (not= :unbounded (:deadline-class node))
+                  (throw (ex-info
+                          "Stream operation leaves must declare :deadline-class :unbounded"
+                          {:operation (canonical-op-name op-name)
+                           :reason :stream-leaf-deadline
+                           :path path
+                           :deadline-class (:deadline-class node)})))))]
+      (walk! arg-spec [])))
+  arg-spec)
 
 (defn assemble
   "Assemble the registry entry for already-validated registration inputs.
 
-  Provenance is derived from the handler symbol's namespace. `:deadline-class`
-  defaults to `:unbounded` for stream ops and `:standard` otherwise;
-  `:hook-class` defaults to `:mutating`, preserving today's hook-gated
-  behavior. Pure assembly: the caller has already validated the metadata map,
+  Provenance is derived from the handler symbol's namespace. Arg-spec leaf
+  classes remain on the arg-spec; raw-envelope classes remain on the entry.
+  Pure assembly: the caller has already validated the metadata map,
   the handler symbol, and any declared doc, arg-spec, and returns."
   [op-name opts fn-sym]
   (let [stream? (boolean (:stream? opts))]
     (cond-> {:name (canonical-op-name op-name)
              :fn fn-sym
              :stream? stream?
-             :deadline-class (or (:deadline-class opts) (if stream? :unbounded :standard))
-             :hook-class (or (:hook-class opts) :mutating)
              :provenance (symbol (namespace fn-sym))}
       (:doc opts) (assoc :doc (:doc opts))
       (some? (:arg-spec opts)) (assoc :arg-spec (:arg-spec opts))
+      (contains? opts :deadline-class) (assoc :deadline-class (:deadline-class opts))
+      (contains? opts :hook-class) (assoc :hook-class (:hook-class opts))
       (contains? opts :returns) (assoc :returns (:returns opts))
       (:about opts) (assoc :about (:about opts))
       (:prime opts) (assoc :prime (:prime opts))

@@ -69,8 +69,11 @@
                                 :overrides #{}})
       (registry/remove-owner! handle declaration-kind declaration-owner))))
 
-(def ^:private register-op-opt-keys #{:doc :input-spec :returns})
+(def ^:private register-op-opt-keys #{:doc :input-spec :returns :hook-class :deadline-class})
 (def ^:private deprecate-opt-keys #{:replacement :since})
+
+(def ^:private hook-classes #{:read :mutating})
+(def ^:private deadline-classes #{:standard :unbounded})
 
 (defn- require-spec-name! [spec-name]
   (when-not (or (keyword? spec-name) (symbol? spec-name))
@@ -109,17 +112,21 @@
 
 (defn- op-arg-spec
   "Return a parser arg-spec for a guild op."
-  [name doc]
+  [name doc hook-class deadline-class]
   {:op (clojure.core/name name)
    :doc doc
    :positionals [{:name :input
                   :type :string
-                  :doc "Optional JSON object input."}]})
+                  :doc "Optional JSON object input."}]
+   :hook-class hook-class
+   :deadline-class deadline-class})
 
 (def ^:private guild-arg-spec
   {:op "guild"
    :doc "Introspect this weaver's guild operation API."
-   :subcommands {"list" {:doc "List this weaver's active and deprecated guild ops."}}})
+   :subcommands {"list" {:doc "List this weaver's active and deprecated guild ops."
+                         :hook-class :read
+                         :deadline-class :standard}}})
 
 (def ^:private guild-returns
   {:subcommands
@@ -143,14 +150,15 @@
   The guild owns its op lifecycle through its own state atoms and (re)declares
   ops as it installs, deprecates, and reloads; the registry's loud-collision
   default is the wrong policy here, so re-declaration is an explicit replace."
-  ([runtime name doc handler-sym returns]
-   (register-or-replace-op! runtime name doc handler-sym (op-arg-spec name doc) returns))
   ([runtime name doc handler-sym arg-spec returns]
    (let [metadata (cond-> {:doc doc :arg-spec arg-spec}
                     (some? returns) (assoc :returns returns))]
      (if (op-registered? runtime name)
        (weaver/replace-op! runtime name metadata handler-sym)
-       (weaver/register-op! runtime name metadata handler-sym)))))
+       (weaver/register-op! runtime name metadata handler-sym))))
+  ([runtime name doc handler-sym returns hook-class deadline-class]
+   (register-or-replace-op! runtime name doc handler-sym
+                            (op-arg-spec name doc hook-class deadline-class) returns)))
 
 (defn dispatch-op
   "Dispatch a guild-declared operation after parsing and validating input."
@@ -175,8 +183,10 @@
   "Register a guild operation in `runtime`'s CLI operation registry.
 
   `name` is a simple unqualified registry handle, conventionally dotted and
-  version-suffixed such as `gate.close.v1`. `opts` supports `:doc`, optional
-  `:input-spec`, and optional `:returns`; unknown options fail loudly.
+  version-suffixed such as `gate.close.v1`. `opts` requires caller-supplied
+  leaf `:hook-class` (`:read` or `:mutating`) and `:deadline-class` (`:standard`
+  or `:unbounded`), plus supports `:doc`, optional `:input-spec`, and optional
+  `:returns`; unknown options fail loudly. Guild supplies no class defaults.
   `:returns` is the shared registry return-shape declaration, not a
   Guild-specific schema. `fn-sym` must be a fully qualified symbol resolving in
   the weaver JVM. The handler receives the usual op context plus parsed JSON
@@ -185,15 +195,22 @@
   (when-not (map? opts)
     (fail! "Guild op opts must be a map" {:opts opts}))
   (spool/reject-unknown-keys! "guild/register-op!" register-op-opt-keys opts)
+  (when-not (hook-classes (:hook-class opts))
+    (fail! "Guild op requires :hook-class :read or :mutating" {:opts opts}))
+  (when-not (deadline-classes (:deadline-class opts))
+    (fail! "Guild op requires :deadline-class :standard or :unbounded" {:opts opts}))
   (when-not (and (symbol? fn-sym) (namespace fn-sym))
     (fail! "Guild op handler must be a fully qualified symbol" {:handler fn-sym}))
   (requiring-resolve fn-sym)
   (when-let [input-spec (:input-spec opts)]
     (require-spec-name! input-spec))
   (let [registered (register-or-replace-op! runtime name (:doc opts)
-                                            'skein.spools.guild/dispatch-op (:returns opts))
+                                            'skein.spools.guild/dispatch-op (:returns opts)
+                                            (:hook-class opts) (:deadline-class opts))
         entry (cond-> {:name (:name registered)
-                       :handler fn-sym}
+                       :handler fn-sym
+                       :hook-class (:hook-class opts)
+                       :deadline-class (:deadline-class opts)}
                 (:doc opts) (assoc :doc (:doc opts))
                 (:input-spec opts) (assoc :input-spec (:input-spec opts))
                 (contains? opts :returns) (assoc :returns (:returns opts)))]
@@ -224,7 +241,8 @@
                   (fail! "Guild op is not registered" {:operation name}))
         deprecated (select-keys opts [:replacement :since])]
     (register-or-replace-op! runtime name (:doc entry)
-                             'skein.spools.guild/deprecated-op (:returns entry))
+                             'skein.spools.guild/deprecated-op (:returns entry)
+                             (:hook-class entry) (:deadline-class entry))
     (swap! (guild-ops runtime) dissoc (:name entry))
     (swap! (deprecated-ops runtime) assoc (:name entry) (assoc deprecated :doc (:doc entry)))
     (publish-declarations! runtime)

@@ -13,12 +13,11 @@
     (cond-> {:name (name op-name)
              :fn fn-sym
              :stream? stream?
-             :deadline-class (or (:deadline-class opts)
-                                 (if stream? :unbounded :standard))
-             :hook-class (or (:hook-class opts) :mutating)
              :provenance (symbol (namespace fn-sym))}
       (:doc opts) (assoc :doc (:doc opts))
       (some? (:arg-spec opts)) (assoc :arg-spec (:arg-spec opts))
+      (contains? opts :deadline-class) (assoc :deadline-class (:deadline-class opts))
+      (contains? opts :hook-class) (assoc :hook-class (:hook-class opts))
       (contains? opts :returns) (assoc :returns (:returns opts)))))
 
 (defmacro defop

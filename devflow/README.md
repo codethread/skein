@@ -12,13 +12,14 @@ Root specs are canonical for shipped behavior:
 
 - [Strand Model](./specs/strand-model.md) — strand records, state lifecycle, burn deletion, JSON attributes, relation semantics, and readiness rules.
 - [CLI Surface](./specs/cli.md) — the op-only public CLI: the `strand` invoke-envelope dispatcher (zero builtin subcommands), the `mill` router/bootstrap/lifecycle surface, and NDJSON single/stream response relay; per-command behavior lives in `spools/batteries.md`.
-- [REPL API](./specs/repl-api.md) — interactive Clojure helper contract, including connected REPL, runtime spool workspace helpers, lifecycle hook helpers, and the `skein.test.alpha` author-side weaver-world test helpers.
-- [Weaver Runtime](./specs/daemon-runtime.md) — local long-lived weaver lifecycle, storage model, metadata, transports, trusted startup config, query registry, runtime spool workspace model, and synchronous lifecycle hooks.
+- [REPL API](./specs/repl-api.md) — interactive Clojure helper contract, including recursive arg-spec and return trees, connected REPL, runtime spool workspace helpers, lifecycle hook helpers, and the `skein.test.alpha` author-side weaver-world test helpers.
+- [Weaver Runtime](./specs/daemon-runtime.md) — local long-lived weaver lifecycle, storage model, leaf-resolved operation metadata and hook gates, transports, trusted startup config, query registry, runtime spool workspace model, and synchronous lifecycle hooks.
 - [Alpha Surface](./specs/alpha-surface.md) — the contract index drawing the line around shipped alpha surface: which tiers are in-contract (root specs, blessed API namespaces, opt-in reference spool docs) and which surface is explicitly internal (mill socket protocol, unenumerated error codes, `skein.core.*`).
 
 ## Active features
 
 - `tz0ki-discovery-tiers` — reworks the discovery surface around one canonical, versioned, fractal help envelope (`help`/`about`/`prime` meta-verbs, a runtime glossary of named failure outcomes, a config-electable default help transform with a `--json` raw floor, and a trailing-`--help` grammar). Contracts promoted into `cli.md` (SPEC-002.C39/C44–C47), `daemon-runtime.md` (SPEC-004.C106–C112), and `repl-api.md` (SPEC-003.C66–C69); awaiting finish/archive.
+- `8wwjk-leaf-hook-class` — promotes mandatory per-leaf hook and deadline classes, recursive arity-N subcommands, recursive return routing, and deep help slicing into the root specs; adoption work remains in the feature tasks.
 
 ## Archived features
 

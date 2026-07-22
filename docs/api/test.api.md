@@ -43,7 +43,7 @@ Move `runtime`'s clock forward by `duration`, then pump clock consumers.
   every registered clock-consumer pump (subsystems that arm real timers off the
   runtime clock, such as the scheduler) runs synchronously so its due-check
   observes the new now before `advance!` returns. Returns the new Instant.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/test/alpha.clj#L510-L524">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/test/alpha.clj#L523-L537">Source</a></sub></p>
 
 ## <a name="skein.test.alpha/await-quiescent!">`await-quiescent!`</a>
 ``` clojure
@@ -73,12 +73,15 @@ Check a captured operation return value against its registered declaration.
   `runtime` is explicit and `operation` resolves through its live op registry.
   The three-argument form checks a flat result. The four-argument form accepts
   a context map with optional `:subcommand` and `:channel` (`:emits` or
-  `:result`) selectors. Returns `value` unchanged on success. Missing or
-  misaligned declarations fail loudly. Shape mismatches carry the canonical
-  operation name, selected declaration, failing path, and actual value.
+  `:result`) selectors; `:subcommand` is the full subcommand path vector
+  (DELTA-Lhc-001.CC7), walked through the declaration's nested `:subcommands`
+  tree (a legacy scalar string is tolerated intra-branch as a one-segment
+  path). Returns `value` unchanged on success. Missing or misaligned
+  declarations fail loudly. Shape mismatches carry the canonical operation
+  name, selected declaration, failing path, and actual value.
 
   This helper only checks an already-captured value; it never invokes an op.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/test/alpha.clj#L143-L166">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/test/alpha.clj#L153-L179">Source</a></sub></p>
 
 ## <a name="skein.test.alpha/declare-module!">`declare-module!`</a>
 ``` clojure
@@ -90,7 +93,7 @@ Declare one stable module in `ctx`'s disposable weaver runtime.
 
   Delegates to `skein.api.runtime.alpha/module!`; see its contract for the
   `opts` grammar and staged/refreshed result shape.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/test/alpha.clj#L384-L390">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/test/alpha.clj#L397-L403">Source</a></sub></p>
 
 ## <a name="skein.test.alpha/manual-clock">`manual-clock`</a>
 ``` clojure
@@ -102,7 +105,7 @@ Return an uninstalled manual Clock beginning at `initial-instant`.
 
   Sleeping advances its time immediately. Once installed with `set-clock!`,
   sleeping also runs that runtime's registered clock pumps synchronously.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/test/alpha.clj#L471-L490">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/test/alpha.clj#L484-L503">Source</a></sub></p>
 
 ## <a name="skein.test.alpha/module-status">`module-status`</a>
 ``` clojure
@@ -113,7 +116,7 @@ Function.
 Return the offline joined module status for `ctx`'s disposable weaver runtime.
 
   Delegates to `skein.api.runtime.alpha/status`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/test/alpha.clj#L407-L412">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/test/alpha.clj#L420-L425">Source</a></sub></p>
 
 ## <a name="skein.test.alpha/plan-modules">`plan-modules`</a>
 ``` clojure
@@ -125,7 +128,7 @@ Function.
 Return the dry-run refresh intentions for `ctx`'s disposable weaver runtime.
 
   Delegates to `skein.api.runtime.alpha/plan`; publishes and reconciles nothing.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/test/alpha.clj#L400-L405">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/test/alpha.clj#L413-L418">Source</a></sub></p>
 
 ## <a name="skein.test.alpha/refresh-modules!">`refresh-modules!`</a>
 ``` clojure
@@ -138,7 +141,7 @@ Refresh `ctx`'s disposable weaver runtime against its declared module graph.
 
   Delegates to `skein.api.runtime.alpha/refresh!`; the no-opts arity refreshes
   the full graph and the `{:only keys}` arity refreshes the named modules.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/test/alpha.clj#L392-L398">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/test/alpha.clj#L405-L411">Source</a></sub></p>
 
 ## <a name="skein.test.alpha/repl!">`repl!`</a>
 ``` clojure
@@ -153,7 +156,7 @@ Evaluate a weaver-routed form against ctx's weaver world and return data.
   with the runtime ambiently bound, so `(skein.api.current.alpha/runtime)`
   resolves to the test weaver. Results must be EDN-readable; weaver-side and
   transport failures throw ExceptionInfo.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/test/alpha.clj#L547-L558">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/test/alpha.clj#L560-L571">Source</a></sub></p>
 
 ## <a name="skein.test.alpha/run-focused!">`run-focused!`</a>
 ``` clojure
@@ -178,7 +181,7 @@ Run the named test namespaces in-process and return the aggregate
   focused run is never a validation gate — the cold focused run is; `run-focused!`
   exists for sub-second iteration only, and returns rather than exits so it is
   safe to call repeatedly inside a long-lived REPL.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/test/alpha.clj#L526-L545">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/test/alpha.clj#L539-L558">Source</a></sub></p>
 
 ## <a name="skein.test.alpha/run-with-weaver-world">`run-with-weaver-world`</a>
 ``` clojure
@@ -199,7 +202,7 @@ Start a disposable weaver world from `opts`, call `f` with its context map,
   The context map exposes orchestration facts only: `:config-dir`,
   `:state-dir`, `:data-dir`, `:db-path` (file storage only), `:storage`,
   `:source`, `:runtime`, `:metadata`, and `:timeout-ms`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/test/alpha.clj#L302-L356">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/test/alpha.clj#L315-L369">Source</a></sub></p>
 
 ## <a name="skein.test.alpha/set-clock!">`set-clock!`</a>
 ``` clojure
@@ -211,7 +214,7 @@ Install `installed-clock` as `runtime`'s Clock.
 
   A manual clock may belong to only one runtime. Replacing one detaches it from
   that runtime so later sleeps on the old clock cannot pump the runtime.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/test/alpha.clj#L492-L508">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/test/alpha.clj#L505-L521">Source</a></sub></p>
 
 ## <a name="skein.test.alpha/spool-checkout-root">`spool-checkout-root`</a>
 ``` clojure
@@ -235,7 +238,7 @@ Resolve the checkout root of a spool from one of its classpath source files.
   The one-argument form resolves `resource-path` with `clojure.java.io/resource`.
   The two-argument form accepts `resource-loader`, a function from resource path
   string to `java.net.URL` or nil, for deterministic tests of this resolver.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/test/alpha.clj#L243-L275">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/test/alpha.clj#L256-L288">Source</a></sub></p>
 
 ## <a name="skein.test.alpha/weaver-world-fixture">`weaver-world-fixture`</a>
 ``` clojure
@@ -245,7 +248,7 @@ Function.
 
 Return a clojure.test fixture that binds *weaver-world* to a fresh
   disposable weaver world context for each wrapped test.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/test/alpha.clj#L367-L374">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/test/alpha.clj#L380-L387">Source</a></sub></p>
 
 ## <a name="skein.test.alpha/with-weaver-world">`with-weaver-world`</a>
 ``` clojure
@@ -258,4 +261,4 @@ Run `body` with `ctx-sym` bound to a disposable weaver world context.
   (with-weaver-world [ctx {:spools-edn {:spools {}}}]
     (is (= [] (repl! ctx '(skein.api.weaver.alpha/list
                            (skein.api.current.alpha/runtime))))))
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/test/alpha.clj#L358-L365">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/test/alpha.clj#L371-L378">Source</a></sub></p>

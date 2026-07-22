@@ -184,7 +184,9 @@
 (deftest call-peer-invoke-and-status-test
   (with-two-runtimes
     (fn [_rt-a rt-b]
-      (weaver/register-op! rt-b 'echo "Echo peer test argv" 'skein.peers-test/peer-test-op)
+      (weaver/register-op! rt-b 'echo {:hook-class :mutating
+                                       :deadline-class :standard}
+                           'skein.peers-test/peer-test-op)
       (let [beta (first (filter #(= "beta" (:name %)) (peers/peers)))
             echoed (peers/call! "beta" "echo" {:argv ["x" "y"]})
             via-symbol (peers/call! "beta" 'echo)
@@ -247,7 +249,10 @@
 (deftest call-peer-stream-response-fails-loudly-test
   (with-two-runtimes
     (fn [_rt-a rt-b]
-      (weaver/register-op! rt-b 'streamer {:stream? true} 'skein.peers-test/peer-stream-op)
+      (weaver/register-op! rt-b 'streamer {:stream? true
+                                           :hook-class :mutating
+                                           :deadline-class :unbounded}
+                           'skein.peers-test/peer-stream-op)
       (try
         (peers/call! "beta" "streamer")
         (is false "expected stream response to fail loudly")

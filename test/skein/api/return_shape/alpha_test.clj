@@ -91,3 +91,77 @@
     (is (thrown-with-msg? clojure.lang.ExceptionInfo
                           #"selected concrete return shape"
                           (return-shape/check! declaration {})))))
+
+;; --- mirror-recursion over nested subcommand trees (DELTA-Lhc-001.CC4) ------
+
+(def deep-returns
+  {:subcommands
+   {"admin" {:subcommands
+             {"caps" {:subcommands
+                      {"show" {:type :map :required {:id :string}}
+                       "grant" {:stream {:emits :string :result :boolean}}}}
+              "audit" {:type :collection :items :string}}}
+    "list" {:type :collection :items :string}}})
+
+(deftest nested-subcommand-trees-validate-explain-and-round-trip
+  (is (= deep-returns (return-shape/validate! deep-returns)))
+  (let [explained (return-shape/explain deep-returns)]
+    (is (= {:type "map" :required {"id" "string"} :optional {}}
+           (get-in explained [:subcommands "admin" :subcommands "caps"
+                              :subcommands "show"])))
+    (is (= {:stream {:emits "string" :result "boolean"}}
+           (get-in explained [:subcommands "admin" :subcommands "caps"
+                              :subcommands "grant"])))
+    (is (string? (json/write-str explained)))))
+
+(deftest nested-subcommand-tree-failures-carry-depth-paths
+  (let [bad (is (thrown? clojure.lang.ExceptionInfo
+                         (return-shape/validate!
+                          {:subcommands
+                           {"a" {:subcommands {"b" [:or :bad]}}}})))]
+    (is (= [:subcommands "a" :subcommands "b"] (:path (ex-data bad)))))
+  (is (thrown? clojure.lang.ExceptionInfo
+               (return-shape/validate!
+                {:subcommands {"a" {:subcommands {:kw :string}}}})))
+  (doseq [[declaration expected-path]
+          [[{:subcommands {}} []]
+           [{:subcommands {"a" {:subcommands {}}}} [:subcommands "a"]]]]
+    (let [error (is (thrown? clojure.lang.ExceptionInfo
+                             (return-shape/validate! declaration)))]
+      (is (= :empty-subcommands (:reason (ex-data error))))
+      (is (= expected-path (:path (ex-data error))))
+      (is (nil? (:token (ex-data error))))
+      (is (= [] (:available (ex-data error)))))))
+
+(deftest select-case-walks-the-full-path
+  (is (= {:type :map :required {:id :string}}
+         (return-shape/select-case deep-returns ["admin" "caps" "show"])))
+  (is (= {:type :collection :items :string}
+         (return-shape/select-case deep-returns ["list"])))
+  (is (= :string (return-shape/select-case :string [])))
+  (let [short-path (is (thrown? clojure.lang.ExceptionInfo
+                                (return-shape/select-case deep-returns ["admin"])))
+        unknown (is (thrown? clojure.lang.ExceptionInfo
+                             (return-shape/select-case deep-returns
+                                                       ["admin" "caps" "bogus"])))
+        long-path (is (thrown? clojure.lang.ExceptionInfo
+                               (return-shape/select-case deep-returns
+                                                         ["list" "extra"])))]
+    (is (= :missing-return-subcommand (:reason (ex-data short-path))))
+    (is (= ["admin"] (:path (ex-data short-path))))
+    (is (= ["audit" "caps"] (:available (ex-data short-path))))
+    (is (= :unknown-return-subcommand (:reason (ex-data unknown))))
+    (is (= ["admin" "caps"] (:path (ex-data unknown))))
+    (is (= "bogus" (:token (ex-data unknown))))
+    (is (= ["grant" "show"] (:available (ex-data unknown))))
+    (is (= :unrouted-return-path (:reason (ex-data long-path))))
+    (is (= ["list"] (:path (ex-data long-path))))
+    (is (= "extra" (:token (ex-data long-path))))))
+
+(deftest select-case-validates-before-walking
+  (doseq [declaration [{:subcommands {"x" nil}}
+                       {:subcommands {"x" {:subcommands {}}}}]]
+    (let [error (is (thrown? clojure.lang.ExceptionInfo
+                             (return-shape/select-case declaration ["x"])))]
+      (is (::return-shape/error (ex-data error)))
+      (is (some? (:reason (ex-data error)))))))

@@ -5,31 +5,45 @@
   over the non-null scalars (`:string`, `:integer`, `:number`, `:boolean`),
   closed `{:type :map ...}` declarations, and homogeneous
   `{:type :collection ...}` sequences. Registry routing may wrap a shape in
-  `:subcommands` or `:stream` declarations; this namespace has no registry
-  or runtime state. Failures are `ex-info` whose data carries the published
-  marker `:skein.api.return-shape.alpha/error`, a `:reason` keyword, and
-  shape-local context such as `:path`."
+  `:subcommands` or `:stream` declarations; a routed `:subcommands` tree
+  mirrors the arg-spec's fractal node tree to any depth — an interior return
+  node is `{:subcommands {<name> <node> ...}}` and a leaf return node is a
+  return case (DELTA-Lhc-001.CC4). This namespace has no registry or runtime
+  state. Failures are `ex-info` whose data carries the published marker
+  `:skein.api.return-shape.alpha/error`, a `:reason` keyword, and shape-local
+  context such as `:path`."
   (:require [clojure.set :as set]))
 
 (declare validate-shape! validate-stream! validate-subcommands!
-         render-declaration render-case render-shape
+         render-case render-shape
          check-shape! check-map!
          validate-map-shape! validate-collection-shape! validate-key-shapes!
          fail! exact-keys! mismatch! scalar-match?
          scalar-shapes nullable-scalar-shapes)
 
+(defn- interior-return-node?
+  "True when `declaration` is a routed interior node (declares `:subcommands`)."
+  [declaration]
+  (and (map? declaration) (contains? declaration :subcommands)))
+
+(defn- stream-return-case?
+  "True when `declaration` is a `{:stream ...}` return case."
+  [declaration]
+  (and (map? declaration) (contains? declaration :stream)))
+
 (defn validate!
   "Validate a return declaration and return it unchanged.
 
   Accepts a concrete shape, a `{:stream ...}` return case, or a
-  `{:subcommands ...}` routed declaration. Throws structured `ex-info` for
-  malformed or unsupported declarations."
+  `{:subcommands ...}` routed declaration whose tree recurses to any depth
+  (DELTA-Lhc-001.CC4). Throws structured `ex-info` for malformed or
+  unsupported declarations."
   [declaration]
   (cond
-    (and (map? declaration) (contains? declaration :subcommands))
-    (validate-subcommands! declaration)
+    (interior-return-node? declaration)
+    (validate-subcommands! declaration [])
 
-    (and (map? declaration) (contains? declaration :stream))
+    (stream-return-case? declaration)
     (validate-stream! declaration [])
 
     :else
@@ -38,20 +52,64 @@
 (defn explain
   "Render a return declaration as JSON-safe data.
 
-  Shape and field names become strings; routing maps retain their structure
-  so callers can render flat, subcommand, and stream declarations uniformly.
-  Validates first: only well-formed declarations render."
+  Shape and field names become strings; routing maps retain their structure —
+  recursively for nested `:subcommands` — so callers can render flat,
+  subcommand, and stream declarations uniformly. Validates first: only
+  well-formed declarations render."
   [declaration]
-  (-> declaration validate! render-declaration))
+  (-> declaration validate! render-case))
+
+(defn select-case
+  "Select the return case a subcommand path names from a routed declaration.
+
+  `path` is the full subcommand path vector of name strings (`[]` for a flat
+  declaration), mirroring the parse result's `:subcommand`
+  (DELTA-Lhc-001.CC3/CC4). Walks interior `:subcommands` nodes token by
+  token and returns the named leaf return case. Fails loudly with the
+  canonical `:path`/`:token`/`:available` context when the path stops at an
+  interior node, continues past a concrete case, or names an undeclared
+  subcommand."
+  [declaration path]
+  (when-not (and (sequential? path) (every? string? path))
+    (fail! :invalid-selection-path
+           "Return selection path must be a sequential collection of strings"
+           {:path [] :value path}))
+  (validate! declaration)
+  (loop [node declaration
+         walked []
+         tokens (seq path)]
+    (cond
+      (and (interior-return-node? node) (nil? tokens))
+      (fail! :missing-return-subcommand
+             "Return declaration routes deeper than the selection path"
+             {:path walked :token nil
+              :available (vec (sort (keys (:subcommands node))))})
+
+      (interior-return-node? node)
+      (let [token (first tokens)
+            subcommands (:subcommands node)]
+        (when-not (contains? subcommands token)
+          (fail! :unknown-return-subcommand
+                 (str "Return declaration does not route subcommand " (pr-str token))
+                 {:path walked :token token
+                  :available (vec (sort (keys subcommands)))}))
+        (recur (get subcommands token) (conj walked token) (next tokens)))
+
+      (seq tokens)
+      (fail! :unrouted-return-path
+             "Return selection path continues past a concrete return case"
+             {:path walked :token (first tokens) :available []})
+
+      :else node)))
 
 (defn check!
   "Check `value` against one concrete return shape and return it unchanged.
 
   Throws structured `ex-info` on mismatch with `:path`, `:expected`, and
-  `:actual`. Routing declarations must be selected by the caller first."
+  `:actual`. Routing declarations must be selected by the caller first
+  (see `select-case`)."
   [shape value]
-  (when (and (map? shape)
-             (or (contains? shape :subcommands) (contains? shape :stream)))
+  (when (or (interior-return-node? shape) (stream-return-case? shape))
     (fail! :routed-declaration
            "check! requires a selected concrete return shape"
            {:path [] :value shape}))
@@ -109,21 +167,27 @@
   declaration)
 
 (defn- validate-subcommands!
-  [declaration]
-  (exact-keys! declaration #{:subcommands} [] "subcommand return")
+  [declaration path]
+  (exact-keys! declaration #{:subcommands} path "subcommand return")
   (let [subcommands (:subcommands declaration)]
     (when-not (map? subcommands)
       (fail! :invalid-subcommands
              "Return :subcommands declaration must be a map"
-             {:path [:subcommands] :value subcommands}))
-    (doseq [[name return-case] subcommands]
+             {:path (conj path :subcommands) :value subcommands}))
+    (when (empty? subcommands)
+      (fail! :empty-subcommands
+             "Return :subcommands must reach at least one concrete return case"
+             {:path path :token nil :available []}))
+    (doseq [[name return-case] subcommands
+            :let [child-path (conj path :subcommands name)]]
       (when-not (string? name)
         (fail! :invalid-subcommand-name
                "Return subcommand names must be strings"
-               {:path [:subcommands name] :name name}))
-      (if (and (map? return-case) (contains? return-case :stream))
-        (validate-stream! return-case [:subcommands name])
-        (validate-shape! return-case [:subcommands name]))))
+               {:path child-path :name name}))
+      (cond
+        (interior-return-node? return-case) (validate-subcommands! return-case child-path)
+        (stream-return-case? return-case) (validate-stream! return-case child-path)
+        :else (validate-shape! return-case child-path))))
   declaration)
 
 (defn- validate-map-shape!
@@ -168,20 +232,19 @@
 
 ;; --- rendering validated declarations as JSON-safe data ---------------
 
-(defn- render-declaration
-  [declaration]
-  (if (and (map? declaration) (contains? declaration :subcommands))
-    {:subcommands (into (sorted-map)
-                        (map (fn [[name return-case]]
-                               [name (render-case return-case)]))
-                        (:subcommands declaration))}
-    (render-case declaration)))
-
 (defn- render-case
   [return-case]
-  (if (and (map? return-case) (contains? return-case :stream))
+  (cond
+    (interior-return-node? return-case)
+    {:subcommands (into (sorted-map)
+                        (map (fn [[name child]] [name (render-case child)]))
+                        (:subcommands return-case))}
+
+    (stream-return-case? return-case)
     {:stream {:emits (render-shape (get-in return-case [:stream :emits]))
               :result (render-shape (get-in return-case [:stream :result]))}}
+
+    :else
     (render-shape return-case)))
 
 (defn- render-shape

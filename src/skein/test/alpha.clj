@@ -93,29 +93,39 @@
                              "Operation has no :returns declaration"
                              {}))
   (let [declaration (:returns entry)
-        subcommands (when (and (map? declaration) (contains? declaration :subcommands))
-                      (:subcommands declaration))
-        return-case (if subcommands
-                      (let [subcommand (:subcommand context)]
-                        (when-not (contains? context :subcommand)
-                          (return-selection-error! entry declaration context
-                                                   :missing-return-subcommand
-                                                   "Subcommand return declaration requires :subcommand context"
-                                                   {}))
-                        (when-not (contains? subcommands subcommand)
-                          (return-selection-error! entry declaration context
-                                                   :unknown-return-subcommand
-                                                   "Operation return subcommand is not declared"
-                                                   {:subcommand subcommand
-                                                    :available-subcommands (vec (sort (keys subcommands)))}))
-                        (get subcommands subcommand))
+        routed? (and (map? declaration) (contains? declaration :subcommands))
+        return-case (cond
+                      (and routed? (not (contains? context :subcommand)))
+                      (return-selection-error! entry declaration context
+                                               :missing-return-subcommand
+                                               "Subcommand return declaration requires :subcommand context"
+                                               {})
+
+                      (and (not routed?) (contains? context :subcommand))
+                      (return-selection-error! entry declaration context
+                                               :unexpected-return-subcommand
+                                               "Flat return declaration does not accept :subcommand context"
+                                               {:subcommand (:subcommand context)})
+
+                      routed?
                       (do
-                        (when (contains? context :subcommand)
-                          (return-selection-error! entry declaration context
-                                                   :unexpected-return-subcommand
-                                                   "Flat return declaration does not accept :subcommand context"
-                                                   {:subcommand (:subcommand context)}))
-                        declaration))
+                        (when-not (vector? (:subcommand context))
+                          (return-selection-error!
+                           entry declaration context
+                           :invalid-return-subcommand
+                           "Subcommand return context must be a path vector"
+                           {:subcommand (:subcommand context)}))
+                        (try
+                          (return-shape/select-case declaration (:subcommand context))
+                          (catch clojure.lang.ExceptionInfo e
+                            (let [data (ex-data e)]
+                              (return-selection-error!
+                               entry declaration context
+                               (:reason data)
+                               (ex-message e)
+                               (dissoc data :skein.api.return-shape.alpha/error :reason))))))
+
+                      :else declaration)
         stream (when (and (map? return-case) (contains? return-case :stream))
                  (:stream return-case))]
     (if stream
@@ -146,9 +156,12 @@
   `runtime` is explicit and `operation` resolves through its live op registry.
   The three-argument form checks a flat result. The four-argument form accepts
   a context map with optional `:subcommand` and `:channel` (`:emits` or
-  `:result`) selectors. Returns `value` unchanged on success. Missing or
-  misaligned declarations fail loudly. Shape mismatches carry the canonical
-  operation name, selected declaration, failing path, and actual value.
+  `:result`) selectors; `:subcommand` is the full subcommand path vector
+  (DELTA-Lhc-001.CC7), walked through the declaration's nested `:subcommands`
+  tree (a legacy scalar string is tolerated intra-branch as a one-segment
+  path). Returns `value` unchanged on success. Missing or misaligned
+  declarations fail loudly. Shape mismatches carry the canonical operation
+  name, selected declaration, failing path, and actual value.
 
   This helper only checks an already-captured value; it never invokes an op."
   ([runtime operation value]
