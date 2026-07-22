@@ -554,16 +554,16 @@
     {:families
      (into (sorted-map)
            (map (fn [[family projection]]
-                  (let [declared-roots (get-in projection [:declared :roots])
-                        _ (when-not (seq declared-roots)
-                            (throw (ex-info "Declared spool family has no roots"
-                                            {:family family
-                                             :projection projection})))
-                        roots (set (keys declared-roots))]
+                  ;; :roots-map is the normalized root set (implicit {family "."}
+                  ;; already applied by sync), so status joins outcomes and
+                  ;; modules against it directly rather than re-reading the raw
+                  ;; :declared entry, which may carry no :roots.
+                  (let [roots (set (keys (:roots-map projection)))]
                     [family
-                     (assoc projection
-                            :roots (select-keys (:root/outcomes status) roots)
-                            :modules (family-modules (:modules status) roots))])))
+                     (-> projection
+                         (dissoc :roots-map)
+                         (assoc :roots (select-keys (:root/outcomes status) roots)
+                                :modules (family-modules (:modules status) roots)))])))
            (:families declared))
      :requirements (:requirements declared)
      :pending-generation (:pending-generation status)

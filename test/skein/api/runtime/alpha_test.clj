@@ -437,6 +437,7 @@
                               [:provenance :claims])))
           (is (= {:declared declared
                   :effective-coordinate {:kind :local :local/root "../demo"}
+                  :roots-map {'demo/root "."}
                   :provenance :local-overlay
                   :claims "v3"}
                  (get-in approved [:families 'demo/family]))))))))
@@ -453,8 +454,10 @@
               (pr-str {:spools {'demo/family declared}}))
         (let [approved (runtime/approved rt)]
           (is (= #{'demo/family} (set (keys (:spools approved)))))
+          ;; the rootless local family projects the implicit {family "."} sole-root
           (is (= {:declared declared
                   :effective-coordinate {:kind :local :local/root "spools/demo"}
+                  :roots-map {'demo/family "."}
                   :provenance :spools-edn
                   :claims nil}
                  (get-in approved [:families 'demo/family]))))))))
