@@ -16,8 +16,8 @@
 
 (deftest collection-replaces-same-key-and-allows-an-empty-owner
   (let [context {:module/key :test/ops
-                 :source/file "/Users/ct/dev/projects/skein-src__feat--owner-scoped-live-refresh/NO_SOURCE_PATH"
-                 :source/namespace 'user}
+                 :source/file (.getCanonicalPath (java.io.File. *file*))
+                 :source/namespace (ns-name *ns*)}
         result (module-graph/with-contribution-collection
                  context
                  #(do (module-graph/collect-entry! :ops "sample" {:name "sample" :version 1})

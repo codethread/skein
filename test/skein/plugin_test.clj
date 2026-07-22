@@ -37,4 +37,4 @@
     (fn [rt]
       (is (= {:spools {} :families {}} (runtime/approved rt)))
       (is (= {} (:modules (runtime/status rt))))
-      (is (= {} (get-in (runtime/status rt) [:roots :root/outcomes]))))))
+      (is (= {} (:root/outcomes (runtime/status rt)))))))

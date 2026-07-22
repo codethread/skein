@@ -30,8 +30,6 @@
    'skein.api.runtime.glossary.alpha-test
    ;; drives its own unpublished runtime per test — no JVM-global state.
    'skein.api.runtime.help-transform.alpha-test
-   ;; drives its own unpublished runtime per test — no JVM-global state.
-   'skein.api.batch.alpha-test
    'skein.api.graph.alpha-test
    ;; drives its own unpublished runtime per test — no JVM-global state.
    'skein.api.events.alpha-test
@@ -68,7 +66,9 @@
    ;; published singleton semantics.
    'skein.weaver-publication-test
    ;; multiple published peer runtimes verify routing semantics.
-   'skein.peers-test])
+   'skein.peers-test
+   ;; globally redefines db transaction seams while checking API guards.
+   'skein.api.batch.alpha-test])
 
 (def add-libs-shards
   "Subprocess JVM shard groups for tests that mutate JVM-global tools.deps state."

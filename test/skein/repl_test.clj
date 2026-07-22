@@ -251,11 +251,20 @@
                   *err* (java.io.StringWriter.)
                   *ns* (the-ns 'user)]
           (repl/-main "--stdin" (:config-dir (:metadata rt))))
-        (let [lines (str/split-lines (str out))]
+        (let [lines (str/split-lines (str out))
+              status (read-string (nth lines 3))
+              plan (read-string (nth lines 4))]
           (is (= 5 (count lines)))
           (is (= {:spools {} :families {}} (read-string (nth lines 2))))
-          (is (= {:spools {}} (read-string (nth lines 3))))
-          (is (= {} (read-string (nth lines 4)))))))))
+          (is (= {:modules {}
+                  :root/outcomes {}
+                  :pending-generation nil}
+                 (select-keys status [:modules :root/outcomes :pending-generation])))
+          (is (= {:status :unchanged :mode :full}
+                 (select-keys (:last-refresh status) [:status :mode])))
+          (is (= {:status :unchanged :mode :full :dry-run? true}
+                 (select-keys plan [:status :mode :dry-run?])))
+          (is (str/includes? (:caveat plan) "No registry publication")))))))
 
 (deftest query-helpers-use-daemon-backed-task-flow
   (with-runtime

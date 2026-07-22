@@ -100,13 +100,23 @@
 (s/def ::effective-coordinate #(s/valid? :skein.core.weaver.spool-sync/coordinate %))
 (s/def ::provenance #(s/valid? :skein.core.weaver.spool-sync/provenance %))
 (s/def ::claims #(s/valid? :skein.core.weaver.spool-sync/claims %))
-(s/def ::root-outcome #(s/valid? :skein.core.weaver.spool-sync/sync-root-entry %))
-(s/def ::roots
-  (s/and (s/map-of symbol? ::root-outcome)
-         #(every? (fn [[root-lib entry]] (= root-lib (:lib entry))) %)))
+(s/def ::root-outcome
+  (s/and map?
+         #(let [status (:status %)]
+            (cond
+              (#{:synced :failed} status)
+              (and (map? (:sync %))
+                   (or (not= :failed status) (keyword? (:reason %))))
+
+              (= :source-reloaded status) (map? (:reload %))
+              (#{:partial-source-reload :source-reload-failed} status) (map? (:error %))
+              (= :hard-conflict status) (map? (:conflict %))
+              :else false))))
+(s/def ::status-roots (s/map-of symbol? ::root-outcome))
 (s/def ::modules (s/map-of keyword? ::runtime-api/module-declaration))
 (s/def ::status-family
-  (s/and (s/keys :req-un [::declared ::effective-coordinate ::provenance ::claims ::roots ::modules])
+  (s/and (s/keys :req-un [::declared ::effective-coordinate ::provenance ::claims ::modules])
+         #(s/valid? ::status-roots (:roots %))
          #(exact-keys? #{:declared :effective-coordinate :provenance :claims :roots :modules} %)))
 (s/def ::families (s/map-of symbol? ::status-family))
 (s/def ::pending-generation (s/nilable ::runtime-api/pending-generation))

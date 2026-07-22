@@ -392,7 +392,8 @@
             family (get-in result [:families 'demo/family])]
         (is (= {:provenance :local-overlay :claims "v3"}
                (select-keys family [:provenance :claims])))
-        (is (= {} (:roots family)))
+        (is (= {:status :failed :reason :missing-root}
+               (select-keys (get-in family [:roots 'demo/root]) [:status :reason])))
         (is (= ['demo/root] (get-in family [:modules :demo/module :spools])))
         (is (nil? (:pending-generation result)))
         (is (s/valid? ::batteries/spool-status-result result))

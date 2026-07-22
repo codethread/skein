@@ -3,6 +3,7 @@
   (:require [clojure.java.io :as io]
             [clojure.spec.alpha :as s]
             [clojure.string :as str]
+            [nrepl.middleware.interruptible-eval :as nrepl-eval]
             [nrepl.server :as nrepl]
             [skein.api.cli.alpha :as cli]
             [skein.api.clock.alpha :as clock]
@@ -353,6 +354,25 @@
              (throw close-error))))))
    nil))
 
+(defn- eval-runtime-form [form]
+  (if-let [runtime (some-> nrepl-eval/*msg* ::runtime-state deref)]
+    (with-runtime-and-spool-classloader
+      runtime
+      #(clojure.lang.Compiler/eval form true))
+    (throw (ex-info "Weaver nREPL eval has no runtime"
+                    {:message (dissoc nrepl-eval/*msg* :transport :session)}))))
+
+(def ^:private eval-runtime-symbol
+  (let [{ns-object :ns var-name :name} (meta #'eval-runtime-form)]
+    (symbol (str (ns-name ns-object)) (str var-name))))
+
+(defn- runtime-nrepl-handler [runtime-state]
+  (let [handler (nrepl/default-handler)]
+    (fn [message]
+      (handler (cond-> (assoc message ::runtime-state runtime-state)
+                 (and (= "eval" (:op message)) (nil? (:eval message)))
+                 (assoc :eval eval-runtime-symbol))))))
+
 (defn- close-storage!
   "Close weaver-owned storage resources for `runtime`, when the handle has any."
   [runtime]
@@ -521,7 +541,9 @@
     (let [storage (storage-for storage db-file world)
           ds (:connectable storage)
           _ (db/init! ds)
-          server (nrepl/start-server :bind loopback-host :port 0)
+          runtime-state (atom nil)
+          server (nrepl/start-server :bind loopback-host :port 0
+                                     :handler (runtime-nrepl-handler runtime-state))
           port (:port server)
           nonce (metadata/new-nonce)
           meta (metadata/metadata-shape {:pid (current-pid)
@@ -577,7 +599,7 @@
                         :server server
                         :metadata meta}
           runtime-base (start-event-system! runtime-base)
-          runtime-state (atom runtime-base)]
+          _ (reset! runtime-state runtime-base)]
       (try
         (let [socket-runtime (socket/start! runtime-state (:socket-path meta))
               runtime (assoc runtime-base :socket-runtime socket-runtime)]
