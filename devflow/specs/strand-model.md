@@ -97,6 +97,10 @@ Attribute predicates compile against the row-backed `attributes` table, not agai
 
 Every attribute key has the same predicate capability: `:=`, `:!=`, `:<`/`:<=`/`:>`/`:>=`, `:in`, `:exists`, `:missing`, and logical composition. Archived attributes are excluded from hot query membership.
 
+The query grammar is boundary grammar: it carries named, validated selections for lower-privilege CLI callers while keeping the physical schema private; trusted-side needs route to Clojure read ops composed with `skein.api.graph.alpha` helpers.
+
+A proposed grammar form must be needed by a CLI-tier caller that a registered read op cannot serve; be selection only, never shaping, aggregation, or ordering by an attribute; and define its semantics across missing attributes, JSON `null`, archived values, negation, parameters, edge predicates, and conjunction with `ready`. It must compile through the uniform correlated `EXISTS` shape, with no parallel compiler path; the shape split repaired by strand `2yic2` is the precedent cost.
+
 ## SPEC-001.P10 Deferred
 
 Parent-scoped lifecycle rules, attribute-level metadata, per-attribute timestamps, and category/outcome taxonomies are not part of the current model. Deletion tombstones now ship (SPEC-001.P3, SPEC-001.P8); still deferred are a tombstone retention policy, an undo/restore operation, and any programmatic (api-tier or CLI) tombstone surface. Immutable attribute keys now ship (SPEC-001.P4, SPEC-001.P8); still deferred are userland registration of additional immutable keys, whole-strand seals, and edge-attribute immutability.

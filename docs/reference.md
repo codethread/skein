@@ -499,6 +499,8 @@ A query definition is either a bare where expression, or a map with `:where` and
 
 A where expression is an EDN vector of `[operator & args]`:
 
+The grammar is a deliberately narrow boundary surface. New forms must meet the [SPEC-001.P9 acceptance criteria](../devflow/specs/strand-model.md); trusted-side queries belong in Clojure read ops composed with `skein.api.graph.alpha` helpers.
+
 | Form | Meaning |
 | --- | --- |
 | `[:= f v]` `[:!= f v]` `[:< f v]` `[:<= f v]` `[:> f v]` `[:>= f v]` | compare field `f` against value `v` |
