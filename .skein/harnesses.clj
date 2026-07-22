@@ -335,7 +335,7 @@
   registry, because publication replaces this module's complete partition rather
   than upserting into the shared REPL owner. The default review/task contracts
   are singleton slots, set in `reconcile` after publication. Definitions are
-  validated against agent-run's `::harness-def`/`::alias-def` specs at
+  validated against agent-run's `::registered-harness-def`/`::registered-alias-def` specs at
   publication."
   [_]
   {shuttle/harness-kind harness-defs

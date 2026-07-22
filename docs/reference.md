@@ -650,9 +650,7 @@ contract.
 
 ```clojure
 (ns my.workflow
-  (:require [clojure.spec.alpha :as s]
-            [skein.api.current.alpha :as current]
-            [skein.api.patterns.alpha :as patterns]))
+  (:require [clojure.spec.alpha :as s]))
 
 (s/def ::title string?)
 (s/def ::task-input (s/keys :req-un [::title]))
@@ -665,9 +663,15 @@ contract.
     :title (str "Review: " (:title input))
     :attributes {:kind "review"}
     :edges [{:type "depends-on" :to 'impl}]}])
+```
 
-(defn install! []
-  (patterns/register-pattern! (current/runtime) 'task 'my.workflow/task-pattern ::task-input))
+Register the pattern from startup config or the live REPL:
+
+```clojure
+(require '[skein.api.current.alpha :as current]
+         '[skein.api.patterns.alpha :as patterns])
+
+(patterns/register-pattern! (current/runtime) 'task 'my.workflow/task-pattern ::task-input)
 ```
 
 CLI callers can discover registered patterns, inspect the input contract, and invoke the pattern with exactly one JSON value on stdin:
@@ -724,11 +728,12 @@ Graph helpers include operations such as query id selection, strand hydration by
         ids (graph/query-ids rt 'owned params)]
     {:ids ids
      :strands (graph/strands-by-ids rt ids)}))
+```
 
-(defn install! []
-  (let [rt (current/runtime)]
-    (graph/register-query! rt 'owned [:= [:attr :owner] "ct"])
-    {:installed true}))
+Register the `owned` query from startup config or the live REPL:
+
+```clojure
+(graph/register-query! (current/runtime) 'owned [:= [:attr :owner] "ct"])
 ```
 
 For scripts, use `mill weaver repl --stdin`:
@@ -751,22 +756,26 @@ registration.
 Register handlers from startup-loaded code or weaver-loadable spools:
 
 ```clojure
-(ns my.workflow
-  (:require [skein.api.current.alpha :as current]
-            [skein.api.events.alpha :as events]))
+(ns my.workflow)
 
 (defn cleanup-temporary! [event]
   ;; Handler receives one event map and can call trusted Skein helpers/APIs.
   (when (= :strand/updated (:event/type event))
     ;; your workspace-specific cleanup here
     nil))
+```
 
-(defn install! []
-  (events/register-handler! (current/runtime)
-                    :my/cleanup-temporary
-                    #{:strand/updated}
-                    'my.workflow/cleanup-temporary!
-                    {:purpose :cleanup}))
+Register the handler from startup config or the live REPL:
+
+```clojure
+(require '[skein.api.current.alpha :as current]
+         '[skein.api.events.alpha :as events])
+
+(events/register-handler! (current/runtime)
+                          :my/cleanup-temporary
+                          #{:strand/updated}
+                          'my.workflow/cleanup-temporary!
+                          {:purpose :cleanup})
 ```
 
 Handlers are selected by explicit event-type filters such as `:strand/added`, `:strand/updated`, and
@@ -782,7 +791,7 @@ Event dispatch is asynchronous after successful mutations. Handler exceptions do
 (events/recent-failures (current/runtime))
 ```
 
-Event handler state is weaver-lifetime runtime state. Register handlers from `init.clj` or an installed spool if they should exist after startup or reload.
+Event handler state is weaver-lifetime runtime state. Register handlers from `init.clj` or a loaded spool module if they should exist after startup or refresh.
 
 ## Scheduler (no-poller wakeups)
 

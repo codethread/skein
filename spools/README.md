@@ -191,8 +191,9 @@ The override inherits the shared family's `:roots`, `:requires`, and `:skein/min
 - Workflow definitions accept pure-data **tool bindings** (`workflow.md`
   §3), so a consumer rebinds steps to their own tooling from trusted config
   without touching these namespaces.
-- Some spools expose `install!` metadata (fns as symbol maps) for trusted
-  registration by name; others use `install!` for side-effectful setup such as
-  registering weaver ops. See each contract doc for exact behavior.
+- A spool publishes its declarations through a `contribute` function that
+  returns owner-complete kind→entry data, and owns any resource or registration
+  effects in an optional `reconcile` function. See each contract doc for exact
+  behavior.
 - To author and load your own spool from a workspace-local root, follow
   [Authoring your own spool code](../docs/spools/customisation.md#promoting-config-to-a-local-spool).

@@ -117,7 +117,7 @@ Two evaluation contexts exist even though the test weaver runs in your test JVM 
   prerequisites name those roots.
 
 A spool that passes tier-2 tests can still fail tier 3 — missing `deps.edn` paths in the spool root,
-load-order problems in `install!`, or reliance on your test JVM classpath. Tier 3 exists to catch
+load-order problems in the module source, or reliance on your test JVM classpath. Tier 3 exists to catch
 exactly that.
 
 The Skein checkout on that classpath carries the blessed `skein.api.*.alpha` namespaces — including

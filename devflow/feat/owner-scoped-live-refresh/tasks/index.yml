@@ -127,5 +127,5 @@ tasks:
   - id: 26
     description: Rewrite human docs and regenerate APIs
     task_file: tasks/026-human-docs-api-regeneration.md
-    status: pending
+    status: complete
     blocked_by: [16]

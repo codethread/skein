@@ -215,8 +215,8 @@ in the root (if `:paths` is omitted, Skein's namespace loading defaults to `["sr
 {:paths ["src"]}
 ```
 
-Then implement the spool. The query from earlier now moves into an `install!` function, so reload and startup
-install everything from one place:
+Then implement the spool. The query from earlier now moves into a `contribute` function that returns the
+module's complete declaration, so every refresh and startup publishes it from one place:
 
 ```clojure
 (ns my.workflow)
@@ -253,16 +253,19 @@ spool can add commands to the CLI without recompiling anything. `strand help` li
 handler as string argv:
 
 ```clojure
-(ns my.workflow
-  (:require [skein.api.current.alpha :as current]
-            [skein.api.weaver.alpha :as weaver]))
+(ns my.workflow)
 
 (defn echo-op [{:op/keys [name argv]}]
   {:operation name :argv argv})
+```
 
-(defn install! []
-  (weaver/register-op! (current/runtime) 'echo "Echo raw argv" 'my.workflow/echo-op)
-  {:my.workflow/installed true})
+Register it from `init.clj` or the live REPL:
+
+```clojure
+(require '[skein.api.current.alpha :as current]
+         '[skein.api.weaver.alpha :as weaver])
+
+(weaver/register-op! (current/runtime) 'echo "Echo raw argv" 'my.workflow/echo-op)
 ```
 
 ```sh
