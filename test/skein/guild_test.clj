@@ -193,3 +193,10 @@
       (testing "deprecating an unregistered op fails loudly"
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"not registered"
                               (guild/deprecate! rt 'missing.v1 {:replacement "missing.v2"})))))))
+
+(deftest contribute-entry-passes-publication-validation
+  (testing "guild's module contribution validates through the canonical publication seam"
+    (let [entry (get-in (guild/contribute {}) [:ops :entries "guild"])]
+      (is (map? (weaver/validate-op-entry! entry)))
+      (is (not (contains? entry :hook-class)))
+      (is (not (contains? entry :deadline-class))))))

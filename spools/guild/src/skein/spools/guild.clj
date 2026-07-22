@@ -272,8 +272,6 @@
     {"guild" {:name "guild"
               :fn 'skein.spools.guild/ops
               :stream? false
-              :deadline-class :standard
-              :hook-class :read
               :provenance 'skein.spools.guild
               :doc (:doc guild-arg-spec)
               :arg-spec guild-arg-spec
