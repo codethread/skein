@@ -5,9 +5,11 @@
   (:require [clojure.test :refer [deftest is testing]]
             [skein.api.batch.alpha :as batch]
             [skein.api.graph.alpha :as graph]
+            [skein.api.registry.alpha :as registry]
             [skein.api.vocab.alpha :as vocab]
-            [skein.spools.test-support :refer [with-runtime]]
+            [skein.spools.test-support :refer [assert-state-shape with-runtime]]
             [skein.spools.workflow :as workflow]
+            [skein.spools.workflow.internal.registry :as wf-registry]
             [skein.repl :as repl]
             [skein.test.alpha :as test-alpha])
   (:import [java.time Instant]))
@@ -1522,3 +1524,99 @@
     (fn [_rt _]
       (workflow/register-executor! :registry-test-executor (constantly nil))
       (is (contains? (workflow/executors) :registry-test-executor)))))
+
+;; --- owner-partitioned constructor/executor conversion (TASK-Olr-007) --------
+
+(defn exec-detail-a [_step] {:by :a})
+(defn exec-detail-b [_step] {:by :b})
+
+(deftest executor-fn-value-registration-lives-in-resource-state
+  ;; A bare function value has no symbol, so it is held as runtime-owned resource
+  ;; state (DELTA-OlrDrt-001.CC8), not as owner-partition declaration data.
+  (with-runtime
+    (fn [rt _]
+      (workflow/install!)
+      (let [pred (constantly {:raw true})]
+        (workflow/register-executor! :raw-exec pred)
+        (is (identical? pred (get @(wf-registry/executor-fns rt) "raw-exec")))
+        (is (identical? pred (wf-registry/executor-for rt "raw-exec")))
+        (is (empty? (registry/effective (wf-registry/registry-handle rt)
+                                        workflow/executor-kind))
+            "no function value reaches the declarative executor kind")))))
+
+(deftest executor-symbol-resolves-to-a-function-value-per-gate-evaluation
+  ;; DW1: an executor symbol is resolved to a function value at each gate
+  ;; evaluation, so a re-pointed executor is observed on the next lookup while a
+  ;; value already captured for an in-flight call keeps its snapshot (CC10).
+  (with-runtime
+    (fn [rt _]
+      (workflow/install!)
+      (workflow/register-executor! :exec-snap 'skein.spools.workflow-test/exec-detail-a)
+      (let [snapshot (wf-registry/executor-for rt "exec-snap")]
+        (is (= {:by :a} (snapshot {})))
+        (workflow/register-executor! :exec-snap 'skein.spools.workflow-test/exec-detail-b)
+        (is (= {:by :b} ((wf-registry/executor-for rt "exec-snap") {}))
+            "the next gate evaluation resolves the re-pointed executor")
+        (is (= {:by :a} (snapshot {}))
+            "a value captured for an in-flight call keeps its snapshot")))))
+
+(deftest workflow-owner-refresh-removes-omitted-constructors-and-executors
+  ;; DW2 / kxhd4 R4 per-domain deletion completeness: an owner-complete
+  ;; replacement removes any route or executor the new partition omits, and
+  ;; removing the owner clears the rest — no global reload.
+  (with-runtime
+    (fn [rt _]
+      (workflow/install!)
+      (let [handle (wf-registry/registry-handle rt)
+            spools-constructors (fn [entries]
+                                  (registry/replace-owner!
+                                   handle workflow/constructor-kind :spools/pkg
+                                   {:layer :spools :entries entries :overrides #{}}))
+            spools-executors (fn [entries]
+                               (registry/replace-owner!
+                                handle workflow/executor-kind :spools/pkg
+                                {:layer :spools :entries entries :overrides #{}}))]
+        (spools-constructors {:route-a 'skein.spools.workflow-test/registry-second-stage
+                              :route-b 'skein.spools.workflow-test/registry-alt-second-stage})
+        (spools-executors {"exec-a" 'skein.spools.workflow-test/exec-detail-a
+                           "exec-b" 'skein.spools.workflow-test/exec-detail-b})
+        (is (= #{:route-a :route-b} (set (keys (workflow/workflows)))))
+        (is (= #{"exec-a" "exec-b"} (set (keys (wf-registry/executor-map rt)))))
+        ;; a complete replacement omitting one of each removes only those
+        (spools-constructors {:route-a 'skein.spools.workflow-test/registry-second-stage})
+        (spools-executors {"exec-a" 'skein.spools.workflow-test/exec-detail-a})
+        (is (= #{:route-a} (set (keys (workflow/workflows)))) "omitted route removed")
+        (is (= #{"exec-a"} (set (keys (wf-registry/executor-map rt)))) "omitted executor removed")
+        ;; removing the owner clears the rest
+        (registry/remove-owner! handle workflow/constructor-kind :spools/pkg)
+        (registry/remove-owner! handle workflow/executor-kind :spools/pkg)
+        (is (empty? (workflow/workflows)))
+        (is (empty? (wf-registry/executor-map rt)))))))
+
+(deftest workflow-constructor-override-restores-shadowed-entry-on-removal
+  ;; DW2 / DELTA-OlrDrt-001.CC3: a higher-layer entry shadows a lower one with
+  ;; explicit override intent; removing the overriding owner re-exposes the
+  ;; shadowed entry.
+  (with-runtime
+    (fn [rt _]
+      (workflow/install!)
+      (let [handle (wf-registry/registry-handle rt)]
+        (registry/replace-owner! handle workflow/constructor-kind :spools/pkg
+                                 {:layer :spools
+                                  :entries {:route-x 'skein.spools.workflow-test/registry-second-stage}
+                                  :overrides #{}})
+        (is (= 'skein.spools.workflow-test/registry-second-stage
+               (workflow/workflow-definition :route-x)))
+        ;; a direct/REPL registration shadows the lower spools layer
+        (workflow/register-workflow! :route-x 'skein.spools.workflow-test/registry-alt-second-stage)
+        (is (= 'skein.spools.workflow-test/registry-alt-second-stage
+               (workflow/workflow-definition :route-x))
+            "the direct layer wins while its override stands")
+        ;; removing the direct owner restores the shadowed spools entry
+        (registry/remove-owner! handle workflow/constructor-kind :skein.owner/repl)
+        (is (= 'skein.spools.workflow-test/registry-second-stage
+               (workflow/workflow-definition :route-x))
+            "the shadowed entry becomes effective again")))))
+
+(deftest executor-fns-state-shape-matches-declared-version
+  (assert-state-shape #'wf-registry/new-executor-fns #{:executor-fns}))

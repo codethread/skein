@@ -5,8 +5,9 @@
   reads are runtime-first, sorted, and narrowable."
   (:require [clojure.test :refer [deftest is testing]]
             [skein.api.relations.alpha :as relations]
+            [skein.api.registry.alpha :as registry]
             [skein.api.vocab.alpha :as vocab]
-            [skein.spools.test-support :refer [assert-state-shape with-runtime]]))
+            [skein.spools.test-support :refer [with-runtime]]))
 
 (defn- attr-decl [name owner]
   {:kind :attr-namespace :name name :owner owner :doc (str name " attributes")})
@@ -90,24 +91,22 @@
           (is (= replaced (vocab/declare! rt replaced)))
           (is (= "revised" (:doc (find-declaration rt :attr-namespace "widget")))))))))
 
-(deftest declare-conflict-check-is-atomic
-  ;; Regression for the cross-owner TOCTOU window: the owner-conflict check must
-  ;; live inside the swap! update fn, so a conflicting write that lands after
-  ;; this declarer's read still throws instead of silently overwriting. swap!
-  ;; runs exactly this fn, so exercising it directly against a registry map that
-  ;; already carries owner-a proves the guard is on the swap path — deterministic
-  ;; and thread-free.
-  (let [k [:attr-namespace "widget"]
-        registered {k (attr-decl "widget" :owner-a)}
-        loser (attr-decl "widget" :owner-b)
-        ex (try (#'vocab/register-declaration registered k loser)
-                (catch clojure.lang.ExceptionInfo e e))]
-    (is (some? ex) "the swap update fn throws on a cross-owner write")
-    (is (= {:name "widget" :kind :attr-namespace
-            :existing-owner :owner-a :declaring-owner :owner-b}
-           (ex-data ex)))))
-
-(deftest state-shape-matches-declared-version
-  ;; Drift alarm for vocab's versioned spool-state: a key added to new-state
-  ;; without a state-version bump would survive reload! as a stale map.
-  (assert-state-shape #'vocab/new-state #{:registry}))
+(deftest core-vocab-defaults-restore-after-owner-removal
+  (with-runtime
+    (fn [rt _]
+      (let [handle (#'vocab/registry rt)
+            kind :vocab
+            owner :workspace/test
+            note-key [:attr-namespace "note"]
+            overridden (assoc (get (registry/effective handle kind) note-key)
+                              :doc "Workspace note vocabulary")]
+        (registry/replace-owner! handle kind owner
+                                 {:layer :workspace
+                                  :entries {note-key overridden}
+                                  :overrides #{note-key}})
+        (is (= "Workspace note vocabulary"
+               (:doc (get (registry/effective handle kind) note-key))))
+        (registry/remove-owner! handle kind owner)
+        (is (= 'skein.api.notes.alpha
+               (:owner (get (registry/effective handle kind) note-key)))
+            "removing the workspace owner restores the core defaults entry")))))

@@ -113,7 +113,7 @@ func TestInitBootstrapsConfigDirWorkspaceThroughMill(t *testing.T) {
 	}
 	initPath := filepath.Join(cfg, "init.clj")
 	got := string(mustReadFile(t, initPath))
-	for _, want := range []string{"(runtime/sync! runtime)", "(require 'skein.spools.batteries)", ":skein/spools-batteries", "skein.spools.batteries/install!"} {
+	for _, want := range []string{"(require 'skein.spools.batteries)", "(runtime/module! runtime :skein/spools-batteries", ":ns 'skein.spools.batteries", "skein.spools.batteries/contribute", "skein.spools.batteries/reconcile"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("init.clj missing %q, got:\n%s", want, got)
 		}
@@ -181,7 +181,7 @@ func TestWeaverReplStdinAttachesThroughMillMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("repl stdin failed: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, ":metadata") || !strings.Contains(out, ":query-registry") {
+	if !strings.Contains(out, ":metadata") || !strings.Contains(out, ":query-store") {
 		t.Fatalf("unexpected repl output: %q", out)
 	}
 	out, err = h.millCmd(dir, runDir, "(throw (ex-info \"boom from weaver\" {}))\n", "weaver", "repl", "--stdin")

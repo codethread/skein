@@ -299,7 +299,13 @@ A checkpoint is a step with `workflow/role "checkpoint"`. Use `choose!`, never `
 (workflow/workflows)             ; => {:spec-plan 'my.ns/spec-plan-workflow ...}
 ```
 
-The registry is **runtime-owned, weaver-lifetime spool state** with no durable storage. It survives `skein.api.runtime.alpha/reload!`; startup config re-registers entries during reload and after a weaver restart. A duplicate name **replaces** the prior entry, so reloading a workflow re-points every in-flight run's not-yet-chosen named routes at the new constructor. A `:next` keyword is resolved through the registry at `choose!` time and **fails loudly on an unregistered name**, before any mutation. A routed continuation records the resolved constructor symbol as its own `workflow/definition`, so a later `:revise` at that stage can re-pour it.
+The registry is runtime-owned with no durable storage. Owner-complete module
+refresh replaces its declarations without disturbing other owners, and a
+weaver restart reconstructs it from startup modules. A `:next` keyword is
+resolved through the registry at `choose!` time and **fails loudly on an
+unregistered name**, before any mutation. A routed continuation records the
+resolved constructor symbol as its own `workflow/definition`, so a later
+`:revise` at that stage can re-pour it.
 
 ### `:input` — declared choice input
 

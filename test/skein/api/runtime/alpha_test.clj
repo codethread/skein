@@ -5,10 +5,12 @@
             [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
+            [skein.api.graph.alpha :as graph]
             [skein.api.runtime.alpha :as runtime]
             [skein.core.specs :as specs]
             [skein.core.weaver.config :as weaver-config]
-            [skein.core.weaver.runtime :as weaver-runtime]))
+            [skein.core.weaver.runtime :as weaver-runtime]
+            [skein.core.weaver.spool-sync :as spool-sync]))
 
 (defn- temp-dir [prefix]
   (.toFile (java.nio.file.Files/createTempDirectory
@@ -206,40 +208,145 @@
                      {:world (test-world (io/file "/tmp/skein-start-options"))
                       :unknown true})))
   (is (s/valid? ::specs/config-dir-result "/tmp/config"))
-  (is (s/valid? ::specs/spools-file-result (io/file "/tmp/config/spools.edn")))
-  (is (s/valid? ::runtime/reload-spool-result
-                {:root-lib 'demo/root
-                 :root "/tmp/root"
-                 :namespaces [{:ns 'demo.core :file "/tmp/root/src/demo/core.clj"}]}))
-  (is (not (s/valid? ::runtime/reload-spool-result
-                     {:root-lib 'demo/root
-                      :root "/tmp/root"
-                      :namespaces []
-                      :unexpected true}))))
+  (is (s/valid? ::specs/spools-file-result (io/file "/tmp/config/spools.edn"))))
 
-(deftest module-use-result-specs-own-public-shapes
-  (let [loaded {:key :demo/loaded
-                :opts {:ns 'demo.core}
-                :status :loaded
-                :loaded {:ns 'demo.core}}
-        skipped {:key :demo/skipped
-                 :opts {:ns 'demo.core :spools ['demo/root]}
-                 :status :skipped
-                 :reason :not-approved
-                 :lib 'demo/root}
-        failed {:key :demo/failed
-                :opts {:file "module.clj"}
-                :status :failed
-                :error {:message "boom"
-                        :class "class clojure.lang.ExceptionInfo"
-                        :data {:reason :boom}}}]
-    (doseq [entry [loaded skipped failed]]
-      (is (s/valid? ::runtime/use-entry entry)))
-    (is (s/valid? ::runtime/uses-result
-                  {:demo/loaded loaded :demo/skipped skipped :demo/failed failed}))
-    (is (s/valid? ::runtime/use-result nil))
-    (is (not (s/valid? ::runtime/use-entry (assoc loaded :unexpected true))))
-    (is (not (s/valid? ::runtime/use-entry (dissoc failed :error))))))
+(def ^:private applied-refresh-result
+  {:status :applied
+   :mode :full
+   :modules {:demo {:module/key :demo :status :applied}}
+   :roots {}
+   :residuals []
+   :conflicts []
+   :remedies []
+   :declaration/shadows {}
+   :publication/kinds [:queries]})
+
+(deftest live-module-result-specs-own-public-shapes
+  (testing "refresh-result requires a known status/mode and vector projections"
+    (is (s/valid? ::runtime/refresh-result applied-refresh-result))
+    (is (s/valid? ::runtime/refresh-result
+                  {:status :refused :mode :targeted :modules {} :roots {}
+                   :residuals [] :conflicts [{:reason :boom}] :remedies []}))
+    (is (not (s/valid? ::runtime/refresh-result
+                       (assoc applied-refresh-result :status :bogus))))
+    (is (not (s/valid? ::runtime/refresh-result
+                       (dissoc applied-refresh-result :mode))))
+    (is (not (s/valid? ::runtime/refresh-result
+                       (assoc applied-refresh-result :residuals nil)))))
+  (testing "plan-result is a refresh-result flagged dry-run with a caveat"
+    (let [planned (assoc applied-refresh-result :dry-run? true :caveat "loads recorded")]
+      (is (s/valid? ::runtime/plan-result planned))
+      (is (not (s/valid? ::runtime/plan-result applied-refresh-result)))
+      (is (not (s/valid? ::runtime/plan-result (assoc planned :caveat ""))))))
+  (testing "status-result requires joined maps and a last-refresh slot"
+    (let [status {:modules {} :declaration/layers {} :declaration/shadows {}
+                  :contributions {} :module/outcomes {} :resource/outcomes {}
+                  :root/outcomes {} :loaded {} :last-refresh nil}]
+      (is (s/valid? ::runtime/status-result status))
+      (is (not (s/valid? ::runtime/status-result (dissoc status :last-refresh))))
+      (is (not (s/valid? ::runtime/status-result (assoc status :loaded :nope))))))
+  (testing "reload-code-result names the reloaded root plus residual outcomes"
+    (let [result {:root-lib 'demo/root
+                  :root "/tmp/root"
+                  :namespaces [{:ns 'demo.core :file "/tmp/root/demo/core.clj"}]
+                  :residuals []
+                  :hard-conflicts []}]
+      (is (s/valid? ::runtime/reload-code-result result))
+      (is (not (s/valid? ::runtime/reload-code-result (assoc result :extra 1))))
+      (is (not (s/valid? ::runtime/reload-code-result (dissoc result :residuals))))))
+  (testing "module-result covers both staged and refreshed shapes"
+    (is (s/valid? ::runtime/module-result
+                  {:module/key :demo
+                   :module/declaration {:file "modules/demo.clj"
+                                        :spools [] :after [] :required? false}
+                   :staged? true}))
+    (is (s/valid? ::runtime/module-result applied-refresh-result))
+    (is (not (s/valid? ::runtime/module-result {:staged? false})))))
+
+(defn- write-module-source! [config-dir relative-path ns-sym body]
+  (let [file (io/file config-dir relative-path)]
+    (.mkdirs (.getParentFile file))
+    (spit file (str "(ns " ns-sym "\n  (:require [skein.core.weaver.runtime :as r]))\n"
+                    body "\n"))
+    file))
+
+(deftest new-surface-declares-refreshes-plans-and-reports-one-module
+  (with-started-runtime
+    nil
+    {}
+    (fn [rt world]
+      (let [config-dir (io/file (:config-dir world))
+            ns-sym 'skein.runtime.alpha-test.demo-module]
+        (.mkdirs config-dir)
+        (write-module-source!
+         config-dir "modules/demo.clj" ns-sym
+         "(r/collect-module-entry! :queries \"demo-q\" [:= [:attr :k] 1])")
+        (testing "module! on a default-collector module applies and validates"
+          (let [result (runtime/module! rt :demo {:file "modules/demo.clj"})]
+            (is (= :applied (:status result)))
+            (is (s/valid? ::runtime/module-result result))
+            (is (= [:= [:attr :k] 1] (get (graph/queries rt) "demo-q")))))
+        (testing "status is offline and reports the desired module"
+          (let [status (runtime/status rt)]
+            (is (s/valid? ::runtime/status-result status))
+            (is (contains? (:modules status) :demo))
+            (is (= "modules/demo.clj" (get-in status [:modules :demo :file])))))
+        (testing "an unchanged targeted refresh skips publication"
+          (let [again (runtime/refresh! rt {:only [:demo]})]
+            (is (= :unchanged (:status again)))
+            (is (s/valid? ::runtime/refresh-result again))))
+        (write-module-source!
+         config-dir "modules/demo.clj" ns-sym
+         "(r/collect-module-entry! :queries \"demo-q\" [:= [:attr :k] 2])")
+        (testing "plan is an effect-free dry-run of the pending change"
+          (let [planned (runtime/plan rt {:only [:demo]})]
+            (is (:dry-run? planned))
+            (is (s/valid? ::runtime/plan-result planned))
+            (is (string? (:caveat planned)))
+            (is (= :applied (:status planned))
+                "plan reports the intended publication")
+            (is (= [:= [:attr :k] 1] (get (graph/queries rt) "demo-q"))
+                "plan publishes nothing")))
+        (testing "refresh! applies the pending change"
+          (let [applied (runtime/refresh! rt {:only [:demo]})]
+            (is (= :applied (:status applied)))
+            (is (= [:= [:attr :k] 2] (get (graph/queries rt) "demo-q")))))
+        (testing "malformed options and declarations fail loudly"
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"non-empty"
+                                (runtime/refresh! rt {:only []})))
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"unknown keys"
+                                (runtime/refresh! rt {:bogus true})))
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"unknown"
+                                (runtime/refresh! rt {:only [:missing]})))
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"exactly one"
+                                (runtime/module! rt :bad {:file "modules/demo.clj"
+                                                          :ns 'demo.ns}))))))))
+
+(deftest reload-code-composes-code-reload-and-residual-classification
+  (with-started-runtime
+    nil
+    {}
+    (fn [rt _world]
+      (let [reload-calls (atom 0)]
+        (with-redefs [spool-sync/reload-synced-spool!
+                      (fn [_runtime root-lib]
+                        (swap! reload-calls inc)
+                        {:root-lib root-lib
+                         :root "/tmp/demo-root"
+                         :namespaces [{:ns 'demo.core
+                                       :file "/tmp/demo-root/demo/core.clj"}]})
+                      spool-sync/loaded-namespace-status
+                      (fn [_runtime]
+                        {:residuals [{:reason :changed-bytes :namespace 'demo.core}]
+                         :hard-conflicts []})]
+          (let [result (runtime/reload-code! rt 'demo/root)]
+            (is (= 1 @reload-calls))
+            (is (= 'demo/root (:root-lib result)))
+            (is (= [{:reason :changed-bytes :namespace 'demo.core}]
+                   (:residuals result)))
+            (is (s/valid? ::runtime/reload-code-result result))))
+        (is (thrown? clojure.lang.ExceptionInfo
+                     (runtime/reload-code! rt "not-a-symbol")))))))
 
 (deftest start-options-are-validated-before-destructuring
   (doseq [opts [nil {:unknown true} {:publish? :yes}]]

@@ -11,7 +11,6 @@
             [clojure.string :as str]
             [skein.api.current.alpha :as current]
             [skein.api.format.alpha :as format-alpha]
-            [skein.api.patterns.alpha :as patterns]
             [skein.api.weaver.alpha :as weaver]
             [skein.api.spool.alpha :refer [attr-get entity-projection]]
             [skein.spools.workflow :as workflow]))
@@ -601,12 +600,6 @@
                                    :input land-abort-reason-input}]
                         :attributes {"workflow/decision-point" "land-signed-off"})))
 
-(defn- register-land-workflows!
-  "Register the land run's merge and abort routing targets."
-  []
-  {:land-merge (workflow/register-workflow! :land-merge 'workflows/land-merge-workflow)
-   :land-abort (workflow/register-workflow! :land-abort 'workflows/land-abort-workflow)})
-
 (defn- land-start!
   "Pour and start the land run for a feature branch; run-id is the feature slug."
   [feature {:keys [branch worktree card] :as opts}]
@@ -1138,13 +1131,6 @@
                                    :next :story-keep}]
                         :attributes {"workflow/decision-point" "story-fold-decided"})))
 
-(defn- register-story-workflows!
-  "Register the story run's fold and keep-split routing targets."
-  []
-  {:story (workflow/register-workflow! :story 'workflows/story-workflow)
-   :story-fold (workflow/register-workflow! :story-fold 'workflows/story-fold-workflow)
-   :story-keep (workflow/register-workflow! :story-keep 'workflows/story-keep-workflow)})
-
 (defn flow-op
   "Dispatch parsed `strand flow ...` subcommands over any registered workflow.
 
@@ -1251,32 +1237,44 @@
                              :extra :json}]))
          (keys (:subcommands flow-arg-spec)))})
 
-(defn install!
-  "Install the repo's hand-authored workflows: the delegate-pipeline pattern
-  and the coordinator land workflow with its op."
-  []
-  (let [runtime (current/runtime)]
-    {:installed true
-     :namespace 'workflows
-     :patterns [(patterns/register-pattern!
-                 runtime
-                 'delegate-pipeline
-                 "Create a sequential chain-loop workflow of subagent gates. Input: {run_id,tasks:[{id,title,body?,harness?,cwd?,max-attempts?}],harness?,cwd?,accept?}."
-                 'workflows/delegate-pipeline
-                 ::delegate-pipeline-input)]
-     :ops [(weaver/register-op!
-            runtime
-            'land
-            {:doc (:doc land-arg-spec)
-             :arg-spec land-arg-spec
-             :returns land-returns}
-            'workflows/land-op)
-           (weaver/register-op!
-            runtime
-            'flow
-            {:doc (:doc flow-arg-spec)
-             :arg-spec flow-arg-spec
-             :returns flow-returns}
-            'workflows/flow-op)]
-     :land-workflows (register-land-workflows!)
-     :story-workflows (register-story-workflows!)}))
+(defn contribute
+  "Contribute this repo's hand-authored workflows as workspace-owned partitions:
+  the `land` and `flow` CLI ops, the `delegate-pipeline` weave pattern, and the
+  land/story workflow constructors.
+
+  Owning each kind's partition is what makes deletion-by-omission work: dropping
+  an op, the pattern, or a constructor here and refreshing removes it from the
+  live registry, because publication replaces this module's complete partition
+  rather than upserting into a shared REPL/direct owner. The op and pattern
+  entries mirror the canonical registry shapes (the same maps
+  `weaver/register-op!` and `patterns/register-pattern!` assemble), so the
+  published surface is identical to the imperative path they replace."
+  [_]
+  {:ops {"land" {:name "land"
+                 :fn 'workflows/land-op
+                 :stream? false
+                 :deadline-class :standard
+                 :hook-class :mutating
+                 :provenance 'workflows
+                 :doc (:doc land-arg-spec)
+                 :arg-spec land-arg-spec
+                 :returns land-returns}
+         "flow" {:name "flow"
+                 :fn 'workflows/flow-op
+                 :stream? false
+                 :deadline-class :standard
+                 :hook-class :mutating
+                 :provenance 'workflows
+                 :doc (:doc flow-arg-spec)
+                 :arg-spec flow-arg-spec
+                 :returns flow-returns}}
+   :patterns {"delegate-pipeline"
+              {:name "delegate-pipeline"
+               :fn 'workflows/delegate-pipeline
+               :input-spec ::delegate-pipeline-input
+               :doc "Create a sequential chain-loop workflow of subagent gates. Input: {run_id,tasks:[{id,title,body?,harness?,cwd?,max-attempts?}],harness?,cwd?,accept?}."}}
+   workflow/constructor-kind {:land-merge 'workflows/land-merge-workflow
+                              :land-abort 'workflows/land-abort-workflow
+                              :story 'workflows/story-workflow
+                              :story-fold 'workflows/story-fold-workflow
+                              :story-keep 'workflows/story-keep-workflow}})

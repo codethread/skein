@@ -108,6 +108,21 @@
                  :failed/at "2026-07-19T12:00:00Z"}))
   (is (not (s/valid? ::events/failure-record {:handler/key :fails}))))
 
+(deftest handler-provenance-reports-owners-without-leaking-fn-values
+  (t/with-weaver-world [ctx {:storage :sqlite-memory}]
+    (let [rt (:runtime ctx)]
+      (events/register-handler! rt :h #{:strand/added} handler-sym)
+      (let [{:keys [effective shadowed contenders]} (get (events/handler-provenance rt) :h)]
+        (is (= :skein.owner/repl (:owner effective))
+            "a direct registration is attributed to the REPL owner")
+        (is (= :direct (:layer effective)))
+        (is (true? (:effective? effective)))
+        (is (= [] shadowed))
+        (is (not-any? #(contains? (:value %) :fn-value) contenders)
+            "no contender leaks the resolved function value")
+        (is (= handler-sym (get-in effective [:value :fn]))
+            "the handler symbol stays as data")))))
+
 (deftest registry-reads-are-deterministic-across-mixed-key-types
   (t/with-weaver-world [ctx {:storage :sqlite-memory}]
     (let [rt (:runtime ctx)]

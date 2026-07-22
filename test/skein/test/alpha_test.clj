@@ -2,6 +2,7 @@
   "Tests for the blessed skein.test.alpha weaver-world helpers."
   (:require [clojure.java.io :as io]
             [clojure.test :refer [deftest is testing]]
+            [skein.api.graph.alpha :as graph]
             [skein.api.clock.alpha :as clock]
             [skein.api.runtime.alpha :as runtime]
             [skein.api.weaver.alpha :as weaver]
@@ -215,6 +216,25 @@
                                   (require '[skein.api.current.alpha :as current]
                                            '[skein.api.weaver.alpha :as weaver])
                                   (weaver/list (current/runtime)))))))))
+
+(deftest with-weaver-world-declares-and-refreshes-one-module-over-new-surface
+  (t/with-weaver-world
+    [ctx {:storage :sqlite-memory
+          :files {"modules/demo.clj"
+                  (str "(ns demo.module\n  (:require [skein.core.weaver.runtime :as r]))\n"
+                       "(r/collect-module-entry! :queries \"demo-q\" [:= [:attr :k] 1])\n")}}]
+    (testing "declare-module! applies a default-collector module"
+      (let [result (t/declare-module! ctx :demo {:file "modules/demo.clj"})]
+        (is (= :applied (:status result)))))
+    (testing "module-status reports the desired module offline"
+      (is (contains? (:modules (t/module-status ctx)) :demo)))
+    (testing "the contributed query is live and an unchanged refresh skips it"
+      (is (contains? (graph/queries (:runtime ctx)) "demo-q"))
+      (is (= :unchanged (:status (t/refresh-modules! ctx {:only [:demo]})))))
+    (testing "plan-modules is an effect-free dry-run"
+      (let [planned (t/plan-modules ctx {:only [:demo]})]
+        (is (:dry-run? planned))
+        (is (= :unchanged (:status planned)))))))
 
 (deftest spool-checkout-root-resolves-directory-checkouts-from-classpath-entry
   (let [checkout (doto (io/file (System/getProperty "java.io.tmpdir")

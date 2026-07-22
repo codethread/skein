@@ -14,7 +14,7 @@ Two conventions hold across the tier:
 | Namespace | Reach for it when |
 | --- | --- |
 | [`current`](./current.api.md) | You are at a trusted in-process entry point and need to capture the active runtime (or probe for one without fabricating it). |
-| [`runtime`](./runtime.api.md) | Loader/config workflows: `sync!` approved spool roots, `use!` a module, `reload!` startup config, read `spool-state`, read the runtime clock. |
+| [`runtime`](./runtime.api.md) | Module/config workflows: declare, plan, refresh, inspect status, reload code, read `spool-state`, and read the runtime clock. |
 | [`clock`](./clock.api.md) | Code needs one capability for current time and sleeping, including deterministic polling with a manual test Clock. |
 
 ### Strand data

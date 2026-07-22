@@ -22,7 +22,7 @@ Approve the Guild root in `.skein/spools.edn`:
 {:spools {skein.spools/guild {:local/root "../spools/guild"}}}
 ```
 
-Then sync and activate it from trusted config:
+Then declare it from trusted config:
 
 ```clojure
 (require '[skein.api.current.alpha :as current]
@@ -30,23 +30,17 @@ Then sync and activate it from trusted config:
 
 (def runtime (current/runtime))
 
-(runtime/sync! runtime)
-(runtime/use! runtime :skein/spools-guild
+(runtime/module! runtime :skein/spools-guild
   {:ns 'skein.spools.guild
-   :spools #{'skein.spools/guild}})
-
-(require '[skein.spools.guild :as guild])
-
-(guild/install! runtime)
+   :spools ['skein.spools/guild]
+   :contribute 'skein.spools.guild/contribute
+   :reconcile 'skein.spools.guild/reconcile})
 ```
 
-Every Guild fn takes the runtime as its first argument and never reads the published singleton, so Guild works in unpublished and side-by-side runtimes. That is why activation calls `install!` explicitly rather than through `use!`'s `:call`, which invokes a no-arg fn and so cannot pass a runtime.
-
-`install!` registers the built-in `guild` op and resets the spool's runtime-local declaration state for reload-friendly startup. The declaration state is isolated from other runtimes in the same JVM. `install!` may also take a non-blank fallback guild name for contexts without runtime metadata:
-
-```clojure
-(guild/install! runtime "backend")
-```
+Every Guild fn takes the runtime as its first argument and never reads the
+published singleton, so Guild works in unpublished and side-by-side runtimes.
+The module publishes the built-in operation and reconciles its runtime-local
+declaration state.
 
 At invocation time, `guild list` prefers the runtime metadata name published by the running weaver.
 
@@ -139,7 +133,7 @@ Assume two repos, `frontend` and `backend`, each with a checked-in portable weav
 
 A machine with two clones can disambiguate locally with `.skein/config.local.json` when needed; the local overlay is not committed.
 
-With the Guild root approved in the backend repo's `.skein/spools.edn` and activated as shown in [Loading](#loading) (`runtime/sync!` + `runtime/use!`), the backend's checked-in `.skein/init.clj` publishes a guild API:
+With the Guild root approved in the backend repo's `.skein/spools.edn` and activated as shown in [Loading](#loading) (`runtime/refresh!` + `runtime/module!`), the backend's checked-in `.skein/init.clj` publishes a guild API:
 
 ```clojure
 (ns user
@@ -149,15 +143,14 @@ With the Guild root approved in the backend repo's `.skein/spools.edn` and activ
 
 (def runtime (current/runtime))
 
-(runtime/sync! runtime)
-(runtime/use! runtime :skein/spools-guild
+(runtime/module! runtime :skein/spools-guild
   {:ns 'skein.spools.guild
-   :spools #{'skein.spools/guild}})
+   :spools ['skein.spools/guild]
+   :contribute 'skein.spools.guild/contribute
+   :reconcile 'skein.spools.guild/reconcile})
 
-;; Loaded by the use! above; required here for the declarations below.
+;; Required here for the declarations below.
 (require '[skein.spools.guild :as guild])
-
-(guild/install! runtime)
 
 (s/def ::gate-name string?)
 (s/def ::gate-status-input (s/keys :req-un [::gate-name]))

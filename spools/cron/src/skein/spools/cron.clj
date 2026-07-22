@@ -26,8 +26,10 @@
   (:require [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [skein.api.current.alpha :as current]
+            [skein.api.registry.alpha :as registry]
             [skein.api.runtime.alpha :as runtime]
             [skein.api.scheduler.alpha :as scheduler]
+            [skein.core.weaver.module-refresh :as module-refresh]
             [skein.api.spool.alpha :refer [fail! poll-until! reject-unknown-keys!
                                            require-valid!]])
   (:import [java.time Instant]
@@ -39,12 +41,35 @@
 
 (def ^:private state-version
   "Shape version for cron's runtime spool-state map. Bump whenever `new-state`'s
-  key set changes: spool-state survives `reload!`, so a post-upgrade reload
+  key set changes: spool-state survives module refresh, so a post-upgrade refresh
   would otherwise reuse a preserved map missing the new key and offload against
   a nil executor (docs/spools/writing-shared-spools.md 'Versioned spool state',
   SPEC-004.C95). The `state-shape-matches-declared-version` test fails loudly if
   `new-state` and this version drift apart."
-  2)
+  4)
+
+(def ^:private kinds-version
+  "Shape version for cron's runtime-owned job-kind registry handle. Held in its
+  own spool-state slot (not nested in `::state`) so the module publication kernel
+  discovers `:skein.spools.cron/jobs` when a dependent module contributes cron
+  jobs (module_publication.clj domain-backends scans spool-state one level deep)."
+  1)
+
+(def ^:private job-kind :skein.spools.cron/jobs)
+(def ^:private repl-owner :skein.owner/repl)
+
+(s/def ::id (s/or :keyword keyword?
+                  :string (s/and string? (complement str/blank?))))
+(s/def ::interval-ms pos-int?)
+(s/def ::jitter-ms nat-int?)
+(s/def ::handler qualified-symbol?)
+(s/def ::job (s/keys :req-un [::id ::interval-ms ::handler] :opt-un [::jitter-ms]))
+
+(defn- new-job-kinds []
+  (doto (registry/registry)
+    (registry/declare-kind! {:id job-kind
+                             :entry-spec ::job
+                             :binding-moment :cron/fire})))
 
 (defn- ^ThreadFactory daemon-thread-factory [prefix]
   (let [counter (atom 0)]
@@ -76,6 +101,8 @@
 
 (defn- ^ExecutorService executor [runtime] (:executor (state runtime)))
 (defn- jobs-atom [runtime] (:jobs (state runtime)))
+(defn- job-kinds [runtime]
+  (runtime/spool-state runtime ::job-kinds {:version kinds-version} new-job-kinds))
 (defn- failure-log [runtime] (:failure-log (state runtime)))
 (defn- ^Random rng [runtime] (:rng (state runtime)))
 
@@ -153,10 +180,11 @@
   [runtime id]
   (let [id (job-id id)
         key (wake-key id)
-        [old _] (swap-vals! (jobs-atom runtime) dissoc id)
+        old @(jobs-atom runtime)
         pending? (some #(= key (:key %)) (scheduler/pending runtime))]
     (when pending?
       (scheduler/cancel! runtime key))
+    (swap! (jobs-atom runtime) dissoc id)
     {:unregistered (when (or pending? (contains? old id)) id)}))
 
 (defn- in-flight-count [runtime] (:in-flight-count (state runtime)))
@@ -255,20 +283,13 @@
 ;;
 ;; `::job` is the declared, discoverable source of truth for `register!`'s job
 ;; map — the contract downstream config authors write against — matching the
-;; sibling reference spools (roster, delegation). `register!` gates each field
+;; sibling reference spools such as delegation. `register!` gates each field
 ;; through `require-valid!` so the specs own the shape while the contextual
 ;; loud messages survive (failing value + allowed shape, TEN-003), and closes
 ;; the key set with `reject-unknown-keys!` since `s/keys` stays open. `:id`
 ;; accepts a keyword or non-blank string (coerced by `job-id`); `:handler` only
 ;; asserts a fully-qualified symbol here — `resolve-symbol` layers the
 ;; requiring-resolve check spec cannot express.
-(s/def ::id (s/or :keyword keyword?
-                  :string (s/and string? (complement str/blank?))))
-(s/def ::interval-ms pos-int?)
-(s/def ::jitter-ms nat-int?)
-(s/def ::handler qualified-symbol?)
-(s/def ::job (s/keys :req-un [::id ::interval-ms ::handler] :opt-un [::jitter-ms]))
-
 ;; `await-quiescent!`'s single opt: the poll budget in milliseconds.
 (s/def ::timeout-ms pos-int?)
 
@@ -324,10 +345,53 @@
           entry {:id id :interval-ms interval :jitter-ms jitter :handler (:handler job)}
           replace? (or (not pending?)
                        (and old-entry (not= (config-tuple old-entry) (config-tuple entry))))]
-      (swap! (jobs-atom runtime) assoc id entry)
       (when replace?
         (arm-wake! runtime id interval jitter))
+      (swap! (jobs-atom runtime) assoc id entry)
       (get @(jobs-atom runtime) id))))
+
+(defmacro defjob
+  "Collect one cron job declaration for the current runtime module.
+
+  `id` is the stable cron job key and `job` is the same literal map accepted by
+  `register!`. The macro performs no scheduling itself; cron's reconciler
+  applies the complete effective declaration after publication."
+  [id job]
+  `(module-refresh/collect-entry! ~job-kind ~id (assoc ~job :id ~id)))
+
+(defn contribute
+  "Materialize cron's job-kind registry handle for dependent module contributions.
+
+  The handle lives in its own spool-state slot so the publication kernel
+  discovers `:skein.spools.cron/jobs` before a dependent module (e.g. the NVD
+  scan job) stages its cron contribution."
+  [{:keys [runtime]}]
+  (state runtime)
+  (job-kinds runtime)
+  {})
+
+(defn reconcile
+  "Reconcile effective cron declarations with their durable dispatcher wakes.
+
+  Removed declarations cancel before removal; changed declarations preserve an
+  unchanged wake and reschedule a changed cadence or handler."
+  [{:keys [runtime]}]
+  (let [visible (jobs-atom runtime)
+        effective (registry/effective (job-kinds runtime) job-kind)
+        before @visible
+        removed (remove (set (keys effective)) (keys before))]
+    (try
+      (doseq [id removed] (unregister! runtime id))
+      (doseq [[id job] effective]
+        (when (not= (select-keys job [:interval-ms :jitter-ms :handler])
+                    (select-keys (get before id) [:interval-ms :jitter-ms :handler]))
+          (register! runtime (assoc job :id id))))
+      {:reconciled :cron :jobs (vec (sort (keys effective)))}
+      (catch Throwable t
+        (throw (ex-info "Cron reconciliation left a recoverable degraded outcome"
+                        {:remedy "Repair the cron declaration or durable wake, then refresh the owning module"
+                         :jobs (vec (sort (keys effective)))}
+                        t))))))
 
 (defn jobs
   "Return the cron jobs registered on `runtime` as status maps, sorted by id.
@@ -348,6 +412,7 @@
   []
   (let [runtime (current/runtime)]
     (state runtime)
+    (job-kinds runtime)
     {:installed true
      :namespace 'skein.spools.cron
      :jobs (mapv :id (jobs runtime))}))

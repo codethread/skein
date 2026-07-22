@@ -63,12 +63,12 @@ failing files fail loudly with file context. The generated `init.clj` is intenti
 
 (def runtime (current/runtime))
 
-(runtime/sync! runtime)
-;; batteries ships on the classpath (:paths), so require it before its use!.
+;; Batteries ships on the classpath, so it has no :spools prerequisite.
 (require 'skein.spools.batteries)
-(runtime/use! runtime :skein/spools-batteries
+(runtime/module! runtime :skein/spools-batteries
   {:ns 'skein.spools.batteries
-   :call 'skein.spools.batteries/install!})
+   :contribute 'skein.spools.batteries/contribute
+   :reconcile 'skein.spools.batteries/reconcile})
 ```
 
 `skein.api.runtime.alpha` is a privileged built-in runtime loader/config helper namespace shipped with Skein —
@@ -114,39 +114,34 @@ this page has you writing.
 
 ## Reloading a live weaver
 
-Use reload during development instead of restarting the weaver:
+Use refresh during development instead of restarting the weaver:
 
 ```clojure
 (require '[skein.api.current.alpha :as current]
          '[skein.api.runtime.alpha :as runtime])
-(runtime/reload! (current/runtime))
+(runtime/refresh! (current/runtime))
 ```
 
-Reload clears weaver-lifetime spool sync state, module-use state, named queries, weave patterns, custom
-ops, lifecycle hooks, event handlers, queued events, and recent event failures, then reloads `init.clj`
-followed by `init.local.clj`. Missing files are skipped; present failures fail loudly.
+Refresh re-reads `init.clj` and `init.local.clj`, synchronizes approved roots,
+reloads changed module source, atomically replaces owner partitions, and reconciles
+resources. It preserves unrelated modules, queued events, recent failures, and
+spool state. Missing startup files are skipped; present failures fail loudly.
 
-Two blind spots to know about. `reload!` re-runs the startup files but does not unload namespaces or vars it
-already loaded, and a bare `(require ns :reload)` is classloader-blind to per-spool synced roots — so neither
-picks up updated code from an already-synced opt-in spool. `reload-spool!` covers that gap. It takes a
-root-lib symbol from the family's effective `:roots` map and reloads that root's namespaces in dependency order:
+For code-only investigation, `reload-code!` takes a root-lib symbol from the
+family's effective `:roots` map and reloads that root's namespaces in dependency
+order:
 
 ```clojure
-(runtime/reload-spool! (current/runtime) 'skein.spools/kanban)
+(runtime/reload-code! (current/runtime) 'skein.spools/kanban)
 ```
 
 The result names the root lib, canonical root, and namespaces in reload order, and conforms to
-`:skein.api.runtime.alpha/reload-spool-result`.
-
-The two verbs are complementary halves of a hot bump. `reload-spool!` reloads spool *code*; `reload!` re-runs
-the startup files so `install!` re-registers ops, queries, and handlers. So the code-bump sequence
-is `reload-spool! root-lib` to make the code live, then a targeted re-`use!` of the spool's activation to
-re-register — or a full `reload!` when the bump changes registrations across the config. Order matters: while
-an edited source sits unreloaded, `sync!` and `reload!` refuse it as a non-additive redefinition; a completed
-`reload-spool!` records the root's fresh fingerprint, so the refusal clears and the full `reload!` passes.
+`:skein.api.runtime.alpha/reload-code-result`. It deliberately performs no
+publication or resource reconciliation; use a targeted refresh for the normal
+path.
 
 Some changes cannot load into a running weaver at all: removing an already-loaded root, repointing one at
-different source, or bumping a loaded Maven coordinate's version. `sync!` refuses those in-JVM and records a
+different source, or bumping a loaded Maven coordinate's version. Refresh refuses those changes and records a
 pending generation that takes effect at the next weaver restart. That restart is not free: replacing a weaver
 ends every agent run it is supervising, and restarting the canonical weaver requires explicit user sign-off.
 Treat a pending generation as a deliberate step, not a reflex; see the [reference](../reference.md) on weaver
@@ -220,34 +215,31 @@ in the root (if `:paths` is omitted, Skein's namespace loading defaults to `["sr
 {:paths ["src"]}
 ```
 
-Then implement the spool. The query from earlier now moves into an `install!` function, so reload and startup
-install everything from one place:
+Then implement the spool. The query from earlier now moves into a `contribute` function that returns the
+module's complete declaration, so every refresh and startup publishes it from one place:
 
 ```clojure
-(ns my.workflow
-  (:require [skein.api.current.alpha :as current]
-            [skein.api.graph.alpha :as graph]))
+(ns my.workflow)
 
-(defn install! []
-  (graph/register-query! (current/runtime) 'mine [:= [:attr :owner] "ct"])
-  {:my.workflow/installed true})
+(defn contribute [_ctx]
+  {:queries {"mine" [:= [:attr :owner] "ct"]}})
 ```
 
-Activate it from `init.clj`, after the `sync!` and batteries activation already there:
+Declare it from `init.clj`:
 
 ```clojure
-(runtime/use! runtime :my/workflow
+(runtime/module! runtime :my/workflow
   {:ns 'my.workflow
-   :spools #{'my/workflow}
-   :call 'my.workflow/install!})
+   :spools ['my/workflow]
+   :contribute 'my.workflow/contribute})
 ```
 
-Each piece has one job. `spools.edn` is approval: it says which source family and roots the weaver may load.
-`runtime/sync!` makes approved roots available to the weaver. `runtime/use!` activates one module and records
-whether it loaded, skipped, or failed; its `:call` must name a fully qualified zero-argument function. A
+Each piece has one job. `spools.edn` approves source. `runtime/module!` declares
+the desired module, and the refresh coordinator acquires its roots, collects its
+contribution, replaces that owner's entries, and reconciles resources. A
 direct `require` from `mill weaver repl` evaluates in the weaver JVM and is useful for trusted
-experimentation, but for repeatable module activation and reload introspection, go through `runtime/use!` or
-`runtime/reload!` from startup config or the live REPL.
+experimentation, but for repeatable module activation and status, go through `runtime/module!` or
+`runtime/refresh!` from startup config or the live REPL.
 
 Extension code runs with weaver authority, so only load trusted code. And there is no per-module isolation or
 unload guarantee: restart the weaver when you need a clean runtime.
@@ -261,16 +253,19 @@ spool can add commands to the CLI without recompiling anything. `strand help` li
 handler as string argv:
 
 ```clojure
-(ns my.workflow
-  (:require [skein.api.current.alpha :as current]
-            [skein.api.weaver.alpha :as weaver]))
+(ns my.workflow)
 
 (defn echo-op [{:op/keys [name argv]}]
   {:operation name :argv argv})
+```
 
-(defn install! []
-  (weaver/register-op! (current/runtime) 'echo "Echo raw argv" 'my.workflow/echo-op)
-  {:my.workflow/installed true})
+Register it from `init.clj` or the live REPL:
+
+```clojure
+(require '[skein.api.current.alpha :as current]
+         '[skein.api.weaver.alpha :as weaver])
+
+(weaver/register-op! (current/runtime) 'echo "Echo raw argv" 'my.workflow/echo-op)
 ```
 
 ```sh

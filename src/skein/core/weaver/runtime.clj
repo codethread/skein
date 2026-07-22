@@ -3,11 +3,13 @@
   (:require [clojure.java.io :as io]
             [clojure.spec.alpha :as s]
             [clojure.string :as str]
+            [nrepl.middleware.interruptible-eval :as nrepl-eval]
             [nrepl.server :as nrepl]
             [skein.api.cli.alpha :as cli]
             [skein.api.clock.alpha :as clock]
             [skein.core.specs :as specs]
             [skein.core.weaver.config :as weaver-config]
+            [skein.core.weaver.core-registry :as core-registry]
             [skein.core.weaver.metadata :as metadata]
             [skein.core.weaver.scheduler :as scheduler]
             [skein.core.weaver.socket :as socket]
@@ -42,18 +44,20 @@
   down while the lane idles; this bounds the pickup latency of the next event."
   5)
 
-(declare stop! with-spool-classloader with-runtime-binding)
+(declare stop! with-spool-classloader with-runtime-binding
+         with-runtime-and-spool-classloader)
 
 (defn- event-system-base []
-  {:handler-registry (atom {})
-   :recent-failures (atom [])
-   :queue (ArrayBlockingQueue. event-queue-capacity)
-   :running? (atom true)
-   ;; Raised before the worker claims an event, lowered after its handlers
-   ;; return, so await-quiescent! never reports settled while a just-claimed
-   ;; dispatch is still in flight (TEN-003).
-   :dispatch-in-progress? (atom false)
-   :worker (atom nil)})
+  (let [handler-store (core-registry/backed-registry :events)]
+    {:handler-store handler-store
+     :recent-failures (atom [])
+     :queue (ArrayBlockingQueue. event-queue-capacity)
+     :running? (atom true)
+     ;; Raised before the worker claims an event, lowered after its handlers
+     ;; return, so await-quiescent! never reports settled while a just-claimed
+     ;; dispatch is still in flight (TEN-003).
+     :dispatch-in-progress? (atom false)
+     :worker (atom nil)}))
 
 (defn stop-event-system!
   "Stop the runtime event worker and clear queued events."
@@ -97,7 +101,14 @@
                                 (catch Throwable _ nil))
                               ;; :fn stays un-destructured: a local named `fn` would
                               ;; shadow the fn macro in the handler thunks below.
-                              (doseq [{:keys [key types fn-value] :as handler} (vals @(:handler-registry event-system))
+                              ;; One deref of the immutable effective projection is
+                              ;; the whole dispatch's handler snapshot: every handler
+                              ;; for this event comes from one owner set, and a
+                              ;; concurrent replacement is seen only by a later event
+                              ;; (DELTA-OlrDrt-001.CC9). Each handler runs its captured
+                              ;; :fn-value, not a re-resolved symbol (CC10).
+                              (doseq [{:keys [key types fn-value] :as handler}
+                                      (vals (core-registry/effective (:handler-store event-system)))
                                       :when (contains? types (:event/type event))]
                                 (try
                                   (with-runtime-binding
@@ -133,31 +144,6 @@
         runtime* (assoc runtime :event-system event-system)]
     (run-event-worker! runtime* event-system)
     runtime*))
-
-(defn resume-event-system!
-  "Start event dispatch for the runtime's current event system."
-  [runtime]
-  (let [{:keys [running?] :as event-system} (:event-system runtime)]
-    (reset! running? true)
-    (run-event-worker! runtime event-system)
-    nil))
-
-(defn clear-event-system-for-reload!
-  "Stop event dispatch and clear handlers, queued events, and failures."
-  [runtime]
-  (let [{:keys [handler-registry recent-failures queue running?]} (:event-system runtime)]
-    (stop-event-system! runtime)
-    (reset! handler-registry {})
-    (reset! recent-failures [])
-    (.clear ^ArrayBlockingQueue queue)
-    (reset! running? false)
-    nil))
-
-(defn restart-event-system!
-  "Reset handlers, failures, and worker state for the runtime event system."
-  [runtime]
-  (clear-event-system-for-reload! runtime)
-  (resume-event-system! runtime))
 
 (defn- current-pid
   "Return the current OS process id."
@@ -252,7 +238,15 @@
     (fn []
       (mapv (fn [{:keys [file] :as startup-file}]
               (try
-                (assoc startup-file :return (with-spool-classloader runtime #(load-file file)))
+                (let [layer (case (:name startup-file)
+                              "init.clj" :init
+                              "init.local.clj" :init-local)]
+                  (assoc startup-file
+                         :return
+                         ((requiring-resolve
+                           'skein.core.weaver.module-refresh/with-startup-file)
+                          (assoc startup-file :layer layer)
+                          #(with-spool-classloader runtime (fn [] (load-file file))))))
                 (catch Throwable t
                   (throw (ex-info "Selected workspace startup file failed to load"
                                   {:config-dir (:config-dir world)
@@ -260,68 +254,53 @@
                                   t)))))
             (startup-files world)))))
 
+(defn- module-coordinator-context [runtime]
+  {:load-startup-files!
+   #(load-startup-files! runtime
+                         {:config-dir (get-in runtime [:metadata :config-dir])})
+   :with-loader #(with-runtime-and-spool-classloader runtime %)})
+
+(defn declare-module!
+  "Stage or apply one stable internal runtime module declaration.
+
+  Startup-file evaluation only stages the declaration. Outside collection the
+  declaration replaces the desired graph entry and refreshes it with affected
+  dependents. The public alpha surface is added by Task 5."
+  [runtime key opts]
+  ((requiring-resolve 'skein.core.weaver.module-refresh/module!)
+   runtime (module-coordinator-context runtime) key opts))
+
+(defn collect-module-entry!
+  "Collect one authoring-form entry for the module source being evaluated."
+  ([kind-id entry-key value]
+   ((requiring-resolve 'skein.core.weaver.module-refresh/collect-entry!)
+    kind-id entry-key value))
+  ([kind-id entry-key value opts]
+   ((requiring-resolve 'skein.core.weaver.module-refresh/collect-entry!)
+    kind-id entry-key value opts)))
+
+(defn refresh-modules!
+  "Run the internal full or targeted live-module refresh coordinator."
+  ([runtime]
+   (refresh-modules! runtime {}))
+  ([runtime opts]
+   ((requiring-resolve 'skein.core.weaver.module-refresh/refresh!)
+    runtime (module-coordinator-context runtime) opts)))
+
+(defn module-status
+  "Return offline joined state for the internal live-module coordinator."
+  [runtime]
+  ((requiring-resolve 'skein.core.weaver.module-refresh/status) runtime))
+
 (defn install-built-in-ops!
   "Install Skein's built-in CLI ops, resolving the api-tier registrar dynamically.
 
   The built-in help op and its registrar live in `skein.core.weaver.help`, which
   resolves `register-op!` on the alpha op registry at call time; `requiring-resolve`
-  keeps startup and reload sharing one install path without a static require."
+  keeps startup on the same owner-explicit registration path without a static
+  require."
   [runtime]
   (with-runtime-binding runtime #((requiring-resolve 'skein.core.weaver.help/register-built-in-ops!) runtime)))
-
-(defn- clear-reload-state! [runtime]
-  (reset! (:approved-spool-sync-state runtime) {})
-  (reset! (:module-use-state runtime) {})
-  (reset! (:query-registry runtime) {})
-  (reset! (:pattern-registry runtime) {})
-  (reset! (:op-registry runtime) {})
-  (reset! (:glossary-registry runtime) {})
-  (reset! (:help-transform-slot runtime) nil)
-  (reset! (:hook-registry runtime) {})
-  (clear-event-system-for-reload! runtime)
-  (install-built-in-ops! runtime))
-
-(defn reload-config!
-  "Reload selected config-dir startup files after clearing runtime registries.
-
-  First preflights the on-disk approved spool config: a config the sync phase
-  would throw on as a whole — a non-additive diff, an invalid entry, an
-  atomically failing Maven universe — aborts here with every registry and the
-  sync state untouched (a refused non-additive diff still records its pending
-  generation), because discovering that refusal after the clear would leave a
-  world with built-in ops only and no in-JVM recovery (SPEC-004.C46). Then
-  clears every weaver-lifetime registry and the event system, reinstalls the
-  built-in ops, reloads `init.clj`/`init.local.clj`, and re-arms the scheduler
-  so handlers newly supplied by reloaded spools/config resolve before any
-  durable pending wake fires. This is `skein.api.runtime.alpha/reload!`'s
-  implementation."
-  [runtime]
-  ;; requiring-resolve keeps the require graph pointing downward: spool-sync
-  ;; sits above this namespace through the access tier, like the api-tier op
-  ;; registrar install-built-in-ops! resolves.
-  ((requiring-resolve 'skein.core.weaver.spool-sync/preflight-approved-sync!) runtime)
-  (try
-    (clear-reload-state! runtime)
-    (let [world {:config-dir (get-in runtime [:metadata :config-dir])}
-          files (load-startup-files! runtime world)]
-      (resume-event-system! runtime)
-      ;; Re-arm after config reload so handlers newly supplied by reloaded
-      ;; spools/config resolve; rearm! also discards fire envelopes the reload
-      ;; flushed from the event queue (DELTA-weaver-scheduler-runtime-001.CC5).
-      (scheduler/rearm! runtime)
-      {:status :loaded
-       :files files
-       :returns (mapv :return files)})
-    (catch Throwable t
-      ;; Do not re-clear on failure. The initial clear-reload-state! already
-      ;; reinstalled the built-in ops, and startup files register userland ops
-      ;; incrementally, so a spool install that throws midway would otherwise
-      ;; take every already-registered op down with it — the "zero useful ops
-      ;; until a manual atom reset" cliff. Leave whatever loaded so the world
-      ;; stays operable, resume dispatch, and rethrow the failure loudly.
-      (resume-event-system! runtime)
-      (scheduler/rearm! runtime)
-      (throw t))))
 
 (defn- with-spool-classloader [runtime f]
   (let [thread (Thread/currentThread)
@@ -374,6 +353,25 @@
              (.addSuppressed ^Throwable startup-error close-error)
              (throw close-error))))))
    nil))
+
+(defn- eval-runtime-form [form]
+  (if-let [runtime (some-> nrepl-eval/*msg* ::runtime-state deref)]
+    (with-runtime-and-spool-classloader
+      runtime
+      #(clojure.lang.Compiler/eval form true))
+    (throw (ex-info "Weaver nREPL eval has no runtime"
+                    {:message (dissoc nrepl-eval/*msg* :transport :session)}))))
+
+(def ^:private eval-runtime-symbol
+  (let [{ns-object :ns var-name :name} (meta #'eval-runtime-form)]
+    (symbol (str (ns-name ns-object)) (str var-name))))
+
+(defn- runtime-nrepl-handler [runtime-state]
+  (let [handler (nrepl/default-handler)]
+    (fn [message]
+      (handler (cond-> (assoc message ::runtime-state runtime-state)
+                 (and (= "eval" (:op message)) (nil? (:eval message)))
+                 (assoc :eval eval-runtime-symbol))))))
 
 (defn- close-storage!
   "Close weaver-owned storage resources for `runtime`, when the handle has any."
@@ -543,7 +541,9 @@
     (let [storage (storage-for storage db-file world)
           ds (:connectable storage)
           _ (db/init! ds)
-          server (nrepl/start-server :bind loopback-host :port 0)
+          runtime-state (atom nil)
+          server (nrepl/start-server :bind loopback-host :port 0
+                                     :handler (runtime-nrepl-handler runtime-state))
           port (:port server)
           nonce (metadata/new-nonce)
           meta (metadata/metadata-shape {:pid (current-pid)
@@ -556,16 +556,20 @@
                                          :world world
                                          :name (or name (default-name world))
                                          :started-at (str (Instant/now))})
+          op-store (core-registry/backed-registry :ops)
+          query-store (core-registry/backed-registry :queries)
+          pattern-store (core-registry/backed-registry :patterns)
+          hook-store (core-registry/backed-registry :hooks)
           runtime-base {:storage storage
                         :datasource ds
                         :clock (atom (clock/system-clock))
                         :clock-pumps (atom {})
-                        :query-registry (atom {})
-                        :pattern-registry (atom {})
-                        :op-registry (atom {})
+                        :query-store query-store
+                        :pattern-store pattern-store
+                        :op-store op-store
+                        :hook-store hook-store
                         :glossary-registry (atom {})
                         :help-transform-slot (atom nil)
-                        :hook-registry (atom {})
                         :generation-id (str (java.util.UUID/randomUUID))
                         :release-marker resolved-release-marker
                         :approved-spool-sync-state (atom {})
@@ -573,14 +577,29 @@
                         :approved-spool-generation-fingerprints (atom {})
                         :approved-spool-generation-maven (atom {})
                         :pending-spool-generation (atom nil)
-                        :module-use-state (atom {})
+                        ;; Append-only for this process generation. Config reload
+                        ;; deliberately leaves loaded-code evidence intact.
+                        :namespace-load-ledger (atom {:last-order 0 :records []})
+                        ;; Embedded runtimes can share a JVM. Namespaces already
+                        ;; present before this runtime creates its spool loader
+                        ;; belong to the inherited image, not this runtime's
+                        ;; synced-root ledger.
+                        :inherited-namespaces (into #{} (map ns-name) (all-ns))
+                        ;; Status reads this recorded classification without
+                        ;; consulting source files. Sync/source-load boundaries
+                        ;; replace it when their in-memory evidence changes.
+                        :namespace-load-status (atom nil)
+                        :module-state
+                        (atom ((requiring-resolve
+                                'skein.core.weaver.module-refresh/initial-state)))
+                        :module-refresh-lock (Object.)
                         :spool-state (atom {})
                         :spool-classloader (clojure.lang.DynamicClassLoader.
                                             (.getContextClassLoader (Thread/currentThread)))
                         :server server
                         :metadata meta}
           runtime-base (start-event-system! runtime-base)
-          runtime-state (atom runtime-base)]
+          _ (reset! runtime-state runtime-base)]
       (try
         (let [socket-runtime (socket/start! runtime-state (:socket-path meta))
               runtime (assoc runtime-base :socket-runtime socket-runtime)]
@@ -589,7 +608,10 @@
           (when (and publish? (not (compare-and-set! current-runtime nil runtime)))
             (throw (ex-info "A weaver runtime is already active in this process" {:metadata (:metadata @current-runtime)})))
           (install-built-in-ops! runtime)
-          (load-startup-files! runtime world)
+          (let [refresh-result (refresh-modules! runtime {:startup? true})]
+            (when-not (#{:applied :unchanged} (:status refresh-result))
+              (throw (ex-info "Initial module refresh did not complete successfully"
+                              refresh-result))))
            ;; Arm the scheduler only after startup files finish loading, so
            ;; handlers supplied by approved spools/config resolve before any
            ;; durable pending wake is re-armed (DELTA-...-runtime-001.CC5).

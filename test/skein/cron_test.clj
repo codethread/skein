@@ -13,6 +13,7 @@
   (`PLAN-cron-on-scheduler-001.V3`). Cron registers no pump of its own."
   (:require [clojure.test :refer [deftest is testing]]
             [skein.api.runtime.alpha :as runtime]
+            [skein.api.registry.alpha :as registry]
             [skein.api.scheduler.alpha :as scheduler]
             [skein.spools.cron :as cron]
             [skein.spools.test-support :as test-support]
@@ -118,6 +119,34 @@
       (is (= 43000 (:wake_at (cron-wake rt "cron/steady")))
           "re-register with no pending wake arms a fresh one"))))
 
+(deftest owner-reconciliation-preserves-reschedules-and-cancels-cron-wakes
+  (with-cron
+    (fn [rt]
+      (let [handle (#'cron/job-kinds rt)
+            kind :skein.spools.cron/jobs
+            owner :test/cron-owner
+            replace! (fn [entries]
+                       (registry/replace-owner! handle kind owner
+                                                {:layer :workspace :entries entries :overrides #{}}))]
+        (replace! {:owned {:id :owned :interval-ms 1000
+                           :handler 'skein.cron-test/fire-ok}})
+        (cron/reconcile {:runtime rt})
+        (let [first-wake (:wake_at (cron-wake rt "cron/owned"))]
+          (test-alpha/set-clock! rt (test-alpha/manual-clock (Instant/ofEpochMilli 5000)))
+          (cron/reconcile {:runtime rt})
+          (is (= first-wake (:wake_at (cron-wake rt "cron/owned")))
+              "an unchanged owner declaration preserves its pending wake")
+          (replace! {:owned {:id :owned :interval-ms 2000
+                             :handler 'skein.cron-test/fire-other}})
+          (cron/reconcile {:runtime rt})
+          (is (= 7000 (:wake_at (cron-wake rt "cron/owned")))
+              "a changed owner declaration reschedules exactly once")
+          (registry/remove-owner! handle kind owner)
+          (cron/reconcile {:runtime rt})
+          (is (nil? (cron-wake rt "cron/owned"))
+              "owner removal cancels the durable cron wake")
+          (is (empty? (cron/jobs rt))))))))
+
 (deftest fires-records-result-and-continues-cadence
   (with-cron
     (fn [rt]
@@ -214,7 +243,7 @@
 
 (deftest state-shape-matches-declared-version
   ;; Drift alarm for cron's versioned spool-state: a key added to new-state
-  ;; without a state-version bump would survive reload! as a stale map and
+  ;; without a state-version bump would survive refresh as a stale map and
   ;; offload against a nil executor.
   (test-support/assert-state-shape
    ;; white-box read of the private new-state builder var, intentional here.

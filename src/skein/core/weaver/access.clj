@@ -8,6 +8,7 @@
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
             [skein.core.db :as db]
+            [skein.core.weaver.core-registry :as core-registry]
             [skein.core.weaver.runtime :as weaver-runtime]))
 
 (defn- normalize-row
@@ -30,19 +31,34 @@
   (:datasource runtime))
 
 (defn query-registry
-  "Return the runtime's named-query registry atom."
+  "Return one immutable effective named-query snapshot."
   [runtime]
-  (:query-registry runtime))
+  (core-registry/effective (:query-store runtime)))
+
+(defn query-store
+  "Return the runtime's named-query owner-partition store."
+  [runtime]
+  (:query-store runtime))
 
 (defn pattern-registry
-  "Return the runtime's weave-pattern registry atom."
+  "Return one immutable effective weave-pattern snapshot."
   [runtime]
-  (:pattern-registry runtime))
+  (core-registry/effective (:pattern-store runtime)))
+
+(defn pattern-store
+  "Return the runtime's weave-pattern owner-partition store."
+  [runtime]
+  (:pattern-store runtime))
 
 (defn op-registry
-  "Return the runtime's CLI-op registry atom."
+  "Return one immutable effective CLI-op snapshot."
   [runtime]
-  (:op-registry runtime))
+  (core-registry/effective (:op-store runtime)))
+
+(defn op-store
+  "Return the runtime's CLI-op owner-partition store."
+  [runtime]
+  (:op-store runtime))
 
 (defn glossary-registry
   "Return the runtime's reload-cleared glossary-outcome registry atom."
@@ -55,24 +71,34 @@
   (:help-transform-slot runtime))
 
 (defn hook-registry
-  "Return the runtime's lifecycle-hook registry atom."
+  "Return one immutable effective lifecycle-hook snapshot."
   [runtime]
-  (:hook-registry runtime))
+  (core-registry/effective (:hook-store runtime)))
+
+(defn hook-store
+  "Return the runtime's lifecycle-hook owner-partition store."
+  [runtime]
+  (:hook-store runtime))
 
 (defn approved-spool-sync-state
   "Return the runtime's approved-spool sync-state atom."
   [runtime]
   (:approved-spool-sync-state runtime))
 
-(defn module-use-state
-  "Return the runtime's module-use registry atom."
+(defn namespace-load-ledger
+  "Return the runtime's append-only namespace-load ledger atom."
   [runtime]
-  (:module-use-state runtime))
+  (:namespace-load-ledger runtime))
 
 (defn event-system
   "Return the runtime's event system."
   [runtime]
   (:event-system runtime))
+
+(defn handler-store
+  "Return the runtime event system's event-handler owner-partition store."
+  [runtime]
+  (:handler-store (event-system runtime)))
 
 (defn with-spool-classloader
   "Run f with the runtime bound and its spool classloader installed."

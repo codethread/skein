@@ -12,8 +12,9 @@
             [skein.api.format.alpha :as format-alpha]
             [skein.core.db :as db]
             [skein.core.query :as query]
-            [skein.core.weaver.access :refer [ds normalize pattern-registry
+            [skein.core.weaver.access :refer [ds normalize pattern-registry pattern-store
                                               with-spool-classloader validate-fn-symbol!]]
+            [skein.core.weaver.core-registry :as core-registry]
             [skein.core.weaver.dispatch :as dispatch]
             [skein.core.weaver.lifecycle :refer [event-base request-context
                                                  run-validation-hooks! run-transform-hooks]])
@@ -25,16 +26,18 @@
 (defn register-pattern!
   "Register a trusted weaver pattern handler and input spec in `runtime`."
   ([runtime pattern-name fn-sym input-spec]
-   (register-pattern! runtime pattern-name nil fn-sym input-spec))
+   (register-pattern! runtime core-registry/repl-owner pattern-name nil fn-sym input-spec))
   ([runtime pattern-name doc fn-sym input-spec]
+   (register-pattern! runtime core-registry/repl-owner pattern-name doc fn-sym input-spec))
+  ([runtime owner pattern-name doc fn-sym input-spec]
    (let [entry (pattern-entry pattern-name doc fn-sym input-spec)]
-     (swap! (pattern-registry runtime) assoc (:name entry) entry)
+     (core-registry/put-entry! (pattern-store runtime) owner (:name entry) entry)
      entry)))
 
 (defn patterns
   "Return registered weave pattern metadata from `runtime`, ordered by name."
   [runtime]
-  (mapv val (sort-by key @(pattern-registry runtime))))
+  (mapv val (sort-by key (pattern-registry runtime))))
 
 (defn resolve-pattern
   "Return the registered weave pattern for a name.
@@ -45,7 +48,7 @@
   Missing patterns fail loudly."
   [runtime pattern-name]
   (let [canonical-name (canonical-pattern-name pattern-name)
-        registered @(pattern-registry runtime)]
+        registered (pattern-registry runtime)]
     (or (get registered canonical-name)
         (throw (ex-info "Pattern not found" {:pattern pattern-name
                                              :canonical-pattern canonical-name

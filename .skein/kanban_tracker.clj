@@ -2,6 +2,7 @@
   "Bind this repo's kanban card projection to devflow."
   (:require [clojure.spec.alpha :as s]
             [clojure.string :as str]
+            [skein.api.current.alpha :as current]
             [skein.api.spool.alpha :as spool]
             [ct.spools.devflow :as devflow]
             [ct.spools.kanban :as kanban]))
@@ -51,3 +52,13 @@
 (s/fdef install!
   :args (s/cat)
   :ret ::install-result)
+
+;; The devflow<->kanban tracker binding is a singleton slot, not a partitioned
+;; kind: kanban exposes one tracker per runtime through `set-tracker!`, so there
+;; is no owner partition to contribute and nothing for deletion-by-omission to
+;; drop. Reconcile is its home — it re-establishes the binding on every refresh.
+(defn reconcile
+  "Bind devflow as this runtime's required kanban tracker."
+  [{:keys [runtime]}]
+  (current/with-runtime runtime (install!))
+  {:reconciled :kanban-tracker})

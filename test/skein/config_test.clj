@@ -17,7 +17,10 @@
             [skein.api.patterns.alpha :as patterns]
             [skein.api.weaver.alpha :as weaver]
             [skein.core.weaver.config :as weaver-config]
+            [skein.core.weaver.module-graph :as module-graph]
+            [skein.core.weaver.module-publication :as publication]
             [skein.core.weaver.runtime :as weaver-runtime]
+            [skein.core.weaver.spool-sync :as spool-sync]
             [skein.spools.test-support :as test-support]))
 
 (defn- delete-directory!
@@ -47,8 +50,37 @@
   (weaver-runtime/with-runtime-and-spool-classloader
     rt
     (fn []
-      (runtime/sync! rt)
+      (spool-sync/sync-approved-spools rt)
       (f))))
+
+(defn- load-module-source!
+  "Load one workspace authoring file and publish its complete contribution."
+  [rt module-key file]
+  (let [path (.getCanonicalPath (io/file file))
+        ns-sym (symbol (str/replace (str/replace file #"^\.skein/" "") #"\.clj$" ""))
+        contribution (:contribution
+                      (module-graph/with-contribution-collection
+                        {:module/key module-key :source/file path :source/namespace ns-sym}
+                        #(load-file file)))
+        backends (publication/backends rt)
+        candidates (publication/stage-owner backends (publication/candidates backends)
+                                            module-key contribution)]
+    (publication/publish! backends candidates)))
+
+(defn- publish-module-contribution!
+  "Replace one fixture module owner from its data-first contribution function."
+  [rt module-key contribute]
+  (let [contribution (update-vals
+                      (contribute {:runtime rt :module/key module-key})
+                      (fn [partition]
+                        (if (contains? partition :entries)
+                          partition
+                          {:entries partition :overrides #{}})))
+        backends (publication/backends rt)
+        candidates (publication/stage-owner
+                    backends (publication/candidates backends) module-key
+                    contribution)]
+    (publication/publish! backends candidates)))
 
 (defn- with-config-runtime
   "Run f with an isolated runtime and the repo-local .skein config loaded.
@@ -69,22 +101,29 @@
         (with-runtime-loader
           rt
           (fn []
-            ;; harnesses.clj's worker alias layers over the shipped :pi harness,
-            ;; which shuttle/install! registers in real startups; this fixture
-            ;; loads the config files alone, so register the defaults here.
-            ((requiring-resolve 'ct.spools.agent-run/register-default-harnesses!))
-            (load-file ".skein/config.clj")
+            (spool-sync/load-synced-namespace!
+             rt 'ct.spools.agent-run :skein/spools-shuttle)
+            (publish-module-contribution!
+             rt :skein/spools-shuttle
+             (requiring-resolve 'ct.spools.agent-run/contribute))
+            ((requiring-resolve 'skein.spools.workflow/contribute)
+             {:runtime rt :module/key :skein/spools-workflow})
+            ((requiring-resolve 'skein.spools.workflow/reconcile)
+             {:runtime rt :module/key :skein/spools-workflow})
+            (spool-sync/load-synced-namespace!
+             rt 'ct.spools.devflow :skein/spools-devflow)
+            (publish-module-contribution!
+             rt :skein/spools-devflow
+             (requiring-resolve 'ct.spools.devflow/contribute))
+            (load-module-source! rt :config ".skein/config.clj")
             (load-file ".skein/harnesses.clj")
+            (publish-module-contribution!
+             rt :harnesses (requiring-resolve 'harnesses/contribute))
+            ((requiring-resolve 'harnesses/reconcile) {:runtime rt})
             (load-file ".skein/workflows.clj")
-            (load-file ".skein/analytics.clj")
-            ((requiring-resolve 'config/install!))
-            ((requiring-resolve 'harnesses/install!))
-            ((requiring-resolve 'workflows/install!))
-            ((requiring-resolve 'analytics/install!))
-            ;; devflow's stage workflows register from its install! (init.clj
-            ;; wires this via runtime/use!); the runtime-owned registry needs a
-            ;; scoped runtime, so requiring the ns no longer registers them.
-            ((requiring-resolve 'ct.spools.devflow/install!))
+            (publish-module-contribution!
+             rt :workflows (requiring-resolve 'workflows/contribute))
+            (load-module-source! rt :analytics ".skein/analytics.clj")
             (f rt)))
         (finally
           (weaver-runtime/stop! rt)
@@ -97,7 +136,7 @@
   (.mkdirs (io/file target))
   (doseq [name ["init.clj" "config.clj" "workflows.clj" "harnesses.clj"
                 "attention.clj" "nvd_scan.clj" "reviewers.clj" "analytics.clj"
-                "kanban_tracker.clj" "spools.edn"]]
+                "kanban_tracker.clj" "module_adapters.clj" "spools.edn"]]
     (io/copy (io/file ".skein" name) (io/file target name)))
   ;; The copied config dir would reinterpret repo-relative local roots. Git
   ;; families remain byte-for-byte sourced from the checked-in approvals.
@@ -121,6 +160,72 @@
                                              :publish? false})]
       (try
         (with-runtime-loader rt #(f rt))
+        (finally
+          (weaver-runtime/stop! rt)
+          (db-test/delete-sqlite-family! db-file)
+          (delete-directory! config-dir))))))
+
+(defn- write-f16-probe!
+  "Write the F16 regression probe file into config-dir.
+
+  When present? is true it contributes one harness seat and one workflow
+  constructor; otherwise it contributes empty partitions — the file-edit a
+  developer makes to remove an entry."
+  [config-dir present?]
+  (spit (io/file config-dir "f16_probe.clj")
+        (str "(ns f16-probe\n"
+             "  \"F16 regression probe: contributes an alias and a workflow constructor.\"\n"
+             "  (:require [ct.spools.agent-run :as shuttle]\n"
+             "            [skein.spools.workflow :as workflow]))\n"
+             "(defn contribute [_]\n"
+             "  {shuttle/alias-kind "
+             (if present? "{:f16-probe-seat {:alias-of :codex}}" "{}") "\n"
+             "   workflow/constructor-kind "
+             (if present? "{:f16-probe-flow 'workflows/story-workflow}" "{}") "})\n")))
+
+(deftest f16-workspace-partition-refresh-deletes-omitted-seats-and-constructors
+  ;; F16 regression: the .skein policy files publish their harness seats, reviewer
+  ;; rosters, and workflow constructors as :workspace-layer partitions, so removing
+  ;; an entry from the file and refreshing must DELETE it from the live registry.
+  ;; The reconcile->install! path this replaced upserted into a shared REPL owner,
+  ;; where a deleted entry stayed silently effective. A probe module contributes an
+  ;; alias-kind seat and a constructor-kind entry, then drops both and refreshes.
+  (let [db-file (db-test/temp-db-file)
+        config-dir (str "/tmp/skein-f16-probe-" (java.util.UUID/randomUUID))]
+    (copy-config-dir! config-dir)
+    ;; Layer the probe module onto the same overlay hook as the chime notifier,
+    ;; so init.clj stays untouched and refresh re-reads the probe every cycle.
+    (spit (io/file config-dir "init.local.clj")
+          (pr-str '(do (require '[skein.api.current.alpha :as current]
+                                '[skein.api.runtime.alpha :as runtime]
+                                '[skein.spools.chime :as chime])
+                       (chime/set-notifier! {:argv ["true"]})
+                       (runtime/module! (current/runtime) :f16-probe
+                                        {:file "f16_probe.clj"
+                                         :spools ['ct.spools/agent-run 'skein.spools/workflow]
+                                         :after [:skein/spools-shuttle :skein/spools-workflow]
+                                         :contribute 'f16-probe/contribute}))))
+    (write-f16-probe! config-dir true)
+    (let [rt (weaver-runtime/start! db-file {:world (test-world config-dir)
+                                             :publish? false})]
+      (try
+        (with-runtime-loader
+          rt
+          (fn []
+            (let [resolve-harness (requiring-resolve 'ct.spools.agent-run/resolve-harness)
+                  workflow-definition (requiring-resolve 'skein.spools.workflow/workflow-definition)]
+              (is (= :codex (:name (resolve-harness :f16-probe-seat)))
+                  "the probe seat resolves through its :alias-of tool after startup")
+              (is (= 'workflows/story-workflow (workflow-definition :f16-probe-flow))
+                  "the probe workflow constructor is registered after startup")
+              (write-f16-probe! config-dir false)
+              (is (contains? #{:applied :unchanged} (:status (runtime/refresh! rt))))
+              (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Harness not found"
+                                    (resolve-harness :f16-probe-seat))
+                  "omitting the seat and refreshing deletes it from the alias registry")
+              (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unknown registered workflow"
+                                    (workflow-definition :f16-probe-flow))
+                  "omitting the constructor and refreshing deletes it from the registry"))))
         (finally
           (weaver-runtime/stop! rt)
           (db-test/delete-sqlite-family! db-file)
@@ -188,8 +293,7 @@
         (with-runtime-loader
           rt
           (fn []
-            (load-file config-path)
-            ((requiring-resolve 'config/install!))
+            (load-module-source! rt :config config-path)
             {:op-help (into {} (map (fn [op] [op (portable-source (op! "help" [op]))])) config-op-names)
              :queries (into {} (map (fn [q] [q (get (graph/queries rt) q)])) named-query-names)}))
         (finally
@@ -209,7 +313,7 @@
                    "devflow-describe" "devflow-run-history" "devflow-squash-run"
                    "devflow-status" "workflow-runs" "devflow-conventions"
                    "flow-await" "hitl" "land" "flow" "agent" "bench"]]
-    (is (some #(= op-name (:name %)) (weaver/ops rt))))
+    (is (some #(= op-name (:name %)) (weaver/ops rt)) op-name))
   (is (some #(= "delegate-pipeline" (:name %)) (patterns/patterns rt)))
   ;; agent-plan is spool-owned now; a real startup wires the agents spool in
   ;; via init.clj, so it must still be registered end to end
@@ -610,11 +714,15 @@
              (set (map :title (weaver/ready rt (var-get (requiring-resolve 'config/work-query)) {}))))))))
 
 (deftest reviewers-file-registers-declarative-roster
-  ;; exercises the same load path init.clj's :file+:call reviewers module runs
+  ;; exercises the same contribution path init.clj's reviewers module runs
   (with-config-runtime
-    (fn [_rt]
+    (fn [rt]
+      ;; materialize delegation's registry handle so its roster kind is a declared
+      ;; publication backend before reviewers.clj contributes its roster partition
+      ((requiring-resolve 'ct.spools.delegation/contribute)
+       {:runtime rt :module/key :skein/spools-delegation})
       (load-file ".skein/reviewers.clj")
-      ((requiring-resolve 'reviewers/install!))
+      (publish-module-contribution! rt :reviewers (requiring-resolve 'reviewers/contribute))
       (let [rosters ((requiring-resolve 'ct.spools.delegation/rosters))
             roster (first (filter #(= :change-review (:name %)) rosters))
             complex-roster (first (filter #(= :complex-patch-review (:name %)) rosters))
@@ -1044,39 +1152,41 @@
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unknown workflow run"
                             (op! "land" ["status" "never-landed"]))))))
 
-(defn- assert-treadle-installed-after-config
-  "Assert the subagent executor loaded and declares :config in :after — its install! runs an
-  initial gate scan, so config.clj's harness aliases must already exist or a
-  durable ready gate would be stamped gate/error on every cold start."
+(defn- assert-treadle-installed-after-runtime-dependencies
+  "Assert the subagent executor module orders after the modules it consumes.
+
+  A green startup fixture already proves every required module applied (start!
+  throws otherwise), so the load-order guarantee lives in the declared `:after`
+  edges, read from the module graph."
   [rt]
-  (let [use (get (runtime/uses rt) :skein/spools-treadle)]
-    (is (= :loaded (:status use)))
-    (is (some #{:config} (get-in use [:opts :after])))))
+  (let [decl (get-in (runtime/status rt) [:modules :skein/spools-treadle])]
+    (is (some? decl) ":skein/spools-treadle is a declared module")
+    (is (every? (set (:after decl)) [:harnesses :workflows])
+        "treadle depends on :harnesses and :workflows")))
 
 (defn- assert-workflow-spool-consent-edges
-  "Assert repo startup guards every module that now relies on the workflow coordinate."
+  "Assert repo startup guards every module that relies on the workflow coordinate."
   [rt]
-  (let [uses (runtime/uses rt)]
-    (doseq [use-id [:skein/spools-workflow :skein/spools-shell]]
-      (is (= ['skein.spools/workflow] (get-in uses [use-id :opts :spools]))
-          (str use-id " must opt into skein.spools/workflow")))
+  (let [modules (:modules (runtime/status rt))]
+    (doseq [id [:skein/spools-workflow :skein/spools-shell]]
+      (is (= ['skein.spools/workflow] (:spools (get modules id)))
+          (str id " must opt into skein.spools/workflow")))
     (is (= ['skein.spools/workflow 'ct.spools/agent-run
             'codethread/devflow 'skein.macros/macros]
-           (get-in uses [:config :opts :spools]))
+           (:spools (get modules :config)))
         ":config must guard every spool coordinate its config.clj ns requires")
-    (is (true? (get-in uses [:config :opts :required?]))
+    (is (true? (:required? (get modules :config)))
         ":config is required — a guarded but non-required module skips silently, dropping the op/query surface")
-    (doseq [use-id [:workflows]]
-      (is (= ['skein.spools/workflow 'ct.spools/delegation]
-             (get-in uses [use-id :opts :spools]))
-          (str use-id " must opt into skein.spools/workflow and ct.spools/delegation")))))
+    (is (= ['skein.spools/workflow 'ct.spools/delegation]
+           (:spools (get modules :workflows)))
+        ":workflows must opt into skein.spools/workflow and ct.spools/delegation")))
 
 (defn- assert-kanban-tracker-installed
-  "Assert startup loaded the required devflow tracker binding."
+  "Assert startup declared the required devflow tracker binding and it is live."
   [rt]
-  (let [tracker-use (get (runtime/uses rt) :kanban/tracker)]
-    (is (= :loaded (:status tracker-use)))
-    (is (true? (get-in tracker-use [:opts :required?])))
+  (let [decl (get-in (runtime/status rt) [:modules :kanban/tracker])]
+    (is (some? decl) ":kanban/tracker is a declared module")
+    (is (true? (:required? decl)))
     (is (re-find #"Bound tracker: devflow" (:tracker (op! "kanban" ["about"]))))))
 
 (deftest kanban-tracker-devflow-projection-contract
@@ -1110,19 +1220,29 @@
             #(is (thrown-with-msg? clojure.lang.ExceptionInfo #"projection must match"
                                    (project "malformed-step")))))))))
 
-(deftest repo-local-startup-and-reload-preserve-registrations
+(deftest repo-local-startup-and-refresh-preserve-registrations
   (with-startup-config-runtime
     (fn [rt]
       (assert-config-registrations rt)
-      (assert-treadle-installed-after-config rt)
+      (assert-treadle-installed-after-runtime-dependencies rt)
       (assert-workflow-spool-consent-edges rt)
       (assert-kanban-tracker-installed rt)
+      (is (map? (op! "help" ["agent"])))
+      (is (seq (op! "agent" ["harnesses"])))
+      (is (= "bench about" (:operation (op! "bench" ["about"]))))
+      (is (str/includes? (:tracker (op! "kanban" ["about"]))
+                         "Bound tracker: devflow"))
       (op! "devflow-start" ["startup-feature" "already-in-worktree-ok"])
-      (is (= :loaded (:status (runtime/reload! rt))))
+      (let [refresh-result (runtime/refresh! rt)]
+        (is (contains? #{:applied :unchanged} (:status refresh-result))))
+      (let [refresh-result (runtime/refresh! rt {:only #{:config}})]
+        (is (contains? #{:applied :unchanged} (:status refresh-result))))
+      (is (every? #(= :applied (:status %))
+                  (vals (:resource/outcomes (runtime/status rt)))))
       (assert-config-registrations rt)
       (assert-workflow-spool-consent-edges rt)
       (assert-kanban-tracker-installed rt)
-      ;; runtime registries reload; the strand graph and run state persist
+      ;; Module-owned registrations refresh; the strand graph and run state persist.
       (let [status (op! "devflow-status" ["startup-feature"])]
         (is (false? (:done status)))
         (is (= "create-or-confirm-worktree" (:checkpoint (first (:ready status)))))))))
@@ -1151,13 +1271,13 @@
   [form]
   (if (and (seq? form) (= 'quote (first form))) (second form) form))
 
-(defn- use-form?
-  "True when form is a `runtime/use!` module registration call."
+(defn- module-form?
+  "True when form is a `runtime/module!` declaration call."
   [form]
-  (and (seq? form) (= 'runtime/use! (first form))))
+  (and (seq? form) (= 'runtime/module! (first form))))
 
-(defn- parse-use-form
-  "Project a `(runtime/use! runtime <key> <opts>)` form into its guard-relevant data."
+(defn- parse-module-form
+  "Project a `(runtime/module! runtime <key> <opts>)` form into its guard-relevant data."
   [form]
   (let [opts (nth form 3)]
     {:key (nth form 2)
@@ -1193,7 +1313,7 @@
                   (let [deps (edn/read-string (slurp (io/file root "deps.edn")))
                         paths (or (:paths deps) ["src"])]
                     [coord (mapv #(io/file root %) paths)]))))
-        (:spools (runtime/syncs rt))))
+        (:spools (spool-sync/approved-spool-syncs rt))))
 
 (defn- ns->source-relative-path
   "Return the classpath-relative source path for a namespace symbol."
@@ -1211,23 +1331,23 @@
 
 (deftest init-use-guards-declare-required-spool-coordinates
   ;; PROP-usc-001.R1/.V, PLAN-usc-001.V4/.TC2: the guard-wiring acceptance gate.
-  ;; A synced root resolves through the add-libs classloader whether or not a
-  ;; use! declares :spools, so a green world load never proves consent is wired.
-  ;; This asserts it directly: every init.clj use! that pulls a skein.spools.*/
-  ;; skein.macros.* namespace onto the classpath — a :ns activation (its own
-  ;; coordinate) or a :file module's ns :require (each required coordinate) —
-  ;; must declare that coordinate in :spools, batteries (the classpath exception
-  ;; with no coordinate) excepted. Coordinates resolve through the synced root
-  ;; manifests, never a name heuristic: ct.spools.devflow lives in the
-  ;; codethread/devflow root and skein.spools.executors.shell in the
+  ;; A synced root resolves through the spool classloader whether or not a
+  ;; module! declares :spools, so a green world load never proves consent is
+  ;; wired. This asserts it directly: every init.clj module! that pulls a
+  ;; skein.spools.*/skein.macros.* namespace onto the classpath — a :ns module
+  ;; (its own coordinate) or a :file module's ns :require (each required
+  ;; coordinate) — must declare that coordinate in :spools, batteries (the
+  ;; classpath exception with no coordinate) excepted. Coordinates resolve
+  ;; through the synced root manifests, never a name heuristic: ct.spools.devflow
+  ;; lives in the codethread/devflow root and skein.spools.executors.shell in the
   ;; skein.spools/workflow root, so a prefix rule would both false-fail devflow
   ;; and false-pass a real miss.
   (with-startup-config-runtime
     (fn [rt]
       (let [coordinate-roots (coordinate-source-roots rt)
-            uses (map parse-use-form (filter use-form? (read-all-forms ".skein/init.clj")))]
-        (is (seq uses) "parsed at least one init.clj use! form")
-        (doseq [{:keys [key file spools] use-ns :ns} uses
+            modules (map parse-module-form (filter module-form? (read-all-forms ".skein/init.clj")))]
+        (is (seq modules) "parsed at least one init.clj module! form")
+        (doseq [{:keys [key file spools] use-ns :ns} modules
                 :when (not= use-ns 'skein.spools.batteries)]
           (let [required-nss (if file
                                (->> (ns-require-libs (read-first-form (io/file ".skein" file)))

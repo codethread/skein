@@ -52,7 +52,8 @@
             [clojure.string :as str]
             [skein.api.cli.alpha :as cli]
             [skein.api.format.alpha :as format-alpha]
-            [skein.api.return-shape.alpha :as return-shape]))
+            [skein.api.return-shape.alpha :as return-shape]
+            [skein.core.weaver.core-registry :as core-registry]))
 
 (def ^:private schema-version
   "Positive integer versioning the help-schema contract itself.
@@ -64,11 +65,10 @@
 (defn- registered-op-entries
   "Return `runtime`'s registered op entries sorted by canonical name.
 
-  Reads the runtime map's `:op-registry` atom directly: the blessed accessor
-  (`skein.core.weaver.access/op-registry`) sits above this namespace in the
-  load graph, so requiring it would close a cycle."
+  Reads one immutable owner-registry snapshot directly to avoid closing the
+  internal require graph through the access namespace."
   [runtime]
-  (mapv val (sort-by key @(:op-registry runtime))))
+  (mapv val (sort-by key (core-registry/effective (:op-store runtime)))))
 
 (defn- resolve-entry
   "Resolve the registry entry for `op-name` (a raw positional string).
@@ -677,26 +677,27 @@
 
   Registers `help` and its two meta-verb siblings `about`/`prime`
   (DELTA-Dtf-002.CC6) through the public `register-op!` path, so all three are
-  replaceable, maskable, and cleared/reinstalled by `reload!` like any op.
+  replaceable and maskable like any op, under the system owner partition.
   Resolves `register-op!` at call time: this namespace sits below `access` in the
   load graph, so a static require of the alpha module would close a cycle — the
   same constraint that made `skein.core.weaver.runtime` reach the previous alpha
-  registrar dynamically."
+  registrar dynamically. Built-in ops register under the system owner in the
+  defaults layer, so a workspace replacement must state explicit override intent."
   [runtime]
   (let [register-op! (requiring-resolve 'skein.api.weaver.alpha/register-op!)]
-    (register-op! runtime 'help
+    (register-op! runtime core-registry/system-owner 'help
                   {:doc (:doc help-arg-spec)
                    :hook-class :read
                    :arg-spec help-arg-spec
                    :returns help-return-shape}
                   'skein.core.weaver.help/op-help-handler)
-    (register-op! runtime 'about
+    (register-op! runtime core-registry/system-owner 'about
                   {:doc (:doc about-arg-spec)
                    :hook-class :read
                    :arg-spec about-arg-spec
                    :returns (meta-verb-return-shape :about)}
                   'skein.core.weaver.help/op-about-handler)
-    (register-op! runtime 'prime
+    (register-op! runtime core-registry/system-owner 'prime
                   {:doc (:doc prime-arg-spec)
                    :hook-class :read
                    :arg-spec prime-arg-spec

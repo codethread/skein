@@ -5,15 +5,10 @@
   definition; the help projection (DELTA-Dtf-002.CC5) resolves per-verb
   `failure-modes` references against this one registry so lifecycle-failure prose
   is defined once and referenced by name, never restated per verb. Each owning
-  spool registers its outcomes from its own `install!` before the ops that
-  reference them (the load-order contract, DELTA-Dtf-003.CC2); trusted
-  `init.clj`/REPL config may register outcomes directly.
-
-  The registry is runtime-owned and **reload-cleared**: it follows the op-registry
-  lifecycle (SPEC-004.C46/C63a/C63c), cleared by `reload!` before config re-runs,
-  not the reload-surviving `spool-state` (SPEC-004.C95) that `skein.api.vocab.alpha`
-  uses. It is a distinct layer from the vocab registry and reuses none of its
-  machinery.
+  spool reconciles its outcomes before help resolves the referencing ops (the
+  load-order contract, DELTA-Dtf-003.CC2); trusted config may register outcomes
+  directly. The registry is runtime-owned service state. Module refresh leaves
+  direct entries intact, while an owning module reconciles its complete set.
 
   Discipline (TEN-000@1, no-migration alpha): outcome names are qualified and
   stable; `register-glossary-outcome!` fails loudly on a name collision, naming

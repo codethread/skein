@@ -118,8 +118,8 @@
   The drift alarm for the versioned spool-state convention
   (docs/spools/writing-shared-spools.md 'Versioned spool state'): a spool declares a
   `state-version` alongside `new-state`, and spool-state reuses a preserved map
-  across `reload!` until that version changes. If `new-state` gains or loses a
-  key without a matching version bump, a post-upgrade reload would silently reuse
+  across module refresh until that version changes. If `new-state` gains or loses a
+  key without a matching version bump, a post-upgrade refresh would silently reuse
   a shape-mismatched map, so each versioned spool pins its key set here and bumps
   both together. Call from a deftest with the spool's private `new-state` var,
   e.g. `(assert-state-shape #'chime/new-state #{:notifier-binding ...})`."

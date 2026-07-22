@@ -1,6 +1,6 @@
 (ns skein.spools-test
   "Tests for runtime spool workspace surfaces: approved spools.edn and
-  spools.local.edn reading, sync!, layered use!, reload!, event helper routing,
+  spools.local.edn reading, approved-root acquisition, module refresh, event helper routing,
   and daemon init."
   (:require [clojure.java.io :as io]
             [clojure.spec.alpha :as s]
@@ -10,8 +10,6 @@
             [skein.core.weaver.access :as access]
             [skein.core.weaver.spool-sync :as spool-sync]
             [skein.api.events.alpha :as events]
-            [skein.core.weaver.dispatch :as dispatch]
-            [skein.api.graph.alpha :as graph]
             [skein.spools.test-support :refer [temp-config-dir with-runtime]]
             [skein.api.runtime.alpha :as runtime]
             [skein.source-file :as source-file]
@@ -67,6 +65,20 @@
       (finally
         (alter-var-root #'spool-sync/resolve-spool-maven-libs (constantly original))))))
 
+(defn- running-release-marker [runtime]
+  (let [{:keys [marker provenance]} (runtime/release-marker runtime)]
+    (if (= :none provenance) :none marker)))
+
+(defn- sync-approved! [runtime]
+  (spool-sync/sync-approved-spools runtime (running-release-marker runtime)))
+
+(defn- sync-state [runtime]
+  (spool-sync/approved-spool-syncs runtime))
+
+(defn- load-synced! [runtime owner {ns-sym :ns}]
+  (spool-sync/load-synced-namespace! runtime ns-sym owner)
+  {:status :loaded})
+
 (defn- write-local-lib! [config-dir lib-name ns-sym]
   (let [root (io/file config-dir "spools" lib-name)
         ns-path (-> (str ns-sym)
@@ -79,7 +91,7 @@
     root))
 
 (defn- write-spool-manifest!
-  "Write a legacy spool.edn file so regression tests can prove sync! ignores it.
+  "Write a legacy spool.edn file so regression tests can prove acquisition ignores it.
 
   Spool manifests are not part of the spool contract; documentation-only
   metadata belongs in README prose per devflow/specs/repl-api.md SPEC-003.P5."
@@ -507,7 +519,7 @@
                     :pinned "v2"}}
                  (set (:findings data))))
           (is (= {'target/family "v5"} (:suggestions data)))
-          (is (= {:spools {}} (runtime/syncs rt))))))))
+          (is (= {:spools {}} (sync-state rt))))))))
 
 (deftest runtime-sync-validates-skein-minimum-against-its-release-marker
   (let [family 'demo/skein-floor
@@ -528,7 +540,7 @@
         {:release-marker "v2"}
         (fn [rt config-dir]
           (let [root (write-floor! config-dir "v2")
-                result (runtime/sync! rt)]
+                result (sync-approved! rt)]
             (is (not (contains? result :pending-validations)))
             (is (= :loaded (get-in result [:spools family :status])))
             (is (= (.getCanonicalPath root) (get-in result [:spools family :root])))))))
@@ -537,7 +549,7 @@
         {:release-marker "v1"}
         (fn [rt config-dir]
           (write-floor! config-dir "v2")
-          (let [ex (is (thrown? clojure.lang.ExceptionInfo (runtime/sync! rt)))]
+          (let [ex (is (thrown? clojure.lang.ExceptionInfo (sync-approved! rt)))]
             (is (= :spool-requirements-unsatisfied (:reason (ex-data ex))))
             (is (= [{:error :skein-below-minimum
                      :spool family
@@ -548,7 +560,7 @@
       (with-runtime
         (fn [rt config-dir]
           (write-floor! config-dir "v2")
-          (let [ex (is (thrown? clojure.lang.ExceptionInfo (runtime/sync! rt)))]
+          (let [ex (is (thrown? clojure.lang.ExceptionInfo (sync-approved! rt)))]
             (is (= :release-marker-unavailable (:reason (ex-data ex))))
             (is (= [{:family family :skein/min "v2"}]
                    (:floors (ex-data ex))))))))
@@ -558,9 +570,9 @@
           (let [root (write-local-lib! config-dir "no-skein-floor" 'demo.no_skein_floor)]
             (write-spools! config-dir
                            (pr-str {:spools {family {:local/root "spools/no-skein-floor"}}}))
-            (is (= :loaded (get-in (runtime/sync! rt) [:spools family :status])))
+            (is (= :loaded (get-in (sync-approved! rt) [:spools family :status])))
             (is (= (.getCanonicalPath root)
-                   (get-in (runtime/syncs rt) [:spools family :root])))))))))
+                   (get-in (sync-state rt) [:spools family :root])))))))))
 
 (deftest malformed-stage-one-entry-gates-requirement-arithmetic
   (with-runtime
@@ -603,9 +615,10 @@
             lib (symbol (str "demo/event-handler-lib-" suffix))]
         (write-local-lib! config-dir "event-handler" ns-sym)
         (write-spools! config-dir (pr-str {:spools {lib {:local/root "spools/event-handler"}}}))
-        (is (= :loaded (get-in (client/call-world (get-in rt [:metadata :config-dir]) {:timeout-ms 30000} :sync-approved-spools)
-                               [:spools lib :status])))
-        (is (= :loaded (:status (client/call-world (get-in rt [:metadata :config-dir]) {:timeout-ms 30000} :use! :events {:ns ns-sym :spools [lib]}))))
+        (is (= :applied
+               (:status (client/call-world (get-in rt [:metadata :config-dir])
+                                           {:timeout-ms 30000}
+                                           :module! :events {:ns ns-sym :spools [lib]}))))
         (let [entry (client/call-world (get-in rt [:metadata :config-dir]) {:timeout-ms 30000}
                                        :register-event-handler! :lib #{:strand/added}
                                        (symbol (str ns-sym) "event-handler") {})]
@@ -669,7 +682,7 @@
                               :source (shared-source config-dir)
                               :provenance :spools-edn
                               :status :loaded}}}
-               (runtime/sync! rt)))
+               (sync-approved! rt)))
         (is (= {:spools {lib {:lib lib
                               :family lib
                               :coordinate {:kind :local :local/root "spools/demo"}
@@ -679,7 +692,7 @@
                               :source (shared-source config-dir)
                               :provenance :spools-edn
                               :status :loaded}}}
-               (runtime/syncs rt)))
+               (sync-state rt)))
         (is (= {:spools {lib {:lib lib
                               :family lib
                               :coordinate {:kind :local :local/root "spools/demo"}
@@ -689,7 +702,7 @@
                               :source (shared-source config-dir)
                               :provenance :spools-edn
                               :status :already-available}}}
-               (runtime/sync! rt)))))))
+               (sync-approved! rt)))))))
 
 ;; Regression guard: a present legacy spool.edn, even with retired manifest
 ;; keys, must have no effect on sync results. The absent :manifest and
@@ -706,91 +719,13 @@
                                      :needs {'demo/missing {:suggest {:git/url "file:///tmp/suggested"}}}
                                      :docs []})
         (write-spools! config-dir (pr-str {:spools {lib {:local/root "spools/ignored-manifest"}}}))
-        (let [result (get-in (runtime/sync! rt) [:spools lib])]
+        (let [result (get-in (sync-approved! rt) [:spools lib])]
           (is (= :loaded (:status result)))
           (is (not (contains? result :manifest)))
           (is (not (contains? result :unmet-needs)))
-          (is (= :loaded (:status (runtime/use! rt :ignored/manifest {:ns ns-sym :spools [lib]})))))))))
+          (is (= :loaded (:status (load-synced! rt :ignored/manifest {:ns ns-sym :spools [lib]})))))))))
 
-(deftest use-is-driven-by-consumer-spools-after-load-and-call-options
-  (with-runtime
-    (fn [rt config-dir]
-      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
-            base-ns (symbol (str "demo.base_" suffix))
-            child-ns (symbol (str "demo.child_" suffix))
-            base-lib (symbol (str "demo/base-" suffix))
-            child-lib (symbol (str "demo/child-" suffix))
-            called-file (io/file config-dir "called.edn")]
-        (write-local-lib! config-dir "base" base-ns)
-        (write-local-lib! config-dir "child" child-ns)
-        (write-spool-ns! (io/file config-dir "spools" "child")
-                         child-ns
-                         (str "(ns " child-ns ")
-"
-                              "(defn install! [] (spit " (pr-str (str called-file)) " (pr-str :called)) :installed)
-"))
-        (write-spools! config-dir (pr-str {:spools {base-lib {:local/root "spools/base"}
-                                                    child-lib {:local/root "spools/child"}}}))
-        (runtime/sync! rt)
-        (is (= :loaded (:status (runtime/use! rt :base {:ns base-ns :spools [base-lib]}))))
-        (let [result (runtime/use! rt :child {:ns child-ns
-                                              :spools [base-lib child-lib]
-                                              :after [:base]
-                                              :call (symbol (str child-ns "/install!"))})]
-          (is (= :loaded (:status result)))
-          (is (= :installed (get-in result [:call :return])))
-          (is (= :called (read-string (slurp called-file)))))))))
-
-(deftest use-required-spool-gates-throw-for-surviving-skip-reasons
-  (with-runtime
-    (fn [rt config-dir]
-      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
-            ns-sym (symbol (str "demo.required_gate_" suffix))
-            approved-lib (symbol (str "demo/required-gate-" suffix))
-            failed-lib (symbol (str "demo/required-failed-" suffix))]
-        (write-local-lib! config-dir "required-gate" ns-sym)
-        (write-spools! config-dir (pr-str {:spools {approved-lib {:local/root "spools/required-gate"}
-                                                    failed-lib {:local/root "spools/missing"}}}))
-        (doseq [[label key opts expected]
-                [["not approved"
-                  :required/not-approved
-                  {:ns ns-sym :spools ['demo/not-approved] :required? true}
-                  {:reason :not-approved :lib 'demo/not-approved}]
-                 ["not synced"
-                  :required/not-synced
-                  {:ns ns-sym :spools [approved-lib] :required? true}
-                  {:reason :not-synced :lib approved-lib}]]]
-          (testing label
-            (try
-              (runtime/use! rt key opts)
-              (is false "expected required spool gate to throw")
-              (catch clojure.lang.ExceptionInfo e
-                (is (= "Required module use was skipped" (ex-message e)))
-                (is (= (merge {:key key
-                               :opts opts
-                               :status :skipped}
-                              expected)
-                       (select-keys (ex-data e) [:key :opts :status :reason :lib])))))))
-        (runtime/sync! rt)
-        (testing "sync failed"
-          (try
-            (runtime/use! rt :required/sync-failed {:ns ns-sym :spools [failed-lib] :required? true})
-            (is false "expected required spool gate to throw")
-            (catch clojure.lang.ExceptionInfo e
-              (is (= "Required module use was skipped" (ex-message e)))
-              (is (= {:key :required/sync-failed
-                      :opts {:ns ns-sym :spools [failed-lib] :required? true}
-                      :status :skipped
-                      :reason :sync-failed
-                      :lib failed-lib}
-                     (select-keys (ex-data e) [:key :opts :status :reason :lib])))
-              (is (= :failed (get-in (ex-data e) [:sync :status])))
-              (is (= :missing-root (get-in (ex-data e) [:sync :reason]))))))))))
-
-;; Dogfoods skein.test.alpha for author-visible weaver-world behavior
-;; (LAT-PLAN-001.PH6). Uses an explicit :root because the daemon init helper
-;; needs the synced local root to outlive the temporary world.
-(deftest daemon-init-runs-with-spool-classloader-after-sync
+(deftest daemon-init-loads-module-with-the-spool-classloader
   (let [root (temp-config-dir)
         suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
         ns-sym (symbol (str "demo.init-synced-" suffix))
@@ -798,7 +733,7 @@
         ns-path (-> (str ns-sym)
                     (str/replace \- \_)
                     (str/replace \. java.io.File/separatorChar))
-        result-file (io/file root "init-result.edn")]
+        module-key (keyword (str "init-synced-" suffix))]
     (try
       (t/with-weaver-world [ctx {:root (.getPath root)
                                  :spools-edn {:spools {lib {:local/root "spools/init-demo"}}}
@@ -808,23 +743,23 @@
                                  :init (source-file/render-forms
                                         ['(require '[skein.api.current.alpha :as current]
                                                    '[skein.api.runtime.alpha :as runtime])
-                                         `(spit ~(str result-file)
-                                                (pr-str (runtime/sync! (current/runtime))))])}]
-        (is (= :loaded (get-in (read-string (slurp result-file)) [:spools lib :status])))
-        (is (= :loaded (get-in (t/repl! ctx
+                                         `(runtime/module! (current/runtime) ~module-key
+                                                           {:ns '~ns-sym :spools ['~lib]})])}]
+        (is (= :synced (get-in (t/repl! ctx
                                         '(do
                                            (require '[skein.api.current.alpha :as current]
                                                     '[skein.api.runtime.alpha :as runtime])
-                                           (runtime/syncs (current/runtime))))
-                               [:spools lib :status])))
+                                           (runtime/status (current/runtime))))
+                               [:root/outcomes lib :status])))
+        (is (= :synced-lib-loaded
+               (t/repl! ctx `((requiring-resolve '~(symbol (str ns-sym "/marker")))))))
         (testing "repl! forms run under the spool classloader, so synced namespaces are requirable"
           (is (= :synced-lib-loaded
                  (t/repl! ctx `(do
                                  (require '~ns-sym)
                                  (~(symbol (str ns-sym) "marker"))))))))
       (finally
-        (when-not (.exists result-file)
-          (delete-recursive root))))))
+        (delete-recursive root)))))
 
 (deftest sync-clears-stale-state-before-structural-failure
   (with-runtime
@@ -841,10 +776,10 @@
                                         :provenance :spools-edn
                                         :status :failed
                                         :reason :missing-root}}}
-               (runtime/sync! rt)))
+               (sync-approved! rt)))
         (write-spools! config-dir "{:spools")
-        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"malformed or unreadable" (runtime/sync! rt)))
-        (is (= {:spools {}} (runtime/syncs rt)))))))
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"malformed or unreadable" (sync-approved! rt)))
+        (is (= {:spools {}} (sync-state rt)))))))
 
 (deftest sync-records-runtime-add-failures-as-failed-outcomes
   (with-runtime
@@ -853,7 +788,7 @@
         (.mkdirs root)
         (spit (io/file root "deps.edn") "{:paths [}")
         (write-spools! config-dir (pr-str {:spools {'demo/bad-deps {:local/root "spools/bad-deps"}}}))
-        (let [result (get-in (runtime/sync! rt) [:spools 'demo/bad-deps])]
+        (let [result (get-in (sync-approved! rt) [:spools 'demo/bad-deps])]
           (is (= {:lib 'demo/bad-deps
                   :kind :local
                   :local/root "spools/bad-deps"
@@ -893,7 +828,7 @@
                                         :provenance :spools-edn
                                         :status :failed
                                         :reason :unreadable-root}}}
-               (runtime/sync! rt)))))))
+               (sync-approved! rt)))))))
 
 (deftest sync-git-missing-root-outcome-is-kind-shaped
   (with-runtime
@@ -907,7 +842,7 @@
                                                                    :git/sha sha
                                                                    :git/tag "v1"
                                                                    :roots {'demo/root "spool"}}}}))
-            (let [result (get-in (runtime/sync! rt) [:spools 'demo/root])]
+            (let [result (get-in (sync-approved! rt) [:spools 'demo/root])]
               (is (= {:lib 'demo/root
                       :kind :git
                       :git/url "file:///tmp/repo"
@@ -934,7 +869,7 @@
         (try
           (alter-var-root #'spool-sync/materialize-git-spool!
                           (constantly (fn [_] (throw (java.io.IOException. "disk unavailable")))))
-          (let [result (get-in (runtime/sync! rt) [:spools lib])]
+          (let [result (get-in (sync-approved! rt) [:spools lib])]
             (is (= :failed (:status result)))
             (is (= :fetch-failed (:reason result)))
             (is (= 1 (:exit result)))
@@ -958,11 +893,11 @@
             (alter-var-root #'spool-sync/materialize-git-spool!
                             (constantly (fn [_] (throw failure))))
             (let [thrown (try
-                           (runtime/sync! rt)
+                           (sync-approved! rt)
                            nil
                            (catch Throwable t t))]
               (is (identical? failure thrown))
-              (is (= {:spools {}} (runtime/syncs rt)))))
+              (is (= {:spools {}} (sync-state rt)))))
           (finally
             (alter-var-root #'spool-sync/materialize-git-spool! (constantly original))))))))
 
@@ -979,11 +914,11 @@
           cache-dir
           (fn []
             (write-spools! config-dir (pr-str {:spools {lib {:git/url url :git/sha sha}}}))
-            (is (= :loaded (get-in (runtime/sync! rt) [:spools lib :status])))
-            (is (= :fetched (get-in (runtime/syncs rt) [:spools lib :fetch])))
+            (is (= :loaded (get-in (sync-approved! rt) [:spools lib :status])))
+            (is (= :fetched (get-in (sync-state rt) [:spools lib :fetch])))
             (is (false? (.exists (io/file cache-dir "skein" "spools" sha ".git"))))
             (delete-recursive repo)
-            (let [result (get-in (runtime/sync! rt) [:spools lib])]
+            (let [result (get-in (sync-approved! rt) [:spools lib])]
               (is (= :already-available (:status result)))
               (is (= :cached (:fetch result))))))))))
 
@@ -1016,7 +951,7 @@
                            (< (swap! exact-sha-fetches inc) 3))
                     {:exit 128 :stderr "simulated stale remote cache miss"}
                     (apply original-run-git dir args)))))
-              (let [result (get-in (runtime/sync! rt) [:spools lib])]
+              (let [result (get-in (sync-approved! rt) [:spools lib])]
                 (is (= :loaded (:status result)))
                 (is (= :fetched (:fetch result)))
                 (is (= 2 @exact-sha-fetches))
@@ -1036,7 +971,7 @@
           cache-dir
           (fn []
             (write-spools! config-dir (pr-str {:spools {'demo/unreachable {:git/url (file-url repo) :git/sha unknown}}}))
-            (let [result (get-in (runtime/sync! rt) [:spools 'demo/unreachable])]
+            (let [result (get-in (sync-approved! rt) [:spools 'demo/unreachable])]
               (is (= :failed (:status result)))
               (is (= :fetch-failed (:reason result)))
               (is (= (file-url repo) (:remote result)))
@@ -1070,10 +1005,10 @@
                     ;; a cache hit rather than :fetch-failed.
                     (write-git-lib! cache-root ns-sym)
                     (spit (io/file tmp "loser.txt") "loser"))))
-                (let [result (get-in (runtime/sync! rt) [:spools lib])]
+                (let [result (get-in (sync-approved! rt) [:spools lib])]
                   (is (= :loaded (:status result)))
                   (is (= :cached (:fetch result)))
-                  (is (= :loaded (:status (runtime/use! rt :race/winner {:ns ns-sym :spools [lib]})))))
+                  (is (= :loaded (:status (load-synced! rt :race/winner {:ns ns-sym :spools [lib]})))))
                 (finally
                   (alter-var-root #'spool-sync/checkout-git-spool! (constantly original-checkout)))))))))))
 
@@ -1088,7 +1023,7 @@
         (.mkdirs outside)
         (spit (io/file root "deps.edn") (pr-str {:paths ["src" "../../outside-src"]}))
         (write-spools! config-dir (pr-str {:spools {lib {:local/root (str "spools/escape-" suffix)}}}))
-        (let [result (get-in (runtime/sync! rt) [:spools lib])]
+        (let [result (get-in (sync-approved! rt) [:spools lib])]
           (is (= :failed (:status result)))
           (is (= :runtime-add-failed (:reason result)))
           (is (re-find #"stay inside the spool root" (:message result))))))))
@@ -1111,11 +1046,11 @@
             (alter-var-root #'spool-sync/root-paths
                             (constantly (fn [_] (throw failure))))
             (let [thrown (try
-                           (runtime/sync! rt)
+                           (sync-approved! rt)
                            nil
                            (catch Throwable t t))]
               (is (identical? failure thrown))
-              (is (= {:spools {}} (runtime/syncs rt)))))
+              (is (= {:spools {}} (sync-state rt)))))
           (finally
             (alter-var-root #'spool-sync/root-paths (constantly original))))))))
 
@@ -1129,7 +1064,7 @@
         (spit (io/file root "deps.edn") (pr-str {:paths ["." "src"]}))
         (write-spools! config-dir (pr-str {:spools {lib {:local/root (str "spools/rootpath-" suffix)}}}))
         (is (#{:loaded :already-available}
-             (get-in (runtime/sync! rt) [:spools lib :status])))))))
+             (get-in (sync-approved! rt) [:spools lib :status])))))))
 
 (deftest sync-approved-local-spool-loads-maven-deps-from-shared-config
   (with-runtime
@@ -1143,7 +1078,7 @@
                        :deps {'org.clojure/data.json {:mvn/version "2.5.1"}}}))
         (write-spools! config-dir (pr-str {:spools {lib {:local/root (str "spools/shared-local-deps-" suffix)}}}))
         (is (#{:loaded :already-available}
-             (get-in (runtime/sync! rt) [:spools lib :status])))))))
+             (get-in (sync-approved! rt) [:spools lib :status])))))))
 
 ;; Under stateless resolution, :loaded/:already-available is driven by whether a
 ;; sync newly added the root's source dir or its directly-declared Maven jars to
@@ -1168,12 +1103,12 @@
         (with-resolver
           resolver
           (fn []
-            (is (= :loaded (get-in (runtime/sync! rt) [:spools lib :status])))
-            (is (= :already-available (get-in (runtime/sync! rt) [:spools lib :status])))
+            (is (= :loaded (get-in (sync-approved! rt) [:spools lib :status])))
+            (is (= :already-available (get-in (sync-approved! rt) [:spools lib :status])))
             (spit (io/file root "deps.edn")
                   (pr-str {:paths ["src"]
                            :deps {'org.clojure/data.csv {:mvn/version "1.1.0"}}}))
-            (is (= :loaded (get-in (runtime/sync! rt) [:spools lib :status])))
+            (is (= :loaded (get-in (sync-approved! rt) [:spools lib :status])))
             (is (= [{} {} {'org.clojure/data.csv {:mvn/version "1.1.0"}}]
                    @universes))))))))
 
@@ -1196,14 +1131,14 @@
         (with-resolver
           resolver
           (fn []
-            (is (= :loaded (get-in (runtime/sync! rt) [:spools lib :status])))
+            (is (= :loaded (get-in (sync-approved! rt) [:spools lib :status])))
             (spit (io/file root "deps.edn") "{:paths [\"src\"]")
-            (is (= :failed (get-in (runtime/sync! rt) [:spools lib :status])))
+            (is (= :failed (get-in (sync-approved! rt) [:spools lib :status])))
             (reset! version "2.0.0")
             (spit (io/file root "deps.edn")
                   (pr-str {:paths ["src"]
                            :deps {'org.example/loaded {:mvn/version "2.0.0"}}}))
-            (let [ex (is (thrown? clojure.lang.ExceptionInfo (runtime/sync! rt)))
+            (let [ex (is (thrown? clojure.lang.ExceptionInfo (sync-approved! rt)))
                   data (ex-data ex)
                   bump (get-in data [:diff :maven-version-bumps 0])]
               (is (= :non-additive-sync-diff (:reason data)))
@@ -1232,13 +1167,13 @@
         (with-resolver
           resolver
           (fn []
-            (is (= :loaded (get-in (runtime/sync! rt) [:spools lib :status])))
-            (is (= :already-available (get-in (runtime/sync! rt) [:spools lib :status])))
+            (is (= :loaded (get-in (sync-approved! rt) [:spools lib :status])))
+            (is (= :already-available (get-in (sync-approved! rt) [:spools lib :status])))
             (spit (io/file root "deps.edn")
                   (pr-str {:paths ["src"]
                            :deps {'org.example/loaded {:mvn/version "1.0.0"}
                                   'org.example/new {:mvn/version "2.0.0"}}}))
-            (is (= :loaded (get-in (runtime/sync! rt) [:spools lib :status])))))))))
+            (is (= :loaded (get-in (sync-approved! rt) [:spools lib :status])))))))))
 
 (deftest sync-refuses-resolved-maven-coordinate-without-version
   (with-runtime
@@ -1259,11 +1194,11 @@
         (with-resolver
           resolver
           (fn []
-            (is (= :loaded (get-in (runtime/sync! rt) [:spools lib :status])))
+            (is (= :loaded (get-in (sync-approved! rt) [:spools lib :status])))
             (is (= {'org.example/loaded "1.0.0"}
                    @(:approved-spool-generation-maven rt)))
             (reset! version? false)
-            (let [ex (is (thrown? clojure.lang.ExceptionInfo (runtime/sync! rt)))
+            (let [ex (is (thrown? clojure.lang.ExceptionInfo (sync-approved! rt)))
                   data (ex-data ex)]
               (is (= "Resolved Maven coordinate must declare string :mvn/version" (ex-message ex)))
               (is (= 'org.example/loaded (:lib data)))
@@ -1279,14 +1214,14 @@
             lib (symbol (str "demo/pending-removed-" suffix))]
         (write-local-lib! config-dir (str "pending-removed-" suffix) ns-sym)
         (write-spools! config-dir (pr-str {:spools {lib {:local/root (str "spools/pending-removed-" suffix)}}}))
-        (is (= :loaded (get-in (runtime/sync! rt) [:spools lib :status])))
+        (is (= :loaded (get-in (sync-approved! rt) [:spools lib :status])))
         (write-spools! config-dir (pr-str {:spools {}}))
-        (let [ex (is (thrown? clojure.lang.ExceptionInfo (runtime/sync! rt)))
+        (let [ex (is (thrown? clojure.lang.ExceptionInfo (sync-approved! rt)))
               data (ex-data ex)]
           (is (= :non-additive-sync-diff (:reason data)))
           (is (= [lib] (mapv :lib (get-in data [:diff :removed-roots]))))
           (is (str/includes? (:remedy data) "next weaver generation"))
-          (is (= (:pending-generation data) (:pending-generation (runtime/syncs rt)))))))))
+          (is (= (:pending-generation data) (:pending-generation (sync-state rt)))))))))
 
 (deftest sync-skips-namespace-less-source-files-while-classifying-diffs
   (with-runtime
@@ -1297,8 +1232,8 @@
             root (write-local-lib! config-dir (str "nsless-source-" suffix) ns-sym)]
         (spit (io/file root "src" "data_readers.clj") "{demo/tag demo.reader/read}\n")
         (write-spools! config-dir (pr-str {:spools {lib {:local/root (str "spools/nsless-source-" suffix)}}}))
-        (is (= :loaded (get-in (runtime/sync! rt) [:spools lib :status])))
-        (is (= :already-available (get-in (runtime/sync! rt) [:spools lib :status])))))))
+        (is (= :loaded (get-in (sync-approved! rt) [:spools lib :status])))
+        (is (= :already-available (get-in (sync-approved! rt) [:spools lib :status])))))))
 
 (deftest sync-reports-still-approved-validation-failure-as-per-root-failure
   (with-runtime
@@ -1308,9 +1243,9 @@
             lib (symbol (str "demo/failed-still-approved-" suffix))
             root (write-local-lib! config-dir (str "failed-still-approved-" suffix) ns-sym)]
         (write-spools! config-dir (pr-str {:spools {lib {:local/root (str "spools/failed-still-approved-" suffix)}}}))
-        (is (= :loaded (get-in (runtime/sync! rt) [:spools lib :status])))
+        (is (= :loaded (get-in (sync-approved! rt) [:spools lib :status])))
         (spit (io/file root "deps.edn") "{:paths [\"src\"]")
-        (let [result (runtime/sync! rt)]
+        (let [result (sync-approved! rt)]
           (is (= :failed (get-in result [:spools lib :status])))
           (is (str/includes? (get-in result [:spools lib :message]) "EOF"))
           (is (nil? (:pending-generation result))))))))
@@ -1325,11 +1260,11 @@
             src-file (write-spool-ns! root ns-sym (str "(ns " ns-sym ")\n(defn marker [] :v1)\n"))]
         (spit (io/file root "deps.edn") "{:paths [\"src\"]}\n")
         (write-spools! config-dir (pr-str {:spools {lib {:local/root (str "spools/pending-redefined-" suffix)}}}))
-        (is (= :loaded (get-in (runtime/sync! rt) [:spools lib :status])))
-        (is (= :loaded (:status (runtime/use! rt (keyword (str "pending-redefined-" suffix))
+        (is (= :loaded (get-in (sync-approved! rt) [:spools lib :status])))
+        (is (= :loaded (:status (load-synced! rt (keyword (str "pending-redefined-" suffix))
                                               {:ns ns-sym :spools [lib]}))))
         (spit src-file (str "(ns " ns-sym ")\n(defn marker [] :v2)\n"))
-        (let [ex (is (thrown? clojure.lang.ExceptionInfo (runtime/sync! rt)))
+        (let [ex (is (thrown? clojure.lang.ExceptionInfo (sync-approved! rt)))
               data (ex-data ex)]
           (is (= :non-additive-sync-diff (:reason data)))
           (is (= [lib] (mapv :lib (get-in data [:diff :redefinitions]))))
@@ -1346,7 +1281,7 @@
         (write-spools! config-dir (pr-str {:spools {lib {:local/root (str "spools/retained-state-" suffix)}}}))
         (runtime/spool-state rt ::retained (constantly {:shape :old}))
         (swap! (:spool-state rt) update ::retained vary-meta assoc :skein.runtime/generation "older-generation")
-        (let [result (runtime/sync! rt)]
+        (let [result (sync-approved! rt)]
           (is (= :loaded (get-in result [:spools lib :status])))
           (is (= [{:key ::retained
                    :generation "older-generation"
@@ -1362,7 +1297,7 @@
         (write-local-lib! config-dir (str "untagged-state-" suffix) ns-sym)
         (write-spools! config-dir (pr-str {:spools {lib {:local/root (str "spools/untagged-state-" suffix)}}}))
         (runtime/spool-state rt ::untagged (fn [] (Object.)))
-        (let [result (runtime/sync! rt)]
+        (let [result (sync-approved! rt)]
           (is (= :loaded (get-in result [:spools lib :status])))
           (is (= [{:key ::untagged
                    :generation :unknown
@@ -1395,7 +1330,7 @@
             (swap! universes conj universe)
             {})
           (fn []
-            (let [ex (is (thrown? clojure.lang.ExceptionInfo (runtime/sync! rt)))
+            (let [ex (is (thrown? clojure.lang.ExceptionInfo (sync-approved! rt)))
                   data (ex-data ex)]
               (is (str/includes? (ex-message ex) "org.clojure/data.json"))
               (is (= 'org.clojure/data.json (:lib data)))
@@ -1405,7 +1340,7 @@
                   (pr-str {:paths ["src"]
                            :deps {'org.clojure/data.json {:mvn/version "2.4.0"
                                                           :exclusions ['org.clojure/clojure]}}}))
-            (let [ex (is (thrown? clojure.lang.ExceptionInfo (runtime/sync! rt)))
+            (let [ex (is (thrown? clojure.lang.ExceptionInfo (sync-approved! rt)))
                   data (ex-data ex)]
               (is (str/includes? (ex-message ex) "coordinate conflict"))
               (is (= 'org.clojure/data.json (:lib data)))
@@ -1416,7 +1351,7 @@
                            (pr-str {:spools {lib-a {:local/root (str "spools/conflict-a-" suffix)}
                                              lib-b {:local/root (str "spools/conflict-b-" suffix)}}
                                     :mvn-overrides {'org.clojure/data.json {:mvn/version "2.5.1"}}}))
-            (is (= :loaded (get-in (runtime/sync! rt) [:spools lib-a :status])))
+            (is (= :loaded (get-in (sync-approved! rt) [:spools lib-a :status])))
             (is (= [{'org.clojure/data.json {:mvn/version "2.5.1"}}]
                    @universes))))))))
 
@@ -1430,7 +1365,7 @@
         (write-spools! config-dir
                        (pr-str {:spools {lib {:local/root (str "spools/bad-override-" suffix)}}
                                 :mvn-overrides {'org.clojure/data.json {:local/root "../nope"}}}))
-        (let [ex (is (thrown? clojure.lang.ExceptionInfo (runtime/sync! rt)))
+        (let [ex (is (thrown? clojure.lang.ExceptionInfo (sync-approved! rt)))
               data (ex-data ex)]
           (is (str/includes? (ex-message ex) "source-bearing coordinates"))
           (is (= :shared (:kind data)))
@@ -1453,7 +1388,7 @@
         (write-local-spools! config-dir
                              (pr-str {:spools {lib {:local/root (str "spools/local-deps-" suffix)
                                                     :claims "v1"}}}))
-        (let [result (get-in (runtime/sync! rt) [:spools lib])]
+        (let [result (get-in (sync-approved! rt) [:spools lib])]
           (is (= :failed (:status result)))
           (is (= :runtime-add-failed (:reason result)))
           (is (re-find #"source-bearing coordinates" (:message result)))
@@ -1476,7 +1411,7 @@
                 root (write-local-lib! config-dir (str "bad-deps-" suffix) ns-sym)]
             (spit (io/file root "deps.edn") (pr-str deps-edn))
             (write-spools! config-dir (pr-str {:spools {lib {:local/root (str "spools/bad-deps-" suffix)}}}))
-            (let [result (get-in (runtime/sync! rt) [:spools lib])]
+            (let [result (get-in (sync-approved! rt) [:spools lib])]
               (is (= :failed (:status result)))
               (is (= :runtime-add-failed (:reason result)))
               (is (re-find pattern (:message result))))))))))
@@ -1503,7 +1438,7 @@
             (swap! universes conj universe)
             {})
           (fn []
-            (is (= :loaded (get-in (runtime/sync! rt) [:spools lib :status])))
+            (is (= :loaded (get-in (sync-approved! rt) [:spools lib :status])))
             (is (= [{'org.clojure/data.json {:mvn/version "2.5.1"
                                              :exclusions ['org.clojure/clojure]
                                              :classifier "sources"
@@ -1526,7 +1461,7 @@
           cache-dir
           (fn []
             (write-spools! config-dir (pr-str {:spools {lib {:git/url (file-url repo) :git/sha sha}}}))
-            (let [result (get-in (runtime/sync! rt) [:spools lib])]
+            (let [result (get-in (sync-approved! rt) [:spools lib])]
               (is (= :failed (:status result)))
               (is (= :runtime-add-failed (:reason result)))
               (is (re-find #"source-bearing coordinates" (:message result)))
@@ -1571,7 +1506,7 @@
           cache-dir
           (fn []
             (write-spools! config-dir (pr-str {:spools {lib {:git/url (file-url repo) :git/sha sha}}}))
-            (let [result (get-in (runtime/sync! rt) [:spools lib])]
+            (let [result (get-in (sync-approved! rt) [:spools lib])]
               (is (= :loaded (:status result)))
               (is (= :fetched (:fetch result)))
               (is (not (contains? result :manifest))))))))))
@@ -1588,7 +1523,7 @@
           cache-dir
           (fn []
             (write-spools! config-dir (pr-str {:spools {'demo/unknown {:git/url (file-url repo) :git/sha unknown}}}))
-            (let [result (get-in (runtime/sync! rt) [:spools 'demo/unknown])]
+            (let [result (get-in (sync-approved! rt) [:spools 'demo/unknown])]
               (is (= :failed (:status result)))
               (is (= :fetch-failed (:reason result)))
               (is (integer? (:exit result)))
@@ -1615,7 +1550,7 @@
                                                           'demo/mismatching {:git/url (file-url mismatching-repo)
                                                                              :git/sha new-sha
                                                                              :git/tag "v1"}}}))
-              (let [results (:spools (runtime/sync! rt))]
+              (let [results (:spools (sync-approved! rt))]
                 (is (= :loaded (get-in results ['demo/matching :status])))
                 (is (= :fetched (get-in results ['demo/matching :fetch])))
                 (is (= :failed (get-in results ['demo/mismatching :status])))
@@ -1647,7 +1582,7 @@
             (write-spools! config-dir (pr-str {:spools {'demo/mono {:git/url (file-url repo)
                                                                     :git/sha sha
                                                                     :roots {'demo/mono "nested/spool"}}}}))
-            (let [result (get-in (runtime/sync! rt) [:spools 'demo/mono])]
+            (let [result (get-in (sync-approved! rt) [:spools 'demo/mono])]
               (is (= :loaded (:status result)))
               (is (= :fetched (:fetch result)))
               (is (= (.getPath (io/file cache-dir "skein" "spools" sha "nested/spool")) (:root result))))))))))
@@ -1680,7 +1615,7 @@
                                                      :git/sha sha
                                                      :roots {'demo/good "good"
                                                              'demo/bad "bad"}}}}))
-            (let [results (:spools (runtime/sync! rt))
+            (let [results (:spools (sync-approved! rt))
                   expected-coordinate (assoc coordinate :git/url url :git/sha sha)]
               (is (= :loaded (get-in results ['demo/good :status])))
               (is (= :runtime-add-failed (get-in results ['demo/bad :reason])))
@@ -1706,7 +1641,7 @@
         (write-local-spools! config-dir
                              (pr-str {:spools {family {:local/root "overlay-family"
                                                        :claims "v2"}}}))
-        (let [results (:spools (runtime/sync! rt))]
+        (let [results (:spools (sync-approved! rt))]
           (is (= #{'demo/one 'demo/two} (set (keys results))))
           (doseq [result (vals results)]
             (is (= :loaded (:status result)))
@@ -1730,526 +1665,12 @@
             (write-spools! config-dir (pr-str {:spools {lib {:git/url (file-url repo)
                                                              :git/sha sha
                                                              :roots {lib "missing/spool"}}}}))
-            (let [result (get-in (runtime/sync! rt) [:spools lib])]
+            (let [result (get-in (sync-approved! rt) [:spools lib])]
               (is (= :failed (:status result)))
               (is (= :missing-root (:reason result)))
               (is (= :fetched (:fetch result)))
               (is (= (.getPath (io/file cache-dir "skein" "spools" sha "missing/spool"))
                      (:root result))))))))))
-
-(defn- write-module-file! [config-dir relative-path content]
-  (let [file (io/file config-dir relative-path)]
-    (.mkdirs (.getParentFile file))
-    (spit file content)
-    file))
-
-(deftest reload-loads-selected-config-init-file
-  (with-runtime
-    (fn [rt config-dir]
-      (let [result-file (io/file config-dir "reload-result.edn")]
-        (source-file/spit-forms!
-         (io/file config-dir "init.clj")
-         [`(spit ~(str result-file) (pr-str :reloaded))
-          :reload-return])
-        (let [result (runtime/reload! rt)]
-          (is (= :loaded (:status result)))
-          (is (= [{:name "init.clj"
-                   :file (.getCanonicalPath (io/file config-dir "init.clj"))
-                   :return :reload-return}]
-                 (:files result)))
-          (is (= [:reload-return] (:returns result)))
-          (is (= :reloaded (read-string (slurp result-file)))))))))
-
-(deftest reload-skips-missing-startup-files
-  (with-runtime
-    (fn [rt _]
-      (is (= {:status :loaded
-              :files []
-              :returns []}
-             (runtime/reload! rt))))))
-
-(deftest reload-loads-generated-runtime-template-from-live-repl-namespace
-  (with-runtime
-    (fn [rt config-dir]
-      (source-file/spit-forms!
-       (io/file config-dir "init.clj")
-       ['(require '[skein.api.current.alpha :as current]
-                  '[skein.api.runtime.alpha :as runtime])
-        '(runtime/sync! (current/runtime))])
-      (binding [*ns* (the-ns 'skein.repl)]
-        (is (= :loaded (:status (runtime/reload! rt))))))))
-
-(deftest reload-refuses-non-additive-config-before-clearing-registries
-  (with-runtime
-    (fn [rt config-dir]
-      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
-            ns-sym (symbol (str "demo.reload_preflight_" suffix))
-            lib (symbol (str "demo/reload-preflight-" suffix))
-            marker-file (io/file config-dir "init-ran.edn")]
-        (write-local-lib! config-dir (str "reload-preflight-" suffix) ns-sym)
-        (write-spools! config-dir (pr-str {:spools {lib {:local/root (str "spools/reload-preflight-" suffix)}}}))
-        (is (= :loaded (get-in (runtime/sync! rt) [:spools lib :status])))
-        (write-module-file! config-dir "modules/keep.clj" "(ns demo.keep)\n")
-        (is (= :loaded (:status (runtime/use! rt :keep {:file "modules/keep.clj"}))))
-        (graph/register-query! rt 'keepme [:= [:attr :owner] "keepme"])
-        (events/register-handler! rt :keepme #{:strand/added} 'skein.spools-test/fresh-reload-handler {})
-        (source-file/spit-forms!
-         (io/file config-dir "init.clj")
-         [`(spit ~(str marker-file) (pr-str :ran))])
-        (write-spools! config-dir (pr-str {:spools {}}))
-        (let [ops-before @(:op-registry rt)
-              ex (is (thrown? clojure.lang.ExceptionInfo (runtime/reload! rt)))
-              data (ex-data ex)]
-          (is (= :non-additive-sync-diff (:reason data)))
-          (is (= [lib] (mapv :lib (get-in data [:diff :removed-roots]))))
-          (testing "the refusal lands before the clear: nothing was torn down"
-            (is (= ops-before @(:op-registry rt)))
-            (is (= [:= [:attr :owner] "keepme"] (get (graph/queries rt) "keepme")))
-            (is (= [:keepme] (mapv :key (events/handlers rt))))
-            (is (= :loaded (:status (runtime/use-entry rt :keep))))
-            (is (contains? (:spools (runtime/syncs rt)) lib))
-            (is (not (.exists marker-file)) "init.clj must never have run")))
-        (testing "the restart remedy is recorded exactly as a refused sync records it"
-          (let [pending (:pending-generation (runtime/syncs rt))]
-            (is (= :pending (:status pending)))
-            (is (= [lib] (mapv :lib (get-in pending [:diff :removed-roots]))))))))))
-
-(deftest reload-aborts-on-invalid-spool-config-before-clearing-registries
-  (with-runtime
-    (fn [rt config-dir]
-      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
-            ns-sym (symbol (str "demo.reload_invalid_" suffix))
-            lib (symbol (str "demo/reload-invalid-" suffix))
-            marker-file (io/file config-dir "init-ran.edn")]
-        (write-local-lib! config-dir (str "reload-invalid-" suffix) ns-sym)
-        (write-spools! config-dir (pr-str {:spools {lib {:local/root (str "spools/reload-invalid-" suffix)}}}))
-        (is (= :loaded (get-in (runtime/sync! rt) [:spools lib :status])))
-        (graph/register-query! rt 'keepme [:= [:attr :owner] "keepme"])
-        (source-file/spit-forms!
-         (io/file config-dir "init.clj")
-         [`(spit ~(str marker-file) (pr-str :ran))])
-        (write-spools! config-dir (pr-str {:spools {lib {:local/root (str "spools/reload-invalid-" suffix)
-                                                         :bogus true}}}))
-        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"unknown keys"
-                              (runtime/reload! rt)))
-        (testing "the invalid config aborts before the clear"
-          (is (= [:= [:attr :owner] "keepme"] (get (graph/queries rt) "keepme")))
-          (is (contains? (:spools (runtime/syncs rt)) lib))
-          (is (not (.exists marker-file)) "init.clj must never have run"))))))
-
-(deftest reload-refuses-maven-version-bump-before-clearing-registries
-  (with-runtime
-    (fn [rt config-dir]
-      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
-            ns-sym (symbol (str "demo.reload_mvn_" suffix))
-            lib (symbol (str "demo/reload-mvn-" suffix))
-            root (write-local-lib! config-dir (str "reload-mvn-" suffix) ns-sym)
-            marker-file (io/file config-dir "init-ran.edn")
-            version (atom "1.0.0")
-            resolver (fn [universe]
-                       (when (contains? universe 'org.example/loaded)
-                         {'org.example/loaded {:mvn/version @version
-                                               :paths [(str (io/file config-dir "fake" (str "loaded-" @version ".jar")))]}}))]
-        (spit (io/file root "deps.edn")
-              (pr-str {:paths ["src"]
-                       :deps {'org.example/loaded {:mvn/version "1.0.0"}}}))
-        (write-spools! config-dir (pr-str {:spools {lib {:local/root (str "spools/reload-mvn-" suffix)}}}))
-        (with-resolver
-          resolver
-          (fn []
-            (is (= :loaded (get-in (runtime/sync! rt) [:spools lib :status])))
-            (graph/register-query! rt 'keepme [:= [:attr :owner] "keepme"])
-            (source-file/spit-forms!
-             (io/file config-dir "init.clj")
-             [`(spit ~(str marker-file) (pr-str :ran))])
-            (reset! version "2.0.0")
-            (spit (io/file root "deps.edn")
-                  (pr-str {:paths ["src"]
-                           :deps {'org.example/loaded {:mvn/version "2.0.0"}}}))
-            (let [ex (is (thrown? clojure.lang.ExceptionInfo (runtime/reload! rt)))
-                  data (ex-data ex)]
-              (is (= :non-additive-sync-diff (:reason data)))
-              (is (= 'org.example/loaded (get-in data [:diff :maven-version-bumps 0 :coordinate]))))
-            (testing "the atomic Maven refusal aborts before the clear"
-              (is (= [:= [:attr :owner] "keepme"] (get (graph/queries rt) "keepme")))
-              (is (contains? (:spools (runtime/syncs rt)) lib))
-              (is (not (.exists marker-file)) "init.clj must never have run"))))))))
-
-(deftest reload-refuses-a-violated-skein-floor-under-the-running-marker
-  ;; Pins the marker-resolution seam of the preflight: with a nil marker the
-  ;; floor check would only become a pending validation and the reload would
-  ;; run init.clj, so the marker file below is the tripwire for a regression
-  ;; back to marker-blind preflighting.
-  (with-runtime
-    {:release-marker "v1"}
-    (fn [rt config-dir]
-      (let [family 'demo/reload-floor
-            sha "0123456789abcdef0123456789abcdef01234567"
-            marker-file (io/file config-dir "init-ran.edn")]
-        (write-local-lib! config-dir "reload-floor" 'demo.reload_floor)
-        (write-spools! config-dir
-                       (pr-str {:spools {family {:git/url "https://example.invalid/reload-floor.git"
-                                                 :git/sha sha
-                                                 :git/tag "v1"
-                                                 :skein/min "v2"}}}))
-        (write-local-spools! config-dir
-                             (pr-str {:spools {family {:local/root "spools/reload-floor"
-                                                       :claims "v1"}}}))
-        (graph/register-query! rt 'keepme [:= [:attr :owner] "keepme"])
-        (source-file/spit-forms!
-         (io/file config-dir "init.clj")
-         [`(spit ~(str marker-file) (pr-str :ran))])
-        (let [ex (is (thrown? clojure.lang.ExceptionInfo (runtime/reload! rt)))]
-          (is (= :spool-requirements-unsatisfied (:reason (ex-data ex)))))
-        (testing "the floor refusal aborts before the clear"
-          (is (= [:= [:attr :owner] "keepme"] (get (graph/queries rt) "keepme")))
-          (is (not (.exists marker-file)) "init.clj must never have run"))))))
-
-(deftest reload-aborts-on-atomic-maven-resolution-failure-before-clearing
-  (with-runtime
-    (fn [rt config-dir]
-      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
-            ns-sym (symbol (str "demo.reload_resolver_" suffix))
-            lib (symbol (str "demo/reload-resolver-" suffix))
-            root (write-local-lib! config-dir (str "reload-resolver-" suffix) ns-sym)
-            marker-file (io/file config-dir "init-ran.edn")
-            fail? (atom false)
-            resolver (fn [universe]
-                       (when @fail?
-                         (throw (ex-info "resolver offline" {:universe (keys universe)})))
-                       (when (contains? universe 'org.example/loaded)
-                         {'org.example/loaded {:mvn/version "1.0.0"
-                                               :paths [(str (io/file config-dir "fake" "loaded-1.0.0.jar"))]}}))]
-        (spit (io/file root "deps.edn")
-              (pr-str {:paths ["src"]
-                       :deps {'org.example/loaded {:mvn/version "1.0.0"}}}))
-        (write-spools! config-dir (pr-str {:spools {lib {:local/root (str "spools/reload-resolver-" suffix)}}}))
-        (with-resolver
-          resolver
-          (fn []
-            (is (= :loaded (get-in (runtime/sync! rt) [:spools lib :status])))
-            (graph/register-query! rt 'keepme [:= [:attr :owner] "keepme"])
-            (source-file/spit-forms!
-             (io/file config-dir "init.clj")
-             [`(spit ~(str marker-file) (pr-str :ran))])
-            (reset! fail? true)
-            (is (thrown-with-msg? clojure.lang.ExceptionInfo #"resolver offline"
-                                  (runtime/reload! rt)))
-            (testing "the atomic resolution failure aborts before the clear"
-              (is (= [:= [:attr :owner] "keepme"] (get (graph/queries rt) "keepme")))
-              (is (contains? (:spools (runtime/syncs rt)) lib))
-              (is (not (.exists marker-file)) "init.clj must never have run"))))))))
-
-(deftest reload-preflight-leaves-additive-roots-off-the-classloader
-  (with-runtime
-    (fn [rt config-dir]
-      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
-            ns-sym (symbol (str "demo.reload_additive_" suffix))
-            lib (symbol (str "demo/reload-additive-" suffix))
-            new-ns (symbol (str "demo.reload_newroot_" suffix))
-            new-lib (symbol (str "demo/reload-newroot-" suffix))
-            marker-file (io/file config-dir "init-ran.edn")]
-        (write-local-lib! config-dir (str "reload-additive-" suffix) ns-sym)
-        (write-spools! config-dir (pr-str {:spools {lib {:local/root (str "spools/reload-additive-" suffix)}}}))
-        (is (= :loaded (get-in (runtime/sync! rt) [:spools lib :status])))
-        (write-local-lib! config-dir (str "reload-newroot-" suffix) new-ns)
-        (write-spools! config-dir
-                       (pr-str {:spools {lib {:local/root (str "spools/reload-additive-" suffix)}
-                                         new-lib {:local/root (str "spools/reload-newroot-" suffix)}}}))
-        (source-file/spit-forms!
-         (io/file config-dir "init.clj")
-         [`(spit ~(str marker-file) (pr-str :ran))])
-        (let [urls-before (set (map str (.getURLs ^java.net.URLClassLoader (:spool-classloader rt))))]
-          (is (= :loaded (:status (runtime/reload! rt))))
-          (testing "a passing preflight classifies the additive root without loading it"
-            (is (.exists marker-file) "init.clj ran past the preflight")
-            (is (= urls-before
-                   (set (map str (.getURLs ^java.net.URLClassLoader (:spool-classloader rt)))))
-                "only a real sync! adds roots to the spool classloader")
-            (is (not (contains? (:spools (runtime/syncs rt)) new-lib)))))))))
-
-(deftest reload-proceeds-past-per-root-sync-failures
-  (with-runtime
-    (fn [rt config-dir]
-      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
-            ns-sym (symbol (str "demo.reload_perroot_" suffix))
-            lib (symbol (str "demo/reload-perroot-" suffix))
-            root (write-local-lib! config-dir (str "reload-perroot-" suffix) ns-sym)
-            marker-file (io/file config-dir "init-ran.edn")]
-        (write-spools! config-dir (pr-str {:spools {lib {:local/root (str "spools/reload-perroot-" suffix)}}}))
-        (is (= :loaded (get-in (runtime/sync! rt) [:spools lib :status])))
-        (source-file/spit-forms!
-         (io/file config-dir "init.clj")
-         [`(spit ~(str marker-file) (pr-str :ran))])
-        (spit (io/file root "deps.edn") "{:paths [\"src\"")
-        (testing "a per-root validation failure is not a refusal: the reload runs"
-          (is (= :loaded (:status (runtime/reload! rt))))
-          (is (.exists marker-file) "init.clj ran past the preflight"))))))
-
-(deftest reload-clears-prior-runtime-config-state-before-loading
-  (with-runtime
-    (fn [rt config-dir]
-      (write-module-file! config-dir "modules/stale.clj" "(ns demo.stale)\n(defn handler [_] :ok)\n")
-      (is (= :loaded (:status (runtime/use! rt :stale {:file "modules/stale.clj"}))))
-      (graph/register-query! rt 'stale [:= [:attr :owner] "stale"])
-      (reset! reload-deliveries [])
-      (events/register-handler! rt :stale #{:strand/added} 'demo.stale/handler {})
-      (events/register-handler! rt :fails #{:strand/added} 'skein.weaver-test/failing-event {})
-      (dispatch/enqueue! rt {:event/type :strand/added
-                             :event/id "before-reload"
-                             :event/at "2026-06-27T00:00:00Z"
-                             :event/source :test})
-      (Thread/sleep 250)
-      (is (seq (events/recent-failures rt)))
-      (source-file/spit-forms!
-       (io/file config-dir "init.clj")
-       ['(require '[skein.api.current.alpha :as current]
-                  '[skein.api.graph.alpha :as graph]
-                  '[skein.api.events.alpha :as events])
-        '(let [rt (current/runtime)]
-           (graph/register-query! rt 'fresh [:= [:attr :owner] "fresh"])
-           (events/register-handler! rt :fresh #{:strand/added} 'skein.spools-test/fresh-reload-handler {}))])
-      (is (= :loaded (:status (runtime/reload! rt))))
-      (is (nil? (runtime/use-entry rt :stale)))
-      (is (nil? (get (graph/queries rt) "stale")))
-      (is (= [:= [:attr :owner] "fresh"] (get (graph/queries rt) "fresh")))
-      (is (= [:fresh] (mapv :key (events/handlers rt))))
-      (is (= [] (events/recent-failures rt)))
-      (dispatch/enqueue! rt {:event/type :strand/added
-                             :event/id "after-reload"
-                             :event/at "2026-06-27T00:00:00Z"
-                             :event/source :test})
-      (Thread/sleep 250)
-      (is (= ["after-reload"] @reload-deliveries)))))
-
-(deftest use-loads-namespace-from-synced-root-and-records-state
-  (with-runtime
-    (fn [rt config-dir]
-      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
-            ns-sym (symbol (str "demo.use-ns-" suffix))
-            lib (symbol (str "demo/use-ns-lib-" suffix))
-            root (write-local-lib! config-dir "use-ns" ns-sym)
-            expected-file (io/file root "src" "demo" (str "use_ns_" suffix ".clj"))]
-        (write-spools! config-dir (pr-str {:spools {lib {:local/root "spools/use-ns"}}}))
-        (runtime/sync! rt)
-        (let [result (runtime/use! rt :demo/ns {:ns ns-sym :spools [lib]})]
-          (is (= :loaded (:status result)))
-          (is (= ns-sym (get-in result [:loaded :ns])))
-          (is (= (.getCanonicalPath expected-file) (get-in result [:loaded :file])))
-          (is (= result (runtime/use-entry rt :demo/ns)))
-          (is (= :synced-lib-loaded ((requiring-resolve (symbol (str ns-sym "/marker")))))))))))
-
-(deftest use-searches-multiple-synced-roots-for-namespace-source
-  (with-runtime
-    (fn [rt config-dir]
-      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
-            first-ns (symbol (str "demo.first" suffix))
-            second-ns (symbol (str "demo.second-lib-" suffix))
-            first-lib (symbol (str "demo/first-lib-" suffix))
-            second-lib (symbol (str "demo/second-lib-" suffix))
-            root (write-local-lib! config-dir "second" second-ns)]
-        (write-local-lib! config-dir "first" first-ns)
-        (write-spools! config-dir (pr-str {:spools {first-lib {:local/root "spools/first"}
-                                                    second-lib {:local/root "spools/second"}}}))
-        (runtime/sync! rt)
-        (let [result (runtime/use! rt :demo/second {:ns second-ns :spools #{first-lib second-lib}})]
-          (is (= :loaded (:status result)))
-          (is (= (.getCanonicalPath (io/file root "src" "demo" (str "second_lib_" suffix ".clj")))
-                 (get-in result [:loaded :file]))))))))
-
-(deftest use-reports-missing-synced-namespace-source
-  (with-runtime
-    (fn [rt config-dir]
-      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
-            existing-ns (symbol (str "demo.existing" suffix))
-            missing-ns (symbol (str "demo.missing-lib-" suffix))
-            lib (symbol (str "demo/missing-ns-lib-" suffix))
-            root (write-local-lib! config-dir "missing-ns" existing-ns)]
-        (write-spools! config-dir (pr-str {:spools {lib {:local/root "spools/missing-ns"}}}))
-        (runtime/sync! rt)
-        (let [result (runtime/use! rt :demo/missing-ns {:ns missing-ns :spools [lib]})]
-          (is (= :failed (:status result)))
-          (is (= "Could not locate namespace source in synced spool roots" (get-in result [:error :message])))
-          (is (= {:ns missing-ns
-                  :relative-path (str "demo" java.io.File/separator "missing_lib_" suffix ".clj")
-                  :searched-roots [(.getCanonicalPath (io/file root "src"))]}
-                 (get-in result [:error :data]))))))))
-
-(deftest use-loads-selected-config-relative-file-and-records-call-return
-  (with-runtime
-    (fn [rt config-dir]
-      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
-            ns-sym (symbol (str "demo.filemod" suffix))
-            file-rel "modules/file_mod.clj"]
-        (write-module-file! config-dir file-rel
-                            (str "(ns " ns-sym ")\n(defn install! [] {:installed true})\n"))
-        (let [result (runtime/use! rt :demo/file {:file file-rel
-                                                  :call (symbol (str ns-sym "/install!"))})]
-          (is (= :loaded (:status result)))
-          (is (= (.getCanonicalPath (io/file config-dir file-rel)) (get-in result [:loaded :file])))
-          (is (= {:fn (symbol (str ns-sym "/install!"))
-                  :return {:installed true}}
-                 (:call result))))))))
-
-(deftest use-lib-gates-observe-local-overrides
-  (with-runtime
-    (fn [rt config-dir]
-      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
-            ns-sym (symbol (str "demo.override_gated_" suffix))
-            lib (symbol (str "demo/override-gated-" suffix))
-            root (write-local-lib! config-dir "override-gated-local" ns-sym)]
-        (write-spools! config-dir
-                       (pr-str {:spools {lib {:git/url "https://example.invalid/override-gated.git"
-                                              :git/sha "0123456789abcdef0123456789abcdef01234567"
-                                              :git/tag "v1"}}}))
-        (write-local-spools! config-dir
-                             (pr-str {:spools {lib {:local/root "spools/override-gated-local"
-                                                    :claims "v1"}}}))
-        (is (= :loaded (get-in (runtime/sync! rt) [:spools lib :status])))
-        (is (= (local-source config-dir) (get-in (runtime/syncs rt) [:spools lib :source])))
-        (let [result (runtime/use! rt :override/gated {:ns ns-sym :spools [lib]})]
-          (is (= :loaded (:status result)))
-          (is (= (.getCanonicalPath (io/file root "src" "demo" (str "override_gated_" suffix ".clj")))
-                 (get-in result [:loaded :file]))))))))
-
-(deftest use-skips-on-lib-gates-before-loading
-  (with-runtime
-    (fn [rt config-dir]
-      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
-            ns-sym (symbol (str "demo.gated" suffix))
-            approved-spool (symbol (str "demo/gated-lib-" suffix))
-            failed-lib (symbol (str "demo/failed-lib-" suffix))]
-        (write-local-lib! config-dir "gated" ns-sym)
-        (write-spools! config-dir (pr-str {:spools {approved-spool {:local/root "spools/gated"}
-                                                    failed-lib {:local/root "spools/missing"}}}))
-        (is (= {:status :skipped
-                :reason :not-approved
-                :lib 'demo/not-approved}
-               (select-keys (runtime/use! rt :not-approved {:ns ns-sym :spools ['demo/not-approved]})
-                            [:status :reason :lib])))
-        (is (= {:status :skipped
-                :reason :not-synced
-                :lib approved-spool}
-               (select-keys (runtime/use! rt :not-synced {:ns ns-sym :spools [approved-spool]})
-                            [:status :reason :lib])))
-        (runtime/sync! rt)
-        (let [result (runtime/use! rt :sync-failed {:ns ns-sym :spools [failed-lib]})]
-          (is (= {:status :skipped
-                  :reason :sync-failed
-                  :lib failed-lib}
-                 (select-keys result [:status :reason :lib])))
-          (is (= :failed (get-in result [:sync :status])))
-          (is (= :missing-root (get-in result [:sync :reason]))))))))
-
-(deftest use-skips-on-missing-after
-  (with-runtime
-    (fn [rt config-dir]
-      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
-            ns-sym (symbol (str "demo.after" suffix))]
-        (write-module-file! config-dir "modules/after.clj" (str "(ns " ns-sym ")\n"))
-        (is (= :loaded (:status (runtime/use! rt :base {:file "modules/after.clj"}))))
-        (is (= :missing-after (:reason (runtime/use! rt :child {:ns ns-sym :after [:base :missing]}))))))))
-
-(deftest use-records-failures-and-required-rethrows
-  (with-runtime
-    (fn [rt config-dir]
-      (write-module-file! config-dir "modules/bad.clj" "(throw (ex-info \"boom\" {:bad true}))\n")
-      (is (= :failed (:status (runtime/use! rt :bad {:file "modules/bad.clj"}))))
-      (is (thrown? Exception
-                   (runtime/use! rt :required-bad {:file "modules/bad.clj" :required? true})))
-      (is (= :failed (:status (runtime/use-entry rt :required-bad))))
-      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
-            ns-sym (symbol (str "demo.callfail" suffix))]
-        (write-module-file! config-dir "modules/call_fail.clj"
-                            (str "(ns " ns-sym ")\n(defn install! [] (throw (ex-info \"call boom\" {})))\n"))
-        (let [result (runtime/use! rt :call-fail {:file "modules/call_fail.clj"
-                                                  :call (symbol (str ns-sym "/install!"))})]
-          (is (= :failed (:status result))))))))
-
-(deftest use-fails-loudly-on-malformed-options
-  (with-runtime
-    (fn [rt _]
-      (is (s/valid? ::runtime/use-registration
-                    [:demo/module {:ns 'demo.core :call 'demo.core/install!}]))
-      (is (not (s/valid? ::runtime/use-registration
-                         [:demo/module {:ns 'demo.core :file "module.clj"}])))
-      (is (not (s/valid? ::runtime/use-registration
-                         [:demo/module {:ns 'demo.core :call 'install!}])))
-      (doseq [[label key opts pattern]
-              [["bad key" "bad" {:ns 'demo.core} #"invalid shape"]
-               ["non-map opts" :bad [] #"invalid shape"]
-               ["unknown key" :bad {:ns 'demo.core :extra true} #"invalid shape"]
-               ["neither target" :bad {} #"invalid shape"]
-               ["both targets" :bad {:ns 'demo.core :file "x.clj"} #"invalid shape"]
-               ["bad ns" :bad {:ns "demo.core"} #"invalid shape"]
-               ["bad file" :bad {:file ""} #"invalid shape"]
-               ["absolute file" :bad {:file "/tmp/mod.clj"} #"relative to selected config-dir"]
-               ["escaping file" :bad {:file "../mod.clj"} #"stay within selected config-dir"]
-               ["bad spools" :bad {:ns 'demo.core :spools ['demo/lib 1]} #"invalid shape"]
-               ["bad after" :bad {:ns 'demo.core :after [1]} #"invalid shape"]
-               ["bad call" :bad {:ns 'demo.core :call 'install!} #"invalid shape"]
-               ["bad required" :bad {:ns 'demo.core :required? :yes} #"invalid shape"]]]
-        (testing label
-          (is (thrown-with-msg? clojure.lang.ExceptionInfo pattern (runtime/use! rt key opts))))))))
-
-(deftest use-duplicate-keys-replace-previous-state
-  (with-runtime
-    (fn [rt config-dir]
-      (write-module-file! config-dir "modules/dup1.clj" "(ns demo.dup1)\n")
-      (write-module-file! config-dir "modules/dup2.clj" "(ns demo.dup2)\n")
-      (is (= "modules/dup1.clj" (get-in (runtime/use! rt :dup {:file "modules/dup1.clj"}) [:opts :file])))
-      (is (= "modules/dup2.clj" (get-in (runtime/use! rt :dup {:file "modules/dup2.clj"}) [:opts :file])))
-      (is (= #{:dup} (set (keys (runtime/uses rt)))))
-      (is (= "modules/dup2.clj" (get-in (runtime/use-entry rt :dup) [:opts :file]))))))
-
-(deftest use-gates-before-load-and-call-side-effects
-  (with-runtime
-    (fn [rt config-dir]
-      (let [side-effect-file (io/file config-dir "gated-side-effect.edn")]
-        (write-module-file! config-dir "modules/gated_effect.clj"
-                            (source-file/render-forms
-                             ['(ns demo.gated-effect)
-                              `(spit ~(str side-effect-file) :loaded)
-                              `(defn ~'install! [] (spit ~(str side-effect-file) :called))]))
-        (is (= :not-approved (:reason (runtime/use! rt :gate/not-approved
-                                                    {:file "modules/gated_effect.clj"
-                                                     :spools ['demo/not-approved]
-                                                     :call 'demo.gated-effect/install!}))))
-        (is (false? (.exists side-effect-file)))
-        (is (= :missing-after (:reason (runtime/use! rt :gate/missing-after
-                                                     {:file "modules/gated_effect.clj"
-                                                      :after [:missing]
-                                                      :call 'demo.gated-effect/install!}))))
-        (is (false? (.exists side-effect-file)))))))
-
-;; Dogfoods skein.test.alpha for author-visible connected-client behavior
-;; (LAT-PLAN-001.PH6). Explicit :root so the module's install! side-effect file
-;; has a path known before the world starts.
-(deftest connected-client-use-executes-in-daemon-runtime
-  (let [root (temp-config-dir)
-        result-file (io/file root "connected-result.edn")]
-    (try
-      (t/with-weaver-world [ctx {:root (.getPath root)
-                                 :files {"modules/connected.clj"
-                                         (source-file/render-forms
-                                          ['(ns demo.connected)
-                                           `(defn ~'install! []
-                                              (spit ~(str result-file) (pr-str :daemon-called))
-                                              :ok)])}}]
-        (let [result (client/call-world (:config-dir ctx) {:timeout-ms 30000} :use! :connected
-                                        {:file "modules/connected.clj"
-                                         :call 'demo.connected/install!})]
-          (is (= :loaded (:status result)))
-          (is (= :ok (get-in result [:call :return])))
-          (is (= :daemon-called (read-string (slurp result-file))))
-          (is (= :loaded (:status (client/call-world (:config-dir ctx) {:timeout-ms 30000} :use :connected))))))
-      (finally
-        (delete-recursive root)))))
-
-;; ---------------------------------------------------------------------------
-;; spool-state reload-awareness: versioned reinit / migrate so a preserved value
-;; whose shape drifted between deploys can never be reused silently.
-;; ---------------------------------------------------------------------------
 
 (deftest spool-state-unversioned-reuses-existing-value
   (with-runtime
@@ -2379,6 +1800,252 @@
     (catch clojure.lang.ExceptionInfo e
       (:reason (ex-data e)))))
 
+(defn- namespace-residual [rt ns-sym]
+  (some #(when (= ns-sym (:namespace %)) %)
+        (:residuals (spool-sync/loaded-namespace-status rt))))
+
+(deftest f3-cross-root-require-load-retains-unledgered-residual
+  (with-runtime
+    (fn [rt config-dir]
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
+            required-ns (symbol (str "demo.required-" suffix))
+            requiring-ns (symbol (str "demo.requiring-" suffix))
+            required-lib (symbol (str "demo/required-" suffix))
+            requiring-lib (symbol (str "demo/requiring-" suffix))
+            required-root (write-local-lib! config-dir (str "required-" suffix) required-ns)
+            requiring-root (write-local-lib! config-dir (str "requiring-" suffix) requiring-ns)
+            required-file (write-spool-ns!
+                           required-root required-ns
+                           (str "(ns " required-ns ")\n(def value :required)\n"))
+            required-entry {:local/root (str "spools/required-" suffix)}
+            requiring-entry {:local/root (str "spools/requiring-" suffix)}]
+        (write-spool-ns!
+         requiring-root requiring-ns
+         (str "(ns " requiring-ns " (:require [" required-ns "]))\n"
+              "(def value " required-ns "/value)\n"))
+        (write-spools! config-dir
+                       (pr-str {:spools {required-lib required-entry
+                                         requiring-lib requiring-entry}}))
+        (sync-approved! rt)
+        (load-synced! rt :f3/requiring {:ns requiring-ns :spools [requiring-lib]})
+        (is (find-ns required-ns))
+        (is (not-any? #(= required-ns (:namespace %))
+                      (spool-sync/namespace-load-ledger rt)))
+        (is (= :unledgered-loaded-namespace
+               (:reason (namespace-residual rt required-ns))))
+        (testing "edited source cannot false-clean the unledgered root"
+          (spit required-file
+                (str "(ns " required-ns ")\n(def value :edited)\n"))
+          (let [ex (is (thrown? clojure.lang.ExceptionInfo (sync-approved! rt)))]
+            (is (= :non-additive-sync-diff (:reason (ex-data ex))))
+            (is (false? (:clean? (spool-sync/loaded-namespace-status rt))))
+            (is (= :pending (get-in (sync-state rt)
+                                    [:pending-generation :status])))))
+        (testing "deleted source cannot clear the pending generation"
+          (is (.delete required-file))
+          (let [ex (is (thrown? clojure.lang.ExceptionInfo (sync-approved! rt)))]
+            (is (= :non-additive-sync-diff (:reason (ex-data ex))))
+            (is (= :unledgered-loaded-namespace
+                   (:reason (namespace-residual rt required-ns))))
+            (is (= :pending (get-in (sync-state rt)
+                                    [:pending-generation :status])))))))))
+
+(deftest loaded-namespace-ledger-path-shrink-remains-residual
+  (with-runtime
+    (fn [rt config-dir]
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
+            ns-sym (symbol (str "demo.path-shrink-" suffix))
+            lib (symbol (str "demo/path-shrink-" suffix))
+            root (io/file config-dir "spools" (str "path-shrink-" suffix))
+            src-file (io/file root "legacy" "demo" (str "path_shrink_" suffix ".clj"))]
+        (.mkdirs (.getParentFile src-file))
+        (.mkdirs (io/file root "src"))
+        (spit src-file (str "(ns " ns-sym ")\n(defn version [] :v1)\n"))
+        (spit (io/file root "deps.edn") (pr-str {:paths ["src" "legacy"]}))
+        (write-spools! config-dir
+                       (pr-str {:spools {lib {:local/root (str "spools/path-shrink-" suffix)}}}))
+        (is (= :loaded (get-in (sync-approved! rt) [:spools lib :status])))
+        (is (= :loaded (:status (load-synced! rt :ledger/path-shrink
+                                              {:ns ns-sym :spools [lib]}))))
+        (let [record (last (spool-sync/namespace-load-ledger rt))]
+          (is (= {:root-lib lib
+                  :owner :ledger/path-shrink
+                  :namespace ns-sym
+                  :file (.getCanonicalPath src-file)}
+                 (select-keys record [:root-lib :owner :namespace :file])))
+          (is (re-matches #"[0-9a-f]{64}" (:sha256 record)))
+          (is (s/valid? :skein.core.weaver.spool-sync/namespace-load-ledger
+                        @(access/namespace-load-ledger rt))))
+        (spit (io/file root "deps.edn") (pr-str {:paths ["src"]}))
+        (let [ex (is (thrown? clojure.lang.ExceptionInfo (sync-approved! rt)))
+              residual (namespace-residual rt ns-sym)]
+          (is (= :non-additive-sync-diff (:reason (ex-data ex))))
+          (is (= :path-shrunk (:reason residual)))
+          (is (= (.getCanonicalPath src-file) (get-in residual [:binding :file])))
+          (is (false? (:clean? (spool-sync/loaded-namespace-status rt))))
+          (is (= :pending (get-in (sync-state rt) [:pending-generation :status]))))))))
+
+(deftest loaded-namespace-ledger-deleted-file-remains-residual
+  (with-runtime
+    (fn [rt config-dir]
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
+            ns-sym (symbol (str "demo.deleted-ledger-" suffix))
+            lib (symbol (str "demo/deleted-ledger-" suffix))
+            root (write-local-lib! config-dir (str "deleted-ledger-" suffix) ns-sym)
+            src-file (io/file root "src" "demo" (str "deleted_ledger_" suffix ".clj"))]
+        (write-spools! config-dir
+                       (pr-str {:spools {lib {:local/root (str "spools/deleted-ledger-" suffix)}}}))
+        (sync-approved! rt)
+        (load-synced! rt :ledger/deleted {:ns ns-sym :spools [lib]})
+        (is (.delete src-file))
+        (let [ex (is (thrown? clojure.lang.ExceptionInfo (sync-approved! rt)))
+              residual (namespace-residual rt ns-sym)]
+          (is (= :non-additive-sync-diff (:reason (ex-data ex))))
+          (is (= :deleted-file (:reason residual)))
+          (is (= :pending (get-in (sync-state rt) [:pending-generation :status])))
+          (is (= [ns-sym]
+                 (mapv :namespace (spool-sync/namespace-load-ledger rt)))))))))
+
+(deftest loaded-namespace-ledger-rename-stays-attributed-to-old-binding
+  (with-runtime
+    (fn [rt config-dir]
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
+            ns-sym (symbol (str "demo.renamed-ledger-" suffix))
+            lib (symbol (str "demo/renamed-ledger-" suffix))
+            root (write-local-lib! config-dir (str "renamed-ledger-" suffix) ns-sym)
+            old-file (io/file root "src" "demo" (str "renamed_ledger_" suffix ".clj"))
+            new-file (io/file root "src" "demo" (str "moved_ledger_" suffix ".clj"))]
+        (write-spools! config-dir
+                       (pr-str {:spools {lib {:local/root (str "spools/renamed-ledger-" suffix)}}}))
+        (sync-approved! rt)
+        (load-synced! rt :ledger/rename {:ns ns-sym :spools [lib]})
+        (spit new-file (slurp old-file))
+        (is (.delete old-file))
+        (is (thrown? clojure.lang.ExceptionInfo (sync-approved! rt)))
+        (let [residual (namespace-residual rt ns-sym)]
+          (is (= :namespace-renamed (:reason residual)))
+          (is (= (.getCanonicalPath old-file) (get-in residual [:binding :file])))
+          (is (= [(.getCanonicalPath new-file)] (mapv :file (:providers residual)))))))))
+
+(deftest loaded-namespace-ledger-transfer-requires-successful-new-root-load
+  (with-runtime
+    (fn [rt config-dir]
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
+            ns-sym (symbol (str "demo.transfer-ledger-" suffix))
+            lib-a (symbol (str "demo/transfer-a-" suffix))
+            lib-b (symbol (str "demo/transfer-b-" suffix))
+            root-a (write-local-lib! config-dir (str "transfer-a-" suffix) ns-sym)
+            root-b (write-empty-lib! config-dir (str "transfer-b-" suffix))
+            file-a (io/file root-a "src" "demo" (str "transfer_ledger_" suffix ".clj"))
+            entry-a {:local/root (str "spools/transfer-a-" suffix)}
+            entry-b {:local/root (str "spools/transfer-b-" suffix)}]
+        (write-spools! config-dir (pr-str {:spools {lib-a entry-a lib-b entry-b}}))
+        (sync-approved! rt)
+        (load-synced! rt :ledger/transfer {:ns ns-sym :spools [lib-a]})
+        (is (.delete file-a))
+        (write-spool-ns! root-b ns-sym (str "(ns " ns-sym ")\n(defn marker [] :from-b)\n"))
+        (is (thrown? clojure.lang.ExceptionInfo (sync-approved! rt)))
+        (is (= :transfer-pending (:reason (namespace-residual rt ns-sym))))
+        (is (= lib-a (get-in (namespace-residual rt ns-sym) [:binding :root-lib])))
+        (spool-sync/reload-synced-spool! rt lib-b)
+        (let [status (spool-sync/loaded-namespace-status rt)
+              current (get-in status [:current-bindings ns-sym])]
+          (is (= lib-b (:root-lib current)))
+          (is (= :ledger/transfer (:owner current)))
+          (is (= [lib-a] (mapv :root-lib (get-in status [:prior-bindings ns-sym]))))
+          (is (:clean? status)))
+        (let [result (sync-approved! rt)]
+          (is (nil? (:pending-generation result)))
+          (is (nil? (:pending-generation (sync-state rt)))))))))
+
+(deftest loaded-namespace-ledger-cross-root-duplicate-is-hard-conflict
+  (with-runtime
+    (fn [rt config-dir]
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
+            ns-sym (symbol (str "demo.duplicate-provider-" suffix))
+            lib-a (symbol (str "demo/duplicate-provider-a-" suffix))
+            lib-b (symbol (str "demo/duplicate-provider-b-" suffix))
+            root-b (write-empty-lib! config-dir (str "duplicate-provider-b-" suffix))]
+        (write-local-lib! config-dir (str "duplicate-provider-a-" suffix) ns-sym)
+        (write-spools! config-dir
+                       (pr-str {:spools {lib-a {:local/root (str "spools/duplicate-provider-a-" suffix)}
+                                         lib-b {:local/root (str "spools/duplicate-provider-b-" suffix)}}}))
+        (sync-approved! rt)
+        (load-synced! rt :ledger/duplicate {:ns ns-sym :spools [lib-a]})
+        (write-spool-ns! root-b ns-sym (str "(ns " ns-sym ")\n(defn marker [] :other)\n"))
+        (let [ex (is (thrown? clojure.lang.ExceptionInfo (sync-approved! rt)))
+              conflict (first (:hard-conflicts (spool-sync/loaded-namespace-status rt)))]
+          (is (= :non-additive-sync-diff (:reason (ex-data ex))))
+          (is (= :duplicate-provider (:reason conflict)))
+          (is (= #{lib-a lib-b} (set (map :root-lib (:providers conflict)))))
+          (is (= :pending (get-in (sync-state rt) [:pending-generation :status]))))))))
+
+(deftest loaded-namespace-status-separates-classpath-ownership
+  (with-runtime
+    (fn [rt _config-dir]
+      (require 'skein.spools.batteries)
+      (require 'skein.spools.workflow)
+      (let [bindings (into {} (map (juxt :namespace identity))
+                           (:classpath-bindings (spool-sync/loaded-namespace-status rt)))]
+        (doseq [ns-sym ['skein.api.runtime.alpha
+                        'skein.spools.batteries
+                        'skein.spools.workflow]]
+          (is (= :classpath (get-in bindings [ns-sym :ownership])))
+          (is (= :base-classpath (get-in bindings [ns-sym :classpath-owner])))
+          (is (string? (get-in bindings [ns-sym :source]))))))))
+
+(deftest f12-base-classpath-overlap-is-not-observed-as-unledgered
+  (with-runtime
+    (fn [rt config-dir]
+      (require 'skein.spools.workflow)
+      (let [lib 'demo/workflow-overlap
+            root (write-local-lib! config-dir "workflow-overlap"
+                                   'skein.spools.workflow)]
+        (write-spools! config-dir
+                       (pr-str {:spools {lib {:local/root "spools/workflow-overlap"}}}))
+        (is (#{:loaded :already-available}
+             (get-in (sync-approved! rt) [:spools lib :status])))
+        (is (#{:loaded :already-available}
+             (get-in (sync-approved! rt) [:spools lib :status])))
+        (let [status (spool-sync/loaded-namespace-status rt)]
+          (is (:clean? status))
+          (is (nil? (:pending-generation (sync-state rt))))
+          (is (empty? (filter #(= 'skein.spools.workflow (:namespace %))
+                              (:residuals status))))
+          (is (= (.getCanonicalPath root)
+                 (get-in status [:provisions 'skein.spools.workflow 0 :root]))))))))
+
+(deftest f13-source-load-boundaries-batch-namespace-observation
+  (with-runtime
+    (fn [rt config-dir]
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
+            ns-a (symbol (str "demo.batch-a-" suffix))
+            ns-b (symbol (str "demo.batch-b-" suffix))
+            lib (symbol (str "demo/batch-" suffix))
+            root (write-local-lib! config-dir (str "batch-" suffix) ns-a)
+            observe @#'spool-sync/current-namespace-observations
+            calls (atom 0)]
+        (write-spool-ns!
+         root ns-b
+         (str "(ns " ns-b " (:require [" ns-a "]))\n"
+              "(def value " ns-a "/marker)\n"))
+        (write-spools! config-dir
+                       (pr-str {:spools {lib {:local/root (str "spools/batch-" suffix)}}}))
+        (sync-approved! rt)
+        (with-redefs-fn
+          {#'spool-sync/current-namespace-observations
+           (fn [& args]
+             (swap! calls inc)
+             (apply observe args))}
+          #(do
+             (load-synced! rt :f13/target {:ns ns-b :spools [lib]})
+             (is (= 1 @calls)
+                 "the two-namespace target closure classifies once")
+             (reset! calls 0)
+             (spool-sync/reload-synced-spool! rt lib)
+             (is (= 1 @calls)
+                 "the two-namespace root reload classifies once")))))))
+
 (deftest reload-synced-spool-makes-single-namespace-source-live
   (with-runtime
     (fn [rt config-dir]
@@ -2388,7 +2055,7 @@
             root (write-local-lib! config-dir "reload-ns" ns-sym)
             src-file (io/file root "src" "demo" (str "reload_ns_" suffix ".clj"))]
         (write-spools! config-dir (pr-str {:spools {lib {:local/root "spools/reload-ns"}}}))
-        (is (= :loaded (get-in (runtime/sync! rt) [:spools lib :status])))
+        (is (= :loaded (get-in (sync-approved! rt) [:spools lib :status])))
         (let [result (spool-sync/reload-synced-spool! rt lib)]
           (is (= lib (:root-lib result)))
           (is (= (.getCanonicalPath root) (:root result)))
@@ -2416,7 +2083,7 @@
     (fn [rt config-dir]
       (let [lib (symbol (str "demo/sync-failed-lib-" (str/replace (str (java.util.UUID/randomUUID)) "-" "")))]
         (write-spools! config-dir (pr-str {:spools {lib {:local/root "spools/missing"}}}))
-        (is (= :missing-root (get-in (runtime/sync! rt) [:spools lib :reason])))
+        (is (= :missing-root (get-in (sync-approved! rt) [:spools lib :reason])))
         (is (= :sync-failed (reload-reason rt lib)))))))
 
 ;; A synced root removed or replaced *after* a clean sync is a real post-sync
@@ -2456,7 +2123,7 @@
         (write-empty-lib! config-dir "no-ns")
         (write-spools! config-dir (pr-str {:spools {lib {:local/root "spools/no-ns"}}}))
         (is (contains? #{:loaded :already-available}
-                       (get-in (runtime/sync! rt) [:spools lib :status])))
+                       (get-in (sync-approved! rt) [:spools lib :status])))
         (is (= :no-namespaces (reload-reason rt lib)))))))
 
 ;; Two distinct source files under the root declaring the same namespace would let
@@ -2477,7 +2144,7 @@
         (spit file-a (str "(ns " shared-ns ")\n(defn a [] :a)\n"))
         (spit file-b (str "(ns " shared-ns ")\n(defn b [] :b)\n"))
         (write-spools! config-dir (pr-str {:spools {lib {:local/root "spools/dup-ns"}}}))
-        (is (= :loaded (get-in (runtime/sync! rt) [:spools lib :status])))
+        (is (= :loaded (get-in (sync-approved! rt) [:spools lib :status])))
         (let [ex (is (thrown? clojure.lang.ExceptionInfo (spool-sync/reload-synced-spool! rt lib)))
               data (ex-data ex)]
           (is (= :duplicate-namespace (:reason data)))
@@ -2504,7 +2171,7 @@
         (write-spool-ns! root ns-a (str "(ns " ns-a " (:require [" ns-b " :as b]))\n"))
         (write-spool-ns! root ns-b (str "(ns " ns-b " (:require [" ns-a " :as a]))\n"))
         (write-spools! config-dir (pr-str {:spools {lib {:local/root "spools/cycle"}}}))
-        (is (= :loaded (get-in (runtime/sync! rt) [:spools lib :status])))
+        (is (= :loaded (get-in (sync-approved! rt) [:spools lib :status])))
         (let [ex (is (thrown? clojure.lang.ExceptionInfo (spool-sync/reload-synced-spool! rt lib)))
               data (ex-data ex)]
           (is (= :circular-requires (:reason data)))
@@ -2529,8 +2196,8 @@
         (write-spool-ns! root ns-a
                          (str "(ns " ns-a " (:require [" ns-b " :as b]))\n(defn value [] (b/tag))\n"))
         (write-spools! config-dir (pr-str {:spools {lib {:local/root "spools/dep-order"}}}))
-        (is (= :loaded (get-in (runtime/sync! rt) [:spools lib :status])))
-        (is (= :loaded (:status (runtime/use! rt (keyword (str "dep-order-" suffix))
+        (is (= :loaded (get-in (sync-approved! rt) [:spools lib :status])))
+        (is (= :loaded (:status (load-synced! rt (keyword (str "dep-order-" suffix))
                                               {:ns ns-a :spools [lib]}))))
         (is (= :v1 ((requiring-resolve (symbol (str ns-a "/value"))))))
         (write-spool-ns! root ns-b (str "(ns " ns-b ")\n(defmacro tag [] :v2)\n"))
@@ -2539,10 +2206,9 @@
               "a re-expands against the bumped macro only if b reloaded first")
           (is (= [ns-b ns-a] (mapv :ns (:namespaces result)))))))))
 
-;; PLAN-shr-001.V2 keystone (the gap proof): a synced+loaded spool fn returns :v1;
-;; after the source is bumped to :v2, neither the config `reload!` nor a bare
-;; `(require ns :reload)` — both blind to the spool classloader's roots — see the
-;; change, but `reload-synced-spool!` load-files it live under the spool loader.
+;; PLAN-shr-001.V2 keystone: a loaded spool fn returns :v1; after the source is
+;; bumped to :v2, a bare `(require ns :reload)` remains blind to the spool
+;; classloader's roots, while the code-reload seam makes the change live.
 (deftest reload-synced-spool-picks-up-bumped-source-that-reload-and-require-miss
   (with-runtime
     (fn [rt config-dir]
@@ -2556,18 +2222,12 @@
         (spit (io/file root "deps.edn") "{:paths [\"src\"]}\n")
         (spit src-file (str "(ns " ns-sym ")\n(defn version [] :v1)\n"))
         (write-spools! config-dir (pr-str {:spools {lib {:local/root "spools/keystone"}}}))
-        (is (= :loaded (get-in (runtime/sync! rt) [:spools lib :status])))
-        (is (= :loaded (:status (runtime/use! rt (keyword (str "keystone-" suffix))
+        (is (= :loaded (get-in (sync-approved! rt) [:spools lib :status])))
+        (is (= :loaded (:status (load-synced! rt (keyword (str "keystone-" suffix))
                                               {:ns ns-sym :spools [lib]}))))
         (is (= :v1 ((version))))
         (spit src-file (str "(ns " ns-sym ")\n(defn version [] :v2)\n"))
-        ;; Config reload does not reload spool sources; its preflight refuses the
-        ;; outstanding redefinition (SPEC-004.C46) instead of pretending the source
-        ;; bump is live, exactly as a plain re-sync refuses it.
-        (let [ex (is (thrown? clojure.lang.ExceptionInfo (runtime/reload! rt)))]
-          (is (= :non-additive-sync-diff (:reason (ex-data ex)))))
-        (is (= :v1 ((version))) "the refused reload leaves the loaded source untouched")
-        (let [ex (is (thrown? clojure.lang.ExceptionInfo (runtime/sync! rt)))]
+        (let [ex (is (thrown? clojure.lang.ExceptionInfo (sync-approved! rt)))]
           (is (= :non-additive-sync-diff (:reason (ex-data ex)))))
         (is (= :v1 ((version))) "re-sync refuses the non-additive source bump")
         ;; A bare require :reload runs on the base loader, which has no spool root.
@@ -2576,18 +2236,14 @@
         (let [result (spool-sync/reload-synced-spool! rt lib)]
           (is (= :v2 ((version))) "the blessed seam load-files the bumped source live")
           (is (= [ns-sym] (mapv :ns (:namespaces result)))))
-        ;; The completed hot bump converges (SPEC-004.C46): the recorded
-        ;; fingerprint now matches disk, so the documented direct follow-up —
-        ;; a full reload! with no intervening sync — passes, and a clean sync
-        ;; then retires the pending record (C44d). This world's reload runs no
-        ;; startup sync, so the record survives the reload itself.
-        (is (= :loaded (:status (runtime/reload! rt))))
-        (is (= :pending (get-in (runtime/syncs rt) [:pending-generation :status]))
+        ;; The completed hot bump converges: the recorded fingerprint now
+        ;; matches disk, and a clean acquisition pass retires the pending record.
+        (is (= :pending (get-in (sync-state rt) [:pending-generation :status]))
             "only a clean sync proves the pending record stale")
-        (let [result (runtime/sync! rt)]
+        (let [result (sync-approved! rt)]
           (is (= :already-available (get-in result [:spools lib :status])))
           (is (nil? (:pending-generation result))))
-        (is (nil? (:pending-generation (runtime/syncs rt))))
+        (is (nil? (:pending-generation (sync-state rt))))
         (is (= :v2 ((version))) "convergence never rolls the loaded source back")))))
 
 (deftest reload-synced-spool-partial-failure-keeps-the-refusal
@@ -2605,16 +2261,23 @@
         (spit file-a (str "(ns " ns-a ")\n(defn version [] :v1)\n"))
         (spit file-b (str "(ns " ns-b " (:require [" ns-a "]))\n(defn version [] :v1)\n"))
         (write-spools! config-dir (pr-str {:spools {lib {:local/root (str "spools/partial-" suffix)}}}))
-        (is (= :loaded (get-in (runtime/sync! rt) [:spools lib :status])))
-        (is (= :loaded (:status (runtime/use! rt (keyword (str "partial-" suffix))
+        (is (= :loaded (get-in (sync-approved! rt) [:spools lib :status])))
+        (is (= :loaded (:status (load-synced! rt (keyword (str "partial-" suffix))
                                               {:ns ns-b :spools [lib]}))))
         ;; Bump both sources, breaking the dependency-ordered second file: the
         ;; reload rebinds ns-a then throws on ns-b, leaving a half-reloaded root.
         (spit file-a (str "(ns " ns-a ")\n(defn version [] :v2)\n"))
         (spit file-b (str "(ns " ns-b " (:require [" ns-a "]))\n(defn version [] :v2\n"))
         (is (thrown? Throwable (spool-sync/reload-synced-spool! rt lib)))
+        (let [ledger (spool-sync/namespace-load-ledger rt)
+              latest-a (last (filter #(= ns-a (:namespace %)) ledger))
+              latest-b (last (filter #(= ns-b (:namespace %)) ledger))]
+          (is (< (:order latest-b) (:order latest-a))
+              "the successful first load remains after the later source fails")
+          (is (= :v2 ((requiring-resolve (symbol (str ns-a "/version"))))))
+          (is (= :changed-bytes (:reason (namespace-residual rt ns-b)))))
         (testing "no fingerprint recorded: the half-reloaded root keeps refusing"
-          (let [ex (is (thrown? clojure.lang.ExceptionInfo (runtime/sync! rt)))]
+          (let [ex (is (thrown? clojure.lang.ExceptionInfo (sync-approved! rt)))]
             (is (= :non-additive-sync-diff (:reason (ex-data ex))))))))))
 
 (deftest sync-with-per-root-failures-never-clears-a-pending-generation
@@ -2630,29 +2293,35 @@
             entry-y {:local/root (str "spools/pending-y-" suffix)}]
         (write-local-lib! config-dir (str "pending-y-" suffix) ns-y)
         (write-spools! config-dir (pr-str {:spools {lib-x entry-x lib-y entry-y}}))
-        (let [result (runtime/sync! rt)]
+        (let [result (sync-approved! rt)]
           (is (= :loaded (get-in result [:spools lib-x :status])))
           (is (= :loaded (get-in result [:spools lib-y :status]))))
+        (is (= :loaded (:status (load-synced! rt :ledger/failed-x
+                                              {:ns ns-x :spools [lib-x]}))))
+        (is (= :loaded (:status (load-synced! rt :ledger/failed-y
+                                              {:ns ns-y :spools [lib-y]}))))
         ;; Record a pending generation by removing the loaded lib-y.
         (write-spools! config-dir (pr-str {:spools {lib-x entry-x}}))
-        (is (thrown? clojure.lang.ExceptionInfo (runtime/sync! rt)))
-        (is (= :pending (get-in (runtime/syncs rt) [:pending-generation :status])))
+        (is (thrown? clojure.lang.ExceptionInfo (sync-approved! rt)))
+        (is (= :pending (get-in (sync-state rt) [:pending-generation :status])))
         ;; Restore lib-y but break lib-x: the sync succeeds around the per-root
         ;; failure, which proves nothing about the failed root, so the pending
         ;; record must survive (C44d).
         (write-spools! config-dir (pr-str {:spools {lib-x entry-x lib-y entry-y}}))
         (spit (io/file root-x "deps.edn") "{:paths [\"src\"")
-        (let [result (runtime/sync! rt)]
+        (let [result (sync-approved! rt)]
           (is (= :failed (get-in result [:spools lib-x :status])))
-          (is (= :pending (get-in result [:pending-generation :status]))))
-        (is (= :pending (get-in (runtime/syncs rt) [:pending-generation :status])))
+          (is (= :pending (get-in result [:pending-generation :status])))
+          (is (= :unclassified-root (:reason (namespace-residual rt ns-x))))
+          (is (false? (:complete? (spool-sync/loaded-namespace-status rt)))))
+        (is (= :pending (get-in (sync-state rt) [:pending-generation :status])))
         ;; Fix lib-x: a zero-failure pass classifies every loaded root and
         ;; retires the stale record.
         (spit (io/file root-x "deps.edn") "{:paths [\"src\"]}\n")
-        (let [result (runtime/sync! rt)]
+        (let [result (sync-approved! rt)]
           (is (contains? #{:loaded :already-available} (get-in result [:spools lib-x :status])))
           (is (nil? (:pending-generation result))))
-        (is (nil? (:pending-generation (runtime/syncs rt))))))))
+        (is (nil? (:pending-generation (sync-state rt))))))))
 
 ;; TASK-shr-003.MI1: the blessed verb fails loudly before delegating when `coord`
 ;; is not a symbol, rather than passing a bad key into the sync-state lookup. It
@@ -2662,13 +2331,13 @@
   (with-runtime
     (fn [rt _config-dir]
       (let [ex (is (thrown? clojure.lang.ExceptionInfo
-                            (runtime/reload-spool! rt :demo/keyword-coord)))
+                            (runtime/reload-code! rt :demo/keyword-coord)))
             data (ex-data ex)]
         (is (= :demo/keyword-coord (:value data)))
         (is (contains? data :explain))))))
 
 ;; TASK-shr-003.MI5: the keystone gap proof exercised *through* the blessed
-;; `runtime/reload-spool!` (runtime passed explicitly, no ambient singleton): a
+;; `runtime/reload-code!` (runtime passed explicitly, no ambient singleton): a
 ;; synced+loaded spool fn returns :v1; after the source is bumped, the blessed
 ;; verb makes :v2 live and returns the data-first coordinate/root/namespaces map.
 (deftest reload-spool-verb-makes-bumped-source-live
@@ -2684,14 +2353,14 @@
         (spit (io/file root "deps.edn") "{:paths [\"src\"]}\n")
         (spit src-file (str "(ns " ns-sym ")\n(defn version [] :v1)\n"))
         (write-spools! config-dir (pr-str {:spools {lib {:local/root "spools/verb-keystone"}}}))
-        (is (= :loaded (get-in (runtime/sync! rt) [:spools lib :status])))
-        (is (= :loaded (:status (runtime/use! rt (keyword (str "verb-keystone-" suffix))
+        (is (= :loaded (get-in (sync-approved! rt) [:spools lib :status])))
+        (is (= :loaded (:status (load-synced! rt (keyword (str "verb-keystone-" suffix))
                                               {:ns ns-sym :spools [lib]}))))
         (is (= :v1 ((version))))
         (spit src-file (str "(ns " ns-sym ")\n(defn version [] :v2)\n"))
-        (let [result (runtime/reload-spool! rt lib)]
+        (let [result (runtime/reload-code! rt lib)]
           (is (= :v2 ((version))) "the blessed verb makes the bumped source live")
-          (is (s/valid? ::runtime/reload-spool-result result))
+          (is (s/valid? ::runtime/reload-code-result result))
           (is (= lib (:root-lib result)))
           (is (= (.getCanonicalPath root) (:root result)))
           (is (= [{:ns ns-sym :file (.getCanonicalPath src-file)}]

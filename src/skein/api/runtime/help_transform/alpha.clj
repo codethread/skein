@@ -8,14 +8,10 @@
   it, so a broken transform never bricks help (DELTA-Dtf-001.CC4). `about`/`prime`
   output is never transformed.
 
-  The slot is runtime-owned and **reload-cleared**: it follows the op-registry
-  lifecycle (SPEC-004.C46/C63a/C63c), cleared by `reload!` before config re-runs,
-  not the reload-surviving `spool-state` (SPEC-004.C95). It is registered only by
-  trusted `init.clj`/REPL config — no spool `install!` auto-registers it, so a
-  fresh world (batteries absent, or present but not electing) keeps the raw-JSON
-  floor (DELTA-Dtf-002.D1). This is the deliberate contrast with the glossary
-  registry (`skein.api.runtime.glossary.alpha`), which each owning spool registers
-  from its own `install!`.
+  The slot is runtime-owned service state. Module refresh leaves a direct
+  registration intact, while trusted config may reconcile the elected value.
+  No spool elects itself, so a fresh world keeps the raw-JSON floor
+  (DELTA-Dtf-002.D1).
 
   Discipline (TEN-002): the slot is at-most-one and set explicitly.
   `register-default-help-transform!` fails loudly when the slot is occupied,

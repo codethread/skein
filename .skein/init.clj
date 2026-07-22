@@ -1,198 +1,246 @@
-;; Startup entrypoint for the repo's canonical coordination world. Repo policy
-;; is split one file per concern, each activated below in dependency order:
-;;   config.clj     — named queries and the CLI op surface
-;;   workflows.clj  — hand-authored workflows (land, delegate-pipeline)
-;;   harnesses.clj  — harness seats and routing policy
-;;   reviewers.clj  — reviewer rosters
-;;   attention.clj  — chime attention rules
-;;   nvd_scan.clj   — NVD scan cron job
-;;   analytics.clj  — agent-run cost/usage rollups (`strand feature-costs`)
-;; Gitignored init.local.clj binds each developer's notifier. Read docs/reference.md
-;; before changing this config; smoke-test changes in a disposable world first.
+;; Startup entrypoint for the repo's canonical coordination world. Every concern
+;; is a stable runtime module (DELTA-OlrDrt-001.CC1): the module key is its owner
+;; identity, `:after` orders the dependency-first graph, and a full `refresh!`
+;; re-reads this file to recollect the whole graph. Startup-file collection only
+;; STAGES declarations — no source load, publication, or reconcile runs here — so
+;; this file holds no imperative effects; each concern's registrations live in its
+;; module's contribution (authoring forms / `:contribute`) or its `:reconcile`.
+;;
+;; File-per-concern map (each is one module):
+;;   config.clj        — named queries + the devflow/kanban/hitl CLI op surface
+;;   workflows.clj     — hand-authored land/story workflows and their ops
+;;   harnesses.clj     — harness seats + routing policy
+;;   reviewers.clj     — reviewer rosters
+;;   attention.clj     — chime attention rules
+;;   nvd_scan.clj      — NVD scan cron job
+;;   analytics.clj     — agent-run cost/usage rollups (`strand feature-costs`)
+;;   kanban_tracker.clj— devflow<->kanban tracker binding
+;;   module_adapters.clj — repo election of the batteries help transform
+;;
+;; Gitignored init.local.clj is layered after this file on startup and every
+;; refresh; a module key it redeclares shadows the one here and wins, and it binds
+;; each developer's chime notifier. Read docs/reference.md before changing this
+;; config; smoke-test changes in a disposable world first.
 (require '[skein.api.current.alpha :as current]
-         '[skein.api.runtime.alpha :as runtime]
-         '[skein.api.runtime.help-transform.alpha :as help-transform])
+         '[skein.api.runtime.alpha :as runtime])
 
 (def runtime (current/runtime))
 
-(runtime/sync! runtime)
-;; batteries is the one classpath spool: its source ships on :paths rather than
-;; through a synced spool root, so it is required explicitly before its use!.
-;; The require loads the namespace, so use!'s load-synced-namespace! short-circuits
-;; at its find-ns guard and needs no :spools guard (documented exception).
+;; batteries is the one classpath spool: its source ships on deps.edn :paths
+;; rather than a synced spool root, so it declares no :spools and a fresh world
+;; needs zero sync approval. Require it so the module source load classifies it as
+;; classpath-owned; `contribute` publishes its CLI op partition and `reconcile`
+;; seeds the batteries-owned glossary outcomes those ops reference.
 (require 'skein.spools.batteries)
-(runtime/use! runtime :skein/spools-batteries
-              {:ns 'skein.spools.batteries
-               :call 'skein.spools.batteries/install!})
-;; Elect the batteries reference help transform (DELTA-Dtf-002.CC1): batteries
-;; EXPORTS it but never auto-registers from install!, so the canonical world opts
-;; in here as trusted config (config-election-only, the deliberate contrast with
-;; the glossary registry). The slot is reload-cleared and re-established when this
-;; config re-runs; `--json` always bypasses it, so a broken transform never bricks
-;; help (DELTA-Dtf-001.CC4). Batteries owns its glossary outcomes from its own
-;; install! above; this repo's config ops reference none of their own.
-(help-transform/register-default-help-transform!
- runtime
- {:transform skein.spools.batteries/default-help-transform
-  :owner 'skein.spools.batteries})
-(runtime/use! runtime :skein/spools-workflow
-              {:ns 'skein.spools.workflow
-               :spools ['skein.spools/workflow]
-               :call 'skein.spools.workflow/install!})
-;; The shell executor ships in the workflow spool root and fulfils :shell workflow
-;; gates by running the gate command directly. Its install! runs an initial
-;; scan, so it is ordered after workflow (which owns the executor registry it
-;; registers into).
-(runtime/use! runtime :skein/spools-shell
-              {:ns 'skein.spools.executors.shell
-               :spools ['skein.spools/workflow]
-               :after [:skein/spools-workflow]
-               :call 'skein.spools.executors.shell/install!})
+(runtime/module! runtime :skein/spools-batteries
+                 {:ns 'skein.spools.batteries
+                  :contribute 'skein.spools.batteries/contribute
+                  :reconcile 'skein.spools.batteries/reconcile})
+;; This repo elects the batteries reference help transform after batteries loads.
+(runtime/module! runtime :module-adapters
+                 {:file "module_adapters.clj"
+                  :reconcile 'module-adapters/reconcile-help-transform
+                  :after [:skein/spools-batteries]})
+
+;; --- workflow engine + shell executor -------------------------------------
+(runtime/module! runtime :skein/spools-workflow
+                 {:ns 'skein.spools.workflow
+                  :spools ['skein.spools/workflow]
+                  :contribute 'skein.spools.workflow/contribute
+                  :reconcile 'skein.spools.workflow/reconcile})
+;; The shell executor ships in the workflow spool root and fulfils :shell gates
+;; by running the gate command directly. It contributes the :shell executor
+;; symbol and its query, and its reconcile owns the worker pool + initial scan;
+;; ordered after workflow, which owns the executor registry it contributes into.
+(runtime/module! runtime :skein/spools-shell
+                 {:ns 'skein.spools.executors.shell
+                  :spools ['skein.spools/workflow]
+                  :after [:skein/spools-workflow]
+                  :contribute 'skein.spools.executors.shell/contribute
+                  :reconcile 'skein.spools.executors.shell/reconcile})
 ;; UNSAFE spool: text-search reaches past the blessed api.* contract into
 ;; skein.core.db to LIKE-search titles and attribute values, including archived
-;; rows the query language cannot see. It is a maintained, in-the-open example
-;; of rule-breaking (see spools/text-search.md), not a blessed path — activated
-;; here so the reference stays exercised.
-(runtime/use! runtime :skein/spools-text-search
-              {:ns 'skein.spools.text-search
-               :spools ['skein.spools/text-search]
-               :call 'skein.spools.text-search/install!})
+;; rows the query language cannot see. It is a maintained, in-the-open example of
+;; rule-breaking (see spools/text-search.md), activated here so it stays
+;; exercised. It contributes its query and needs no resource reconcile.
+(runtime/module! runtime :skein/spools-text-search
+                 {:ns 'skein.spools.text-search
+                  :spools ['skein.spools/text-search]
+                  :contribute 'skein.spools.text-search/contribute})
 ;; devflow is an external git-distributed spool: activation is gated on the
 ;; approved codethread/devflow coordinate (spools.edn pin or a developer's
-;; spools.local.edn checkout), never on an incidental classpath copy.
-(runtime/use! runtime :skein/spools-devflow
-              {:ns 'ct.spools.devflow
-               :spools ['codethread/devflow]
-               :call 'ct.spools.devflow/install!
-               :required? true})
-(runtime/use! runtime :macros/patterns
-              {:ns 'skein.macros.patterns
-               :spools ['skein.macros/macros]
-               :required? true})
-(runtime/use! runtime :macros/demo
-              {:ns 'skein.macros.demo
-               :spools ['skein.macros/macros]
-               :after [:macros/patterns]
-               :call 'skein.macros.demo/install!
-               :required? true})
-(runtime/use! runtime :skein/spools-shuttle
-              {:ns 'ct.spools.agent-run
-               :spools ['ct.spools/agent-run]
-               :call 'ct.spools.agent-run/install!
-               :required? true})
-(runtime/use! runtime :skein/spools-delegation
-              {:ns 'ct.spools.delegation
-               :spools ['ct.spools/delegation]
-               :after [:skein/spools-shuttle]
-               :call 'ct.spools.delegation/install!
-               :required? true})
-(runtime/use! runtime :skein/spools-bench
-              {:ns 'ct.spools.bench
-               :spools ['ct.spools/bench]
-               :after [:skein/spools-shuttle]
-               :call 'ct.spools.bench/install!
-               :required? true})
-;; Repo policy modules, split by use case (each file is one concern):
-;; harnesses.clj — model seats + routing policy; workflows.clj — hand-authored
-;; land workflow + delegate-pipeline pattern; attention.clj — chime rules;
-;; nvd_scan.clj — the scheduled NVD deep-scan cron job; reviewers.clj — the
-;; declarative reviewer roster; analytics.clj — agent-run cost/usage rollups;
-;; config.clj — named queries + the CLI op surface.
-(runtime/use! runtime :harnesses
-              {:file "harnesses.clj"
-               :spools ['ct.spools/delegation 'ct.spools/agent-run]
-               :after [:skein/spools-delegation]
-               :call 'harnesses/install!
-               :required? true})
-;; The declarative reviewer roster lives in its own file so the "who reviews
-;; a change here" policy stays a small git-reviewable data document. Roster
-;; harness aliases resolve at review time, not registration time, so load
-;; order relative to harnesses.clj is not load-bearing.
-(runtime/use! runtime :reviewers
-              {:file "reviewers.clj"
-               :spools ['ct.spools/delegation]
-               :after [:skein/spools-delegation]
-               :call 'reviewers/install!
-               :required? true})
-;; Chime is a vocabulary-agnostic notification engine: it installs bare here,
-;; attention.clj registers this repo's attention rules (HITL checkpoints, agent
-;; failures, gate errors, kanban lifecycle, parked runs), and each developer
-;; binds how they are notified in gitignored init.local.clj (loaded after this
-;; file on startup and reload). Unbound chime records loud notifier-missing
-;; failures.
-(runtime/use! runtime :skein/spools-chime
-              {:ns 'skein.spools.chime
-               :spools ['skein.spools/chime]
-               :call 'skein.spools.chime/install!
-               :required? true})
-(runtime/use! runtime :attention
-              {:file "attention.clj"
-               :spools ['skein.macros/macros 'ct.spools/agent-run]
-               :after [:skein/spools-chime :skein/spools-shuttle :macros/patterns]
-               :call 'attention/install!
-               :required? true})
-;; kanban is an external git-distributed spool (codethread/kanban.spool). The
-;; board loads independently; the repo-specific tracker binding below joins it
-;; to devflow after both spools are active.
-(runtime/use! runtime :skein/spools-kanban
-              {:ns 'ct.spools.kanban
-               :spools ['codethread/kanban]
-               :call 'ct.spools.kanban/install!
-               :required? true})
-(runtime/use! runtime :kanban/tracker
-              {:file "kanban_tracker.clj"
-               :spools ['codethread/kanban 'codethread/devflow]
-               :after [:skein/spools-kanban :skein/spools-devflow]
-               :call 'kanban-tracker/install!
-               :required? true})
-;; Cron is a generic weaver timer engine; install! only creates its scheduled
-;; executor. nvd_scan.clj requires it (for the job's seed/jitter fns), so it
-;; must be synced before that module loads.
-(runtime/use! runtime :skein/spools-cron
-              {:ns 'skein.spools.cron
-               :spools ['skein.spools/cron]
-               :call 'skein.spools.cron/install!
-               :required? true})
-(runtime/use! runtime :config
-              {:file "config.clj"
-               :spools ['skein.spools/workflow 'ct.spools/agent-run
-                        'codethread/devflow 'skein.macros/macros]
-               :after [:skein/spools-workflow :skein/spools-devflow
-                       :skein/spools-shuttle :macros/patterns]
-               :call 'config/install!
-               :required? true})
-;; Analytics is a read-only rollup surface over agent-run usage stamps; it
-;; only needs the defop macro (macros spool) and the shuttle vocabulary the
-;; runs were stamped with.
-(runtime/use! runtime :analytics
-              {:file "analytics.clj"
-               :spools ['skein.macros/macros]
-               :after [:skein/spools-shuttle :macros/patterns]
-               :call 'analytics/install!
-               :required? true})
-;; workflows.clj reuses config.clj's public CLI-tail helpers, so it loads after
-;; the :config module.
-(runtime/use! runtime :workflows
-              {:file "workflows.clj"
-               :spools ['skein.spools/workflow 'ct.spools/delegation]
-               :after [:skein/spools-workflow :skein/spools-delegation :config]
-               :call 'workflows/install!
-               :required? true})
+;; spools.local.edn checkout), never on an incidental classpath copy. It still
+;; publishes and reconciles through the peer spool's module entry points.
+(runtime/module! runtime :skein/spools-devflow
+                 {:ns 'ct.spools.devflow
+                  :spools ['codethread/devflow]
+                  :contribute 'ct.spools.devflow/contribute
+                  :reconcile 'ct.spools.devflow/reconcile
+                  :required? true})
+
+;; --- workspace authoring macros (skein.macros/macros root) ------------------
+;; Each macro namespace is declared so it is ledger-loaded before the workspace
+;; files that require its macro cascade-require it (defop/defquery/defrule/defp);
+;; the macro-defining namespaces carry no authoring forms, so their default
+;; contribution is empty.
+(runtime/module! runtime :macros/patterns
+                 {:ns 'skein.macros.patterns
+                  :spools ['skein.macros/macros]
+                  :required? true})
+(runtime/module! runtime :macros/ops
+                 {:ns 'skein.macros.ops
+                  :spools ['skein.macros/macros]
+                  :required? true})
+(runtime/module! runtime :macros/queries
+                 {:ns 'skein.macros.queries
+                  :spools ['skein.macros/macros]
+                  :required? true})
+(runtime/module! runtime :macros/rules
+                 {:ns 'skein.macros.rules
+                  :spools ['skein.macros/macros]
+                  :required? true})
+;; macros.demo authors patterns with the defp macro, so its contribution is the
+;; collected pattern entries; it requires macros.patterns for the macro.
+(runtime/module! runtime :macros/demo
+                 {:ns 'skein.macros.demo
+                  :spools ['skein.macros/macros]
+                  :after [:macros/patterns]
+                  :required? true})
+
+;; --- peer coordination spools -----------------------------------------------
+(runtime/module! runtime :skein/spools-shuttle
+                 {:ns 'ct.spools.agent-run
+                  :spools ['ct.spools/agent-run]
+                  :contribute 'ct.spools.agent-run/contribute
+                  :reconcile 'ct.spools.agent-run/reconcile
+                  :required? true})
+(runtime/module! runtime :skein/spools-delegation
+                 {:ns 'ct.spools.delegation
+                  :spools ['ct.spools/delegation]
+                  :contribute 'ct.spools.delegation/contribute
+                  :reconcile 'ct.spools.delegation/reconcile
+                  :after [:skein/spools-shuttle]
+                  :required? true})
+(runtime/module! runtime :skein/spools-bench
+                 {:ns 'ct.spools.bench
+                  :spools ['ct.spools/bench]
+                  :contribute 'ct.spools.bench/contribute
+                  :reconcile 'ct.spools.bench/reconcile
+                  :after [:skein/spools-shuttle]
+                  :required? true})
+
+;; --- repo policy over the peer spools ---------------------------------------
+;; harnesses.clj contributes its seats over the :pi harness that agent-run
+;; reconciles, as the workspace-owned partitions of agent-run's tool/alias kinds,
+;; so it orders after both peers. Its reconcile sets the two singleton default
+;; review/task contract slots, consuming the delegation contract text.
+(runtime/module! runtime :harnesses
+                 {:file "harnesses.clj"
+                  :spools ['ct.spools/delegation 'ct.spools/agent-run]
+                  :after [:skein/spools-shuttle :skein/spools-delegation]
+                  :contribute 'harnesses/contribute
+                  :reconcile 'harnesses/reconcile
+                  :required? true})
+;; The declarative reviewer roster stays a small git-reviewable data document,
+;; contributed as the workspace-owned partition of delegation's roster kind.
+;; Roster harness aliases resolve at review time, not registration time, so order
+;; relative to harnesses.clj is not load-bearing.
+(runtime/module! runtime :reviewers
+                 {:file "reviewers.clj"
+                  :spools ['ct.spools/delegation]
+                  :after [:skein/spools-delegation]
+                  :contribute 'reviewers/contribute
+                  :required? true})
+
+;; --- chime notification engine + this repo's attention rules ----------------
+;; Chime is vocabulary-agnostic; attention.clj contributes this repo's attention
+;; rules (HITL checkpoints, agent failures, gate errors, kanban lifecycle, parked
+;; runs) with defrule, and each developer binds how they are notified in
+;; gitignored init.local.clj. Unbound chime records loud notifier-missing errors.
+(runtime/module! runtime :skein/spools-chime
+                 {:ns 'skein.spools.chime
+                  :spools ['skein.spools/chime]
+                  :contribute 'skein.spools.chime/contribute
+                  :reconcile 'skein.spools.chime/reconcile
+                  :required? true})
+(runtime/module! runtime :attention
+                 {:file "attention.clj"
+                  :spools ['skein.macros/macros 'ct.spools/agent-run]
+                  :after [:skein/spools-chime :macros/rules :skein/spools-shuttle]
+                  :required? true})
+
+;; --- kanban board + devflow tracker binding ---------------------------------
+;; kanban is an external git-distributed spool. The board loads independently;
+;; the repo tracker binding below joins it to devflow after both spools are active.
+(runtime/module! runtime :skein/spools-kanban
+                 {:ns 'ct.spools.kanban
+                  :spools ['codethread/kanban]
+                  :contribute 'ct.spools.kanban/contribute
+                  :reconcile 'ct.spools.kanban/reconcile
+                  :required? true})
+(runtime/module! runtime :kanban/tracker
+                 {:file "kanban_tracker.clj"
+                  :spools ['codethread/kanban 'codethread/devflow]
+                  :after [:skein/spools-kanban :skein/spools-devflow]
+                  :reconcile 'kanban-tracker/reconcile
+                  :required? true})
+
+;; --- cron timer engine + the NVD scan job -----------------------------------
+;; Cron is a generic weaver timer engine; its contribute/reconcile create the
+;; scheduled executor. nvd_scan.clj requires it (for the job's seed/jitter fns),
+;; so it is ordered after cron.
+(runtime/module! runtime :skein/spools-cron
+                 {:ns 'skein.spools.cron
+                  :spools ['skein.spools/cron]
+                  :contribute 'skein.spools.cron/contribute
+                  :reconcile 'skein.spools.cron/reconcile
+                  :required? true})
 ;; The NVD scan job is its own module (not part of config.clj) so config_test's
 ;; direct config.clj load never registers the job or seeds against real gh.
-(runtime/use! runtime :nvd-scan
-              {:file "nvd_scan.clj"
-               :spools ['skein.spools/cron]
-               :after [:skein/spools-cron :skein/spools-kanban]
-               :call 'nvd-scan/install!
-               :required? true})
-;; The subagent gate executor installs last: its install! runs an initial gate
-;; scan, so every harness alias harnesses.clj registers (e.g. sol-low) must
-;; already exist or a durable ready gate would be stamped gate/error on every
-;; cold start.
-(runtime/use! runtime :skein/spools-treadle
-              {:ns 'ct.spools.executors.subagent
-               :spools ['ct.spools/agent-run]
-               :after [:skein/spools-shuttle :skein/spools-workflow :harnesses :config :workflows]
-               :call 'ct.spools.executors.subagent/install!
-               :required? true})
+(runtime/module! runtime :nvd-scan
+                 {:file "nvd_scan.clj"
+                  :spools ['skein.spools/cron]
+                  :after [:skein/spools-cron :skein/spools-kanban]
+                  :required? true})
+
+;; --- config op surface, analytics, hand-authored workflows ------------------
+;; config.clj authors the devflow/kanban/hitl ops and named queries with
+;; defop/defquery, so its contribution is those entries; it requires the workflow
+;; engine, shuttle vocab, devflow, and the ops/queries macros, so it orders after
+;; each. It is required: a guarded-but-optional module would drop the op surface.
+(runtime/module! runtime :config
+                 {:file "config.clj"
+                  :spools ['skein.spools/workflow 'ct.spools/agent-run
+                           'codethread/devflow 'skein.macros/macros]
+                  :after [:skein/spools-workflow :skein/spools-shuttle
+                          :skein/spools-devflow :macros/ops :macros/queries]
+                  :required? true})
+;; Analytics is a read-only rollup surface over agent-run usage stamps; it authors
+;; feature-costs with defop and only needs the ops macro.
+(runtime/module! runtime :analytics
+                 {:file "analytics.clj"
+                  :spools ['skein.macros/macros]
+                  :after [:macros/ops]
+                  :required? true})
+;; workflows.clj contributes the land/story workflow constructors, the land/flow
+;; ops, and the delegate-pipeline pattern as its workspace-owned partitions, and
+;; references config.clj's public CLI-tail helpers at load time, so it orders
+;; after :config as well as the workflow/delegation spools.
+(runtime/module! runtime :workflows
+                 {:file "workflows.clj"
+                  :spools ['skein.spools/workflow 'ct.spools/delegation]
+                  :after [:skein/spools-workflow :skein/spools-delegation :config]
+                  :contribute 'workflows/contribute
+                  :required? true})
+
+;; The subagent gate executor reconciles last: its reconcile runs an initial gate
+;; scan, so every harness alias harnesses.clj registers must already exist or a
+;; durable ready gate would be stamped gate/error on every cold start.
+(runtime/module! runtime :skein/spools-treadle
+                 {:ns 'ct.spools.executors.subagent
+                  :spools ['ct.spools/agent-run]
+                  :contribute 'ct.spools.executors.subagent/contribute
+                  :reconcile 'ct.spools.executors.subagent/reconcile
+                  :after [:skein/spools-shuttle :skein/spools-workflow
+                          :harnesses :workflows]
+                  :required? true})

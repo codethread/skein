@@ -18,6 +18,7 @@
             [skein.core.query :as query]
             [skein.core.specs :as specs]
             [skein.core.weaver.access :as access]
+            [skein.core.weaver.core-registry :as core-registry]
             [skein.core.weaver.dispatch :as dispatch]
             [skein.core.weaver.lifecycle :as lifecycle]))
 
@@ -49,19 +50,24 @@
   data fails loudly at registration time; `skein.core.query` is the
   grammar authority for definitions and compiles the stored definition at
   each use."
-  [runtime query-name query-def]
-  (let [entry (validated-entry query-name query-def)]
-    (swap! (access/query-registry runtime) conj entry)
-    (into {} [entry])))
+  ([runtime query-name query-def]
+   (register-query! runtime core-registry/repl-owner query-name query-def))
+  ([runtime owner query-name query-def]
+   (let [[canonical-name definition :as entry] (validated-entry query-name query-def)]
+     (core-registry/put-entry! (access/query-store runtime) owner canonical-name definition)
+     (into {} [entry]))))
 
 (s/fdef register-query!
-  :args (s/cat :runtime ::runtime :query-name ::query-name :query-def ::query-def)
+  :args (s/or :direct (s/cat :runtime ::runtime :query-name ::query-name
+                             :query-def ::query-def)
+              :owned (s/cat :runtime ::runtime :owner keyword?
+                            :query-name ::query-name :query-def ::query-def))
   :ret ::query-registry)
 
 (defn queries
   "Return registered query definitions keyed by canonical string name."
   [runtime]
-  (into (sorted-map) @(access/query-registry runtime)))
+  (into (sorted-map) (access/query-registry runtime)))
 
 (s/fdef queries
   :args (s/cat :runtime ::runtime)
@@ -72,7 +78,7 @@
 
   Throws ex-info listing the available names when no definition matches."
   [runtime query-name]
-  (query/query-def @(access/query-registry runtime) query-name))
+  (query/query-def (access/query-registry runtime) query-name))
 
 (s/fdef resolve-query
   :args (s/cat :runtime ::runtime :query-name ::query-lookup)

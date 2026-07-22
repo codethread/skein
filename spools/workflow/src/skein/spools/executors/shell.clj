@@ -55,8 +55,8 @@
 
 (def ^:private state-version
   "Shape version for the shell executor's runtime spool-state map. Bump whenever
-  `new-state`'s key set changes: spool-state survives `reload!`, so a
-  post-upgrade reload would otherwise reuse a preserved map missing the new key.
+  `new-state`'s key set changes: spool-state survives module refresh, so a
+  post-upgrade refresh would otherwise reuse a preserved map missing the new key.
   The `state-shape-matches-declared-version` test guards against silent drift."
   1)
 
@@ -315,35 +315,92 @@
     (when (stamped? gate :gate/error)
       {:gate (:id gate) :error (attr gate :gate/error)})))
 
-(defn install!
-  "Install the shell executor: register its event handler, the `:shell`
-  workflow executor, and the `stalled-shell-gates` coordinator query, then
-  perform an initial scan.
+;; ---------------------------------------------------------------------------
+;; Owner declarations and resource reconciliation
 
-  Declares only the `shell` attribute namespace: failure detail is written as
-  the subagent executor's inherited `gate/error`, whose namespace that spool
-  owns."
+(def gate-stalled-symbol
+  "The `:shell` executor's stall predicate symbol, declared into the workflow
+  executor kind and resolved to a function value at each gate evaluation
+  (DELTA-OlrDrt-001.CC10)."
+  'skein.spools.executors.shell/gate-stalled?)
+
+;; The coordinator attention surface for stuck shell gates: an active `:shell`
+;; gate carrying a `gate/error` attribute. Presence is the stall; a coordinator
+;; re-arms by removing the key (nil patch / JSON null), never by blanking it. No
+;; delegates-edge join is needed because the failure detail lives on the gate itself.
+(def stalled-shell-gates-query
+  "Named query behind `stalled-shell-gates`, contributed to the core query kind."
+  [:and [:= :state "active"]
+   [:= [:attr "workflow/gate"] "shell"]
+   [:exists [:attr "gate/error"]]])
+
+(defn- declare-shell-vocab!
+  "Declare the `shell` attribute namespace on `runtime`.
+
+  Failure detail is written as the subagent executor's inherited `gate/error`,
+  whose namespace that spool owns."
+  [runtime]
+  (vocab/declare! runtime
+                  {:kind :attr-namespace
+                   :name "shell"
+                   :owner :skein/spools-shell
+                   :keys ["shell/argv" "shell/cwd" "shell/timeout-secs"
+                          "shell/running" "shell/exit-code" "shell/output"]
+                   :doc "Shell-gate command inputs and process outcome attributes stamped by the shell executor."}))
+
+(defn- register-shell-handler!
+  "Register the graph-change event handler that drives shell-gate scans."
+  [runtime]
+  (events/register-handler! runtime :shell/engine event-types
+                            'skein.spools.executors.shell/on-event
+                            {:spool "shell"}))
+
+(defn contribute
+  "Module contribution: the `:shell` workflow executor and the
+  `stalled-shell-gates` query, published owner-complete.
+
+  Both disappear by omission when this module is refreshed away
+  (DELTA-OlrDrt-001.CC2). The executor entry is the stall predicate symbol; its
+  resolution to a function value happens per gate evaluation (CC10). The event
+  handler and worker pool are not declarative data — `reconcile` owns them."
+  [_ctx]
+  {workflow/executor-kind {"shell" gate-stalled-symbol}
+   :queries {"stalled-shell-gates" stalled-shell-gates-query}})
+
+(defn reconcile
+  "Reconcile the shell executor's non-declarative resources.
+
+  On an applied contribution: seed the `shell` vocabulary, register the
+  graph-change event handler, materialize the runtime-owned worker pool, and run
+  one initial scan — content-identical refreshes skip reconcile, so no duplicate
+  scan occurs. On removal: drop the event handler so no further scan is
+  triggered; the executor and query are already gone by kernel omission. The
+  worker pool retains identity and is closed at runtime stop
+  (DELTA-OlrDrt-001.CC7/CC8)."
+  [{:keys [runtime] :as ctx}]
+  (binding [*runtime* runtime]
+    (case (get-in ctx [:module/contribution :status])
+      :applied (do (declare-shell-vocab! runtime)
+                   (register-shell-handler! runtime)
+                   (state)
+                   (scan!)
+                   {:reconciled :applied})
+      :removed (do (events/unregister-handler! runtime :shell/engine)
+                   {:reconciled :removed})
+      {:reconciled :noop})))
+
+(defn install!
+  "Install the shell executor eagerly (pre-module lifecycle): register its event
+  handler, the `:shell` workflow executor, and the `stalled-shell-gates`
+  coordinator query, then perform an initial scan.
+
+  The module lifecycle uses `contribute`/`reconcile` above instead."
   []
   (let [runtime (rt)]
-    (vocab/declare! runtime
-                    {:kind :attr-namespace
-                     :name "shell"
-                     :owner :skein/spools-shell
-                     :keys ["shell/argv" "shell/cwd" "shell/timeout-secs"
-                            "shell/running" "shell/exit-code" "shell/output"]
-                     :doc "Shell-gate command inputs and process outcome attributes stamped by the shell executor."})
-    (events/register-handler! runtime :shell/engine event-types
-                              'skein.spools.executors.shell/on-event
-                              {:spool "shell"})
-    (workflow/register-executor! :shell gate-stalled?)
-    ;; The coordinator attention surface for stuck shell gates: an active `:shell`
-    ;; gate carrying a `gate/error` attribute. Presence is the stall; a coordinator
-    ;; re-arms by removing the key (nil patch / JSON null), never by blanking it. No
-    ;; delegates-edge join is needed because the failure detail lives on the gate itself.
-    (graph/register-query! runtime 'stalled-shell-gates
-                           [:and [:= :state "active"]
-                            [:= [:attr "workflow/gate"] "shell"]
-                            [:exists [:attr "gate/error"]]])
+    (declare-shell-vocab! runtime)
+    (register-shell-handler! runtime)
+    (workflow/register-executor! :shell gate-stalled-symbol)
+    (graph/register-query! runtime 'stalled-shell-gates stalled-shell-gates-query)
     (scan!)
     {:installed true
      :namespace 'skein.spools.executors.shell}))

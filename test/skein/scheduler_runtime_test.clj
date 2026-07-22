@@ -10,7 +10,6 @@
   (:require [clojure.java.io :as io]
             [clojure.test :refer [deftest is testing]]
             [skein.api.clock.alpha :as clock]
-            [skein.api.runtime.alpha :as runtime]
             [skein.core.db :as db]
             [skein.core.db-test :as db-test]
             [skein.core.weaver.runtime :as weaver-runtime]
@@ -235,7 +234,7 @@
             (is (re-find #"handler blew up" (:error failure))))
           (is (empty? @(:in-flight st))))))))
 
-(deftest run-fire-captures-unresolvable-handler-as-failed
+(deftest run-fire-parks-unresolvable-handler-without-retiring-durable-wake
   (db-test/with-db
     (fn [ds]
       (db/schedule-wake! ds {:key "wake" :wake-at (instant 100)
@@ -247,10 +246,11 @@
                                              :scheduler/key "wake"
                                              :scheduler/wake-at-millis 100000
                                              :scheduler/attempt 1})))
-          (is (nil? (db/get-pending-wake ds "wake")))
-          (let [failure (first (db/recent-failures ds))]
-            (is (= "wake" (:key failure)))
-            (is (re-find #"resolved" (:error failure))))
+          (is (some? (db/get-pending-wake ds "wake"))
+              "missing handler retains its durable row for explicit repair")
+          (is (= [{:key "wake" :status :parked :park/reason :handler-unresolved}]
+                 (mapv #(select-keys % [:key :status :park/reason])
+                       (scheduler/wake-status rt))))
           (is (empty? @(:in-flight st))))))))
 
 (deftest run-fire-skips-cancelled-and-rescheduled-wakes
@@ -348,9 +348,10 @@
       (scheduler/rearm! rt)
       (is (await-fire) "the overdue wake fires once")
       (is (await-completed (:datasource rt) "past"))
-      ;; A config reload re-arms the scheduler; a completed wake must not return.
-      (runtime/reload! rt)
-      (is (= 1 @fire-count) "a completed wake is not re-fired on reload"))))
+      ;; Resource reconciliation may re-arm the scheduler; a completed wake must
+      ;; not return.
+      (scheduler/rearm! rt)
+      (is (= 1 @fire-count) "a completed wake is not re-fired on rearm"))))
 
 (deftest stop-closes-scheduler-executor-thread
   (let [db-file (db-test/temp-db-file)

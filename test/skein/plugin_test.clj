@@ -36,6 +36,5 @@
   (with-runtime
     (fn [rt]
       (is (= {:spools {} :families {}} (runtime/approved rt)))
-      (is (= {:spools {}} (runtime/syncs rt)))
-      (is (= {} (runtime/uses rt))))))
-
+      (is (= {} (:modules (runtime/status rt))))
+      (is (= {} (:root/outcomes (runtime/status rt)))))))

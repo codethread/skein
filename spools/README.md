@@ -8,7 +8,7 @@ The agent family (`agent-run`, `executors.subagent`, `delegation`, `bench`) live
 The spools in this directory ship with Skein as working references. Use them directly, copy them
 as starting points, or study them to author your own.
 
-Every spool loads through one convention: an approved coordinate in `.skein/spools.edn`, synced into the weaver by explicit-runtime `sync!`, and activated by a `:spools`-guarded explicit-runtime `use!`. Those forms run in trusted config (`.skein/init.clj`) or an explicit-runtime REPL; [customising your workspace](../docs/spools/customisation.md) is the operational walkthrough. `batteries` is the single documented exception — see [Classpath exception: batteries](#classpath-exception-batteries) below.
+Every spool loads through one convention: an approved coordinate in `.skein/spools.edn` and a stable `runtime/module!` declaration guarded by its `:spools` roots. Full refresh acquires those roots, loads the module source, publishes its owner-complete contribution, and reconciles resources. These forms run in trusted config (`.skein/init.clj`) or an explicit-runtime REPL; [customising your workspace](../docs/spools/customisation.md) is the operational walkthrough. `batteries` is the single documented classpath exception — see [Classpath exception: batteries](#classpath-exception-batteries) below.
 
 Blessed alpha helpers such as `skein.api.peers.alpha` are also explicit-require userland APIs for trusted config and REPL workflows. Use that namespace's `peers` and `call!` helpers when a spool or repo config needs to discover and invoke same-machine sibling weavers.
 
@@ -55,8 +55,9 @@ Signatures live only in the generated API doc; contracts and cookbooks link to t
 ## Index
 
 Each repo-local spool lives in its own root under `spools/<name>/src`, off the weaver's source
-classpath. A spool's `.skein/spools.edn` coordinate is what makes it reachable — `runtime/sync!`
-adds the approved root to the weaver runtime, and a `:spools`-guarded `runtime/use!` activates it.
+classpath. A spool's `.skein/spools.edn` coordinate approves its source, and a
+`:spools`-guarded `runtime/module!` declaration lets the refresh coordinator
+acquire, publish, and reconcile it.
 The repo-local spools also serve as the worked example of authoring your own ([customising your
 workspace](../docs/spools/customisation.md#promoting-config-to-a-local-spool)); for publishing a
 spool for others by git coordinate, SHA-pinned approval, README dependency/activation snippets,
@@ -161,11 +162,11 @@ The override inherits the shared family's `:roots`, `:requires`, and `:skein/min
 |---|---|---|---|
 | `skein.spools.batteries` | [batteries.md](./batteries.md) | [batteries.api.md](./batteries.api.md) · [cookbook](./batteries.cookbook.md) | Shipped core strand command surface as registered ops: add/update/show/supersede/burn/list/ready/subgraph plus `weave` and the `query`/`pattern`/`vocab` registry-introspection reads, all parser-backed. |
 
-`batteries` is the base strand command surface every fresh `mill init` world needs at zero config — a fresh workspace seeds `spools.edn` as `{:spools {}}`, yet must still get add/update/show/supersede/burn/list/ready/subgraph plus the `weave`/`query`/`pattern`/`vocab` reads. It is non-escalating (a CRUD/query surface, not a capability escalation like the agent-run harness spawn), which is why it earns a classpath exception rather than an approved coordinate: bootstrap cannot write a source-relative `spools.edn` coordinate without persisting a machine-specific source-checkout path, which the weaver runtime spec forbids. `batteries` therefore ships on the weaver's source classpath (its own root, `spools/batteries/src`, on `deps.edn` `:paths`) and is loaded by an explicit `(require 'skein.spools.batteries)` placed above its `use!` in `init.clj` — an honest require, not a hidden loader fallback — rather than through `spools.edn` approval. Every other spool loads only through the approved `spools.edn` → `sync!` → `:spools`-guarded `use!` path.
+`batteries` is the base strand command surface every fresh `mill init` world needs at zero config — a fresh workspace seeds `spools.edn` as `{:spools {}}`, yet must still get add/update/show/supersede/burn/list/ready/subgraph plus the `weave`/`query`/`pattern`/`vocab` reads. It is non-escalating (a CRUD/query surface, not a capability escalation like the agent-run harness spawn), which is why it earns a classpath exception rather than an approved coordinate: bootstrap cannot write a source-relative `spools.edn` coordinate without persisting a machine-specific source-checkout path, which the weaver runtime spec forbids. `batteries` therefore ships on the weaver's source classpath (its own root, `spools/batteries/src`, on `deps.edn` `:paths`) and is declared as a classpath module after an explicit `(require 'skein.spools.batteries)` in `init.clj` — an honest require, not a hidden loader fallback. Every other spool loads through the approved `spools.edn` → `:spools`-guarded module path.
 
 ## `util` and `format` left the spool family
 
-`skein.spools.util` and `skein.spools.format` were never activatable spools — they registered no ops and no world `use!`d them; they were authoring libraries other spools built on. Both have left `skein.spools.*` for base-classpath `src/`: `format` is deleted in favor of the already-blessed `skein.api.format.alpha` (`fill`/`reflow`), and `util` is promoted to the blessed `skein.api.spool.alpha` (`fail!`, `reject-unknown-keys!`, `require-valid!`, `attr-key->str`, `attr-get`, `poll-until!`, and `entity-projection` — which fails loudly unless its strand-shaped input carries `:id`/`:title`/`:state`/`:attributes` and returns exactly those keys) — the accretion-compatible home for the spool-authoring helpers every reference spool leans on. `poll-until!` takes the runtime's Clock and a relative timeout, so manual time works without changing spool code. After this move, `skein.spools.*` is exactly "activatable spools" and nothing else.
+`skein.spools.util` and `skein.spools.format` were never activatable spools — they registered no ops and no world declared modules for them; they were authoring libraries other spools built on. Both have left `skein.spools.*` for base-classpath `src/`: `format` is deleted in favor of the already-blessed `skein.api.format.alpha` (`fill`/`reflow`), and `util` is promoted to the blessed `skein.api.spool.alpha` (`fail!`, `reject-unknown-keys!`, `require-valid!`, `attr-key->str`, `attr-get`, `poll-until!`, and `entity-projection` — which fails loudly unless its strand-shaped input carries `:id`/`:title`/`:state`/`:attributes` and returns exactly those keys) — the accretion-compatible home for the spool-authoring helpers every reference spool leans on. `poll-until!` takes the runtime's Clock and a relative timeout, so manual time works without changing spool code. After this move, `skein.spools.*` is exactly "activatable spools" and nothing else.
 
 ## Reference examples
 
@@ -190,8 +191,9 @@ The override inherits the shared family's `:roots`, `:requires`, and `:skein/min
 - Workflow definitions accept pure-data **tool bindings** (`workflow.md`
   §3), so a consumer rebinds steps to their own tooling from trusted config
   without touching these namespaces.
-- Some spools expose `install!` metadata (fns as symbol maps) for trusted
-  registration by name; others use `install!` for side-effectful setup such as
-  registering weaver ops. See each contract doc for exact behavior.
+- A spool publishes its declarations through a `contribute` function that
+  returns owner-complete kind→entry data, and owns any resource or registration
+  effects in an optional `reconcile` function. See each contract doc for exact
+  behavior.
 - To author and load your own spool from a workspace-local root, follow
   [Authoring your own spool code](../docs/spools/customisation.md#promoting-config-to-a-local-spool).

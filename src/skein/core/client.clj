@@ -51,12 +51,11 @@
    :weave! 'skein.api.patterns.alpha/weave!
    :apply-batch 'skein.api.batch.alpha/apply!
    :approved-spools 'skein.api.runtime.alpha/approved
-   :sync-approved-spools 'skein.api.runtime.alpha/sync!
-   :approved-spool-syncs 'skein.api.runtime.alpha/syncs
-   :reload-config! 'skein.api.runtime.alpha/reload!
-   :use! 'skein.api.runtime.alpha/use!
-   :uses 'skein.api.runtime.alpha/uses
-   :use 'skein.api.runtime.alpha/use-entry})
+   :module! 'skein.api.runtime.alpha/module!
+   :refresh! 'skein.api.runtime.alpha/refresh!
+   :plan 'skein.api.runtime.alpha/plan
+   :runtime-status 'skein.api.runtime.alpha/status
+   :reload-code! 'skein.api.runtime.alpha/reload-code!})
 
 (defn- fail
   "Throw an ExceptionInfo with message and structured client error data."

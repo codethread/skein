@@ -66,7 +66,7 @@ functions against an explicit runtime value.
 
 ### 3. Weaver-world integration tests with `skein.test.alpha`
 
-For behavior that only exists inside a running weaver — approved-spool sync, `use!` activation,
+For behavior that only exists inside a running weaver — approved-root acquisition, module refresh,
 init.clj startup behavior, event handlers, ops — use `skein.test.alpha`. It starts a real,
 disposable, isolated weaver world in your test JVM and routes forms through the weaver's real nREPL
 transport:
@@ -113,10 +113,11 @@ Two evaluation contexts exist even though the test weaver runs in your test JVM 
   plus the Skein checkout). This never proves the weaver can load your spool.
 - **Weaver-routed forms via `repl!`** evaluate inside the weaver runtime.
   Spool code becomes visible there only through the real workflow: approve its
-  family and roots in `spools.edn`, `skein.api.runtime.alpha/sync!`, then `use!`.
+  family and roots in `spools.edn`, then declare a module whose `:spools`
+  prerequisites name those roots.
 
 A spool that passes tier-2 tests can still fail tier 3 — missing `deps.edn` paths in the spool root,
-load-order problems in `install!`, or reliance on your test JVM classpath. Tier 3 exists to catch
+load-order problems in the module source, or reliance on your test JVM classpath. Tier 3 exists to catch
 exactly that.
 
 The Skein checkout on that classpath carries the blessed `skein.api.*.alpha` namespaces — including
@@ -128,7 +129,7 @@ it.
 
 ## Testing the real spool workflow
 
-Write the spool fixture and approval into the generated world, sync it from `init.clj` (or from `repl!`), then activate and assert:
+Write the spool fixture, approval, and module declaration into the generated world, then assert its startup status:
 
 ```clojure
 (deftest spool-syncs-and-activates
@@ -137,18 +138,20 @@ Write the spool fixture and approval into the generated world, sync it from `ini
                                 {:local/root "spools/demo"}}}
           :files {"spools/demo/deps.edn" "{:paths [\"src\"]}\n"
                   "spools/demo/src/demo/lib.clj"
-                  "(ns demo.lib)\n(defn install! [] :ok)\n"}
+                  "(ns demo.lib)\n(defn contribute [_] {:queries {\"demo\" [:= [:attr :demo] true]}})\n"}
           :init "(require '[skein.api.current.alpha :as current]
                           '[skein.api.runtime.alpha :as runtime])
-                 (runtime/sync! (current/runtime))"}]
-    (is (= :loaded
+                 (runtime/module! (current/runtime) :demo/lib
+                   {:ns 'demo.lib
+                    :spools ['demo/spool]
+                    :contribute 'demo.lib/contribute})"}]
+    (is (= :applied
            (get-in (t/repl! ctx
                     '(do
                        (require '[skein.api.current.alpha :as current]
                                 '[skein.api.runtime.alpha :as runtime])
-                       (runtime/use! (current/runtime) :demo/lib
-                                     {:ns 'demo.lib :spools #{'demo/spool}})))
-                   [:status])))))
+                       (runtime/status (current/runtime))))
+                   [:module/outcomes :demo/lib :status])))))
 ```
 
 To test your actual one-root library instead of an inline fixture, use its library symbol as the
@@ -161,11 +164,12 @@ second argument.
 
 Two runtime-local constraints matter:
 
-- Each weaver runtime has one spool `DynamicClassLoader` and its own successful-sync state. Separate
+- Each weaver runtime has one spool `DynamicClassLoader` and its own acquired-root state. Separate
   `with-weaver-world` calls may reuse the same library symbols in one test JVM; they do not share a
   retained tools.deps resolution universe.
-- Within one runtime generation, `sync!` only adds source paths and Maven jars. Removing or replacing
-  an already-synced root is a non-additive change: `sync!` records a pending generation and refuses
+- Within one runtime generation, refresh acquisition only adds source paths and Maven jars. Removing
+  or replacing an already-acquired root is a non-additive change: refresh records a pending
+  generation and refuses
   the change. Do not delete fixture roots while their world is running. The helper stops the runtime
   before deleting its default temporary root.
 
@@ -219,7 +223,7 @@ any dependency bump: update the pinned ref, run the suite.
 `skein.test.alpha` orchestrates worlds and weaver-routed eval, nothing else:
 
 - No strand/query/assertion wrappers — call real `skein.api.*.alpha` forms.
-- No spool activation wrappers — use `sync!`/`use!` like real config does.
+- No spool activation wrappers — declare modules and call `refresh!` like real config does.
 - No Go CLI subprocess helpers or binary discovery — CLI behavior is covered
   by Skein's own smoke workflow, not library tests.
 - Never touches your default `~/.config/skein` (or any user-owned) workspace;

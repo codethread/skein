@@ -26,7 +26,7 @@ One fact reframes the decision: `.skein` **already ships a grouping macro**. `sk
 
 ## RFC-020.P3 Non-goals
 
-- **RFC-020.NG1:** No change to `init.clj`'s `runtime/use!` activation model or its explicit ordering
+- **RFC-020.NG1:** No change to `init.clj`'s `runtime/module!` activation model or its explicit ordering
   comments — those encode load-order rationale a macro must not hide. Macro registration still runs only inside
   each module's `install!`, after required spools load.
 - **RFC-020.NG2:** No new CLI surface, op semantics, or arg-spec parser change. Generated `help` stays derived

@@ -29,20 +29,20 @@ This doc is the standing contract. It is written against the old public-CLI clau
 deliberate differences are explicit; §5 is the clause-by-clause map. Stable ids here use the `BAT-`
 prefix.
 
-Because batteries ships on the weaver classpath (under `spools/src`), it needs no `spools.edn`
-approval — `require` it and call `install!`:
+Because batteries ships on the weaver classpath, it needs no `spools.edn` approval. Require it and
+declare its module:
 
 ```clojure
-(require '[skein.spools.batteries :as batteries])
-(batteries/install!)          ; into the active runtime (use!-style)
-(batteries/install! runtime)  ; explicit runtime, for tests/trusted callers
+(require '[skein.spools.batteries])
+(runtime/module! runtime :skein/spools-batteries
+  {:ns 'skein.spools.batteries
+   :contribute 'skein.spools.batteries/contribute
+   :reconcile 'skein.spools.batteries/reconcile})
 ```
 
-`install!` registers every op below and returns `{:installed true :namespace
-'skein.spools.batteries :ops [<register-op! result> ...]}`. Each op carries `{:doc … :arg-spec …
-:returns … :hook-class …}` metadata; re-running `install!` against a live
-runtime collides loudly under the accretion registry (use `reload!`, which
-clears registries first).
+The contribution owns every op below plus its glossary outcomes. Each op carries
+`{:doc … :arg-spec … :returns … :hook-class …}` metadata; owner-complete refresh replaces the
+whole batteries partition atomically.
 
 ## 2. Invocation and payloads
 
@@ -334,12 +334,11 @@ before the compare path is added. Other HTTP(S) remotes keep their transport URL
 `.git`. An unrecognized non-HTTP(S) remote produces a nil `compare-url`, because batteries cannot
 infer a usable web URL. The hint does not claim that the compared releases are compatible.
 
-`spool-status` performs no Git call, file write, sync, reload, or adoption action. It joins the
-running runtime's declared family projection with local-overlay provenance and claims, sync state,
-uses, pending generation, requirement outcome, and release marker. The result reports current
-truth; it does not try to repair or adopt anything. Every runtime use entry is validated before
-family filtering. A malformed entry fails loudly with its use key and value instead of disappearing
-from the status result.
+`spool-status` performs no Git call, file write, refresh, or adoption action. It
+joins the declared family projection with local-overlay provenance and claims,
+root outcomes, module declarations, pending generation, requirement outcome,
+and release marker. The result reports current truth; it does not try to repair
+or adopt anything.
 
 ### 3.4 Discovery — help, about, prime — BAT-C25
 

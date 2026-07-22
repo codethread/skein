@@ -77,7 +77,10 @@
                     tag-shas)))
 
 (defn- stub-git-client! [rt client]
-  (reset! (runtime/spool-state rt :skein.spools.batteries/git-client #(atom nil)) client))
+  (reset! (:client (runtime/spool-state rt :skein.spools.batteries/git-client
+                                        {:version 1}
+                                        #(hash-map :client (atom nil))))
+          client))
 
 (defn- stub-git! [rt tags manifest]
   (stub-git-client! rt {:ls-remote (fn [_git-url] tags)
@@ -380,7 +383,7 @@
       (spit (io/file config-dir "spools.local.edn")
             (pr-str {:spools {'demo/family {:local/root "../demo" :claims "v3"}}}))
       (spit (io/file config-dir "module.clj") "{:loaded true}\n")
-      (runtime/use! rt :demo/module {:file "module.clj" :spools ['demo/root]})
+      (runtime/module! rt :demo/module {:file "module.clj" :spools ['demo/root]})
       (stub-git-client!
        rt
        {:ls-remote (fn [_] (throw (ex-info "network called" {})))
@@ -389,8 +392,9 @@
             family (get-in result [:families 'demo/family])]
         (is (= {:provenance :local-overlay :claims "v3"}
                (select-keys family [:provenance :claims])))
-        (is (= {} (:syncs family)))
-        (is (= :not-synced (get-in family [:uses :demo/module :reason])))
+        (is (= {:status :failed :reason :missing-root}
+               (select-keys (get-in family [:roots 'demo/root]) [:status :reason])))
+        (is (= ['demo/root] (get-in family [:modules :demo/module :spools])))
         (is (nil? (:pending-generation result)))
         (is (s/valid? ::batteries/spool-status-result result))
         (is (= {:marker "v5" :provenance :claimed} (:release-marker result)))))))
@@ -425,7 +429,7 @@
             (is (thrown-with-msg? clojure.lang.ExceptionInfo
                                   #"spool-status returned an invalid result"
                                   (weaver/op! rt 'spool-status []))))))))
-  (testing "malformed per-root sync entry"
+  (testing "malformed per-root outcome"
     (with-batteries
       (fn [rt]
         (runtime/upsert-spool-entry!
@@ -434,14 +438,16 @@
           :git/tag "v1"
           :git/sha (sha "d")
           :roots {'demo/root "."}})
-        (with-redefs [runtime/syncs
-                      (fn [_]
-                        {:spools {'demo/root {:lib 'demo/root
-                                              :status :loaded}}})]
-          (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                                #"spool-status returned an invalid result"
-                                (weaver/op! rt 'spool-status [])))))))
-  (testing "malformed runtime use entry"
+        (let [status runtime/status]
+          (with-redefs [runtime/status
+                        (fn [runtime]
+                          (assoc (status runtime)
+                                 :root/outcomes {'demo/root {:lib 'demo/root
+                                                             :status :loaded}}))]
+            (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                                  #"spool-status returned an invalid result"
+                                  (weaver/op! rt 'spool-status []))))))))
+  (testing "malformed runtime module declaration"
     (with-batteries
       (fn [rt]
         (runtime/upsert-spool-entry!
@@ -450,15 +456,14 @@
           :git/tag "v1"
           :git/sha (sha "d")
           :roots {'demo/root "."}})
-        (let [use-entry {:key :demo/module :status :loaded}]
-          (with-redefs [runtime/uses (fn [_] {:demo/module use-entry})]
-            (let [error (try
-                          (weaver/op! rt 'spool-status [])
-                          nil
-                          (catch clojure.lang.ExceptionInfo error error))]
-              (is (= "Runtime use entry has an invalid shape" (ex-message error)))
-              (is (= :demo/module (:use-key (ex-data error))))
-              (is (= use-entry (:use-entry (ex-data error)))))))))))
+        (let [status runtime/status]
+          (with-redefs [runtime/status
+                        (fn [runtime]
+                          (assoc (status runtime)
+                                 :modules {:demo/module {:spools ['demo/root]}}))]
+            (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                                  #"spool-status returned an invalid result"
+                                  (weaver/op! rt 'spool-status [])))))))))
 
 (deftest spool-contracts-and-dispatch-fail-loudly
   (is (s/valid? ::batteries/advisory-manifest

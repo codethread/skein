@@ -188,7 +188,7 @@
           (is (= "3" (first lines)))
           (is (= "\"ab\"" (second lines)))
           (is (str/includes? (nth lines 2) ":metadata"))
-          (is (str/includes? (nth lines 2) ":query-registry")))))))
+          (is (str/includes? (nth lines 2) ":query-store")))))))
 
 (deftest attach-stdin-preserves-out-and-value-order-per-form
   (with-runtime
@@ -245,17 +245,26 @@
                                     '[skein.api.runtime.alpha :as runtime])
                           '(def rt (current/runtime))
                           '(runtime/approved rt)
-                          '(runtime/syncs rt)
-                          '(runtime/uses rt)]))
+                          '(runtime/status rt)
+                          '(runtime/plan rt)]))
                   *out* out
                   *err* (java.io.StringWriter.)
                   *ns* (the-ns 'user)]
           (repl/-main "--stdin" (:config-dir (:metadata rt))))
-        (let [lines (str/split-lines (str out))]
+        (let [lines (str/split-lines (str out))
+              status (read-string (nth lines 3))
+              plan (read-string (nth lines 4))]
           (is (= 5 (count lines)))
           (is (= {:spools {} :families {}} (read-string (nth lines 2))))
-          (is (= {:spools {}} (read-string (nth lines 3))))
-          (is (= {} (read-string (nth lines 4)))))))))
+          (is (= {:modules {}
+                  :root/outcomes {}
+                  :pending-generation nil}
+                 (select-keys status [:modules :root/outcomes :pending-generation])))
+          (is (= {:status :unchanged :mode :full}
+                 (select-keys (:last-refresh status) [:status :mode])))
+          (is (= {:status :unchanged :mode :full :dry-run? true}
+                 (select-keys plan [:status :mode :dry-run?])))
+          (is (str/includes? (:caveat plan) "No registry publication")))))))
 
 (deftest query-helpers-use-daemon-backed-task-flow
   (with-runtime

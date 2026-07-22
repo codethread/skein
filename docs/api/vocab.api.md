@@ -12,7 +12,7 @@ Explicit-runtime vocabulary registry: the blessed home for declaring and
   declaration is a small map (`:kind`, `:name`, `:owner`, `:doc`, plus `:keys`
   for an attribute namespace or `:family`/`:direction`/`:declared-acyclic?` for
   an edge). The registry is runtime-owned per-spool state that survives
-  `reload!`, versioned so a shape change cannot silently reuse a stale map, and
+  module refresh, versioned so a shape change cannot silently reuse a stale map, and
   seeded at init with the reflected `relations.alpha` edge catalog plus the
   core-owned `note/*` attribute namespace.
 
@@ -31,7 +31,7 @@ Explicit-runtime vocabulary registry: the blessed home for declaring and
 The two vocabulary kinds a declaration may describe: an attribute namespace
   segment or an edge (relation) type. This set is the `::kind` spec enum and the
   single source of the `vocab --kind` allow-list reused by the batteries op.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/vocab/alpha.clj#L27-L31">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/vocab/alpha.clj#L28-L32">Source</a></sub></p>
 
 ## <a name="skein.api.vocab.alpha/declarations">`declarations`</a>
 ``` clojure
@@ -47,7 +47,7 @@ Return `runtime`'s declarations as full C1 maps, sorted by `[:kind :name]`.
   `declaration-kinds` fails loudly rather than silently matching nothing.
   Reads the runtime store explicitly — never the published ambient
   singleton.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/vocab/alpha.clj#L50-L68">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/vocab/alpha.clj#L72-L90">Source</a></sub></p>
 
 ## <a name="skein.api.vocab.alpha/declare!">`declare!`</a>
 ``` clojure
@@ -62,6 +62,6 @@ Record C1 `declaration` in `runtime`'s vocabulary registry and return it.
   *same* `:owner` is an idempotent replace, while a *different* owner throws
   `ex-info` carrying `:name`/`:kind`/`:existing-owner`/`:declaring-owner`, so
   ownership of a namespace or edge type is a hard, single-owner edge. The
-  conflict check runs inside the `swap!`, so concurrent cross-owner declarations
-  cannot race past it.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/vocab/alpha.clj#L33-L48">Source</a></sub></p>
+  complete direct partition is replaced under the runtime-owned registry handle,
+  so concurrent public declarations cannot race past the owner check.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/vocab/alpha.clj#L38-L70">Source</a></sub></p>

@@ -234,6 +234,29 @@ Close the current ready non-checkpoint workflow step for run-id and return
   validation happens before any mutation.
 <p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/workflow.clj#L379-L414">Source</a></sub></p>
 
+## <a name="skein.spools.workflow/constructor-kind">`constructor-kind`</a>
+
+
+
+
+Owner-partitioned kind id for workflow name -> constructor-symbol declarations.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/workflow.clj#L581-L583">Source</a></sub></p>
+
+## <a name="skein.spools.workflow/contribute">`contribute`</a>
+``` clojure
+(contribute {:keys [runtime]})
+```
+Function.
+
+Module contribution for the workflow spool.
+
+  The workflow spool supplies no constructors or executors of its own — those
+  are contributed by the workflows that pour them and by the executors that
+  register — so it contributes no declarative entries. It materializes the
+  registry handle so a dependent module contributing to the workflow kinds finds
+  them already declared (DELTA-OlrDrt-001.CC4).
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/workflow.clj#L716-L726">Source</a></sub></p>
+
 ## <a name="skein.spools.workflow/current-root">`current-root`</a>
 ``` clojure
 (current-root run-id)
@@ -278,6 +301,14 @@ Return true when run-id has no active workflow root, or its active root's
   Fails loudly for a run-id that has never had a root strand.
 <p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/workflow.clj#L355-L361">Source</a></sub></p>
 
+## <a name="skein.spools.workflow/executor-kind">`executor-kind`</a>
+
+
+
+
+Owner-partitioned kind id for gate-waiter -> stall-predicate-symbol declarations.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/workflow.clj#L585-L587">Source</a></sub></p>
+
 ## <a name="skein.spools.workflow/executors">`executors`</a>
 ``` clojure
 (executors)
@@ -285,7 +316,7 @@ Return true when run-id has no active workflow root, or its active root's
 Function.
 
 Return the current registry map of gate waiter name (keyword) -> stall predicate.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/workflow.clj#L617-L621">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/workflow.clj#L628-L632">Source</a></sub></p>
 
 ## <a name="skein.spools.workflow/explain">`explain`</a>
 ``` clojure
@@ -326,12 +357,13 @@ Return a workflow gate step definition — a step whose completion belongs to
 ```
 Function.
 
-Return installation metadata for this alpha workflow spool.
+Materialize the workflow registries and return installation metadata.
 
-  Also seeds the `workflow/*` attribute namespace into the runtime vocabulary
-  registry, owned by this spool's use-key, so the workflow attributes `compile`
-  and the step/gate/checkpoint builders write are discoverable data.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/workflow.clj#L634-L690">Source</a></sub></p>
+  Realizes the owner-partition registry handle (declaring its constructor and
+  executor kinds) and seeds the `workflow/*` attribute namespace. This is the
+  eager entry point for the pre-module lifecycle; the module lifecycle uses
+  `contribute`/`reconcile` below.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/workflow.clj#L703-L714">Source</a></sub></p>
 
 ## <a name="skein.spools.workflow/molecule-id">`molecule-id`</a>
 ``` clojure
@@ -411,6 +443,15 @@ Return the single ready workflow step for run-id, or fail if ambiguous.
   The view carries `:run-id` (see `ready`).
 <p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/workflow.clj#L347-L353">Source</a></sub></p>
 
+## <a name="skein.spools.workflow/reconcile">`reconcile`</a>
+``` clojure
+(reconcile {:keys [runtime]})
+```
+Function.
+
+Reconcile the workflow spool's resources: seed the `workflow/*` vocabulary.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/workflow.clj#L728-L732">Source</a></sub></p>
+
 ## <a name="skein.spools.workflow/register-executor!">`register-executor!`</a>
 ``` clojure
 (register-executor! waiter pred)
@@ -422,10 +463,13 @@ Register a stall predicate for gate waiter `waiter` (a keyword/symbol/string
 
   The predicate receives a ready gate step view and returns nil/false while the
   executor is still fulfilling the gate, or truthy detail when coordinator
-  attention is needed. Registration is runtime-owned, weaver-lifetime spool state
-  that survives `reload!`, mirroring `register-workflow!`. Returns the registered
+  attention is needed. A fully qualified *symbol* is an owner-complete
+  declaration at the direct/REPL layer, resolved to a function value at each gate
+  evaluation (DELTA-OlrDrt-001.CC10). A bare function *value* — the case with no
+  resolvable symbol — is held as runtime-owned resource state instead of
+  owner-partition declaration data (DELTA-OlrDrt-001.CC8). Returns the registered
   waiter as a keyword.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/workflow.clj#L599-L615">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/workflow.clj#L606-L626">Source</a></sub></p>
 
 ## <a name="skein.spools.workflow/register-workflow!">`register-workflow!`</a>
 ``` clojure
@@ -436,12 +480,12 @@ Function.
 Register a workflow constructor under a stable keyword `name`.
 
   `name` is a keyword; `constructor-sym` is a fully qualified symbol resolving to
-  a workflow constructor. Registration is runtime-owned, weaver-lifetime spool
-  state that survives `reload!`; startup config re-registers entries during
-  reload and after restart. A duplicate `name` replaces the prior entry, so
-  reloading a workflow re-points existing in-flight runs' named `:next` routes at
-  the new constructor. Returns `name`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/workflow.clj#L581-L597">Source</a></sub></p>
+  a workflow constructor. The entry is an owner-complete declaration at the
+  direct/REPL layer, published through the owner-partition registry that survives
+  refresh. A duplicate `name` replaces the prior direct entry, so re-pointing a
+  route resolves the new constructor at each in-flight run's next named `:next`
+  transition (DELTA-OlrDrt-001.CC10). Returns `name`.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/workflow.clj#L589-L604">Source</a></sub></p>
 
 ## <a name="skein.spools.workflow/run-history">`run-history`</a>
 ``` clojure
@@ -565,7 +609,7 @@ Function.
 
 Return the constructor symbol registered under keyword `name`, failing loudly
   (TEN-003) when `name` is not registered.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/workflow.clj#L623-L627">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/workflow.clj#L634-L638">Source</a></sub></p>
 
 ## <a name="skein.spools.workflow/workflows">`workflows`</a>
 ``` clojure
@@ -574,4 +618,4 @@ Return the constructor symbol registered under keyword `name`, failing loudly
 Function.
 
 Return the current registry map of workflow name (keyword) -> constructor symbol.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/workflow.clj#L629-L632">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/workflow.clj#L640-L643">Source</a></sub></p>

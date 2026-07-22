@@ -11,7 +11,13 @@
 
 (def parallel-namespaces
   "Test namespaces that are safe to run concurrently, one namespace per worker."
-  ['skein.core.db-test 'skein.core.query-compile-test 'skein.core.contract-props-test 'skein.core.specs-test 'skein.core.scheduler-test 'skein.plugin-test 'skein.relations-test 'skein.notes-test 'skein.vocab-test
+  ['skein.core.db-test 'skein.core.query-compile-test 'skein.core.contract-props-test 'skein.core.specs-test 'skein.core.scheduler-test
+   'skein.core.weaver.owner-registry-test
+   ;; each test builds its own backing store — no shared state.
+   'skein.core.weaver.core-registry-test
+   ;; each test builds its own registries and unpublished runtimes — no shared state.
+   'skein.api.registry.alpha-test
+   'skein.plugin-test 'skein.relations-test 'skein.notes-test 'skein.vocab-test
    'skein.spools.text-search-test
    'skein.guild-test 'skein.test.alpha-test 'skein.warm-test 'skein.api.cli.alpha-test
    'skein.source-file-test
@@ -24,11 +30,10 @@
    'skein.api.runtime.glossary.alpha-test
    ;; drives its own unpublished runtime per test — no JVM-global state.
    'skein.api.runtime.help-transform.alpha-test
-   ;; drives its own unpublished runtime per test — no JVM-global state.
-   'skein.api.batch.alpha-test
    'skein.api.graph.alpha-test
    ;; drives its own unpublished runtime per test — no JVM-global state.
    'skein.api.events.alpha-test
+   'skein.api.hooks.alpha-test
    'skein.alpha-test 'skein.core.client-test 'skein.spools.workflow-test
    'skein.spools.batteries-test 'skein.api.spool-test 'skein.config-ops-test
    'skein.macros.queries-test 'skein.macros.ops-test 'skein.macros.rules-test 'skein.macros.patterns-test
@@ -61,7 +66,9 @@
    ;; published singleton semantics.
    'skein.weaver-publication-test
    ;; multiple published peer runtimes verify routing semantics.
-   'skein.peers-test])
+   'skein.peers-test
+   ;; globally redefines db transaction seams while checking API guards.
+   'skein.api.batch.alpha-test])
 
 (def add-libs-shards
   "Subprocess JVM shard groups for tests that mutate JVM-global tools.deps state."

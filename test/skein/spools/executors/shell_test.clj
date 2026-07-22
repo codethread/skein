@@ -5,6 +5,7 @@
             [skein.spools.executors.shell :as shell]
             [skein.spools.workflow :as workflow]
             [skein.spools.test-support :as test-support :refer [with-runtime]]
+            [skein.api.events.alpha :as events]
             [skein.api.weaver.alpha :as weaver]
             [skein.test.alpha :as test-alpha])
   (:import [java.io File]))
@@ -266,7 +267,39 @@
 
 (deftest state-shape-matches-declared-version
   ;; Drift alarm for the shell executor's versioned spool-state: a key added to new-state
-  ;; without a state-version bump would survive reload! as a stale map.
+  ;; without a state-version bump would survive refresh as a stale map.
   (test-support/assert-state-shape
    #'shell/new-state
    #{:scan-monitor :worker-executor :close-fn}))
+
+(deftest module-contribute-declares-executor-and-query-owner-complete
+  ;; TASK-Olr-007 MI4/MI5: the shell module contributes the :shell executor and
+  ;; the stalled-shell-gates query as owner-complete declarations; both disappear
+  ;; by omission when the module is refreshed away.
+  (with-runtime
+    (fn [rt _]
+      (workflow/install!)
+      (is (= {workflow/executor-kind {"shell" 'skein.spools.executors.shell/gate-stalled?}
+              :queries {"stalled-shell-gates" shell/stalled-shell-gates-query}}
+             (shell/contribute {:runtime rt}))))))
+
+(deftest module-reconcile-preserves-worker-pool-and-cleans-up-on-removal
+  ;; TASK-Olr-007 MI3/MI4: reconcile registers the event handler and materializes
+  ;; the worker pool on an applied contribution and preserves its identity across
+  ;; refreshes (no state-atom swap); removal drops the event handler so no further
+  ;; scan is triggered.
+  (with-runtime
+    (fn [rt _]
+      (workflow/install!)
+      (is (= {:reconciled :applied}
+             (shell/reconcile {:runtime rt :module/contribution {:status :applied}})))
+      (let [pool (binding [shell/*runtime* rt] (:worker-executor (#'shell/state)))]
+        (is (some #(= :shell/engine (:key %)) (events/handlers rt))
+            "the graph-change event handler is registered")
+        (shell/reconcile {:runtime rt :module/contribution {:status :applied}})
+        (is (identical? pool (binding [shell/*runtime* rt] (:worker-executor (#'shell/state))))
+            "refresh does not replace the runtime-owned worker pool")
+        (is (= {:reconciled :removed}
+               (shell/reconcile {:runtime rt :module/contribution {:status :removed}})))
+        (is (not-any? #(= :shell/engine (:key %)) (events/handlers rt))
+            "removal unregisters the event handler")))))

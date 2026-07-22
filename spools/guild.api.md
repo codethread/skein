@@ -15,6 +15,15 @@ Reference spool for declaring a versioned public weaver operation API.
 
 
 
+## <a name="skein.spools.guild/contribute">`contribute`</a>
+``` clojure
+(contribute _ctx)
+```
+Function.
+
+Return Guild's owner-complete built-in operation contribution.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L249-L262">Source</a></sub></p>
+
 ## <a name="skein.spools.guild/deprecate!">`deprecate!`</a>
 ``` clojure
 (deprecate! runtime name opts)
@@ -25,7 +34,7 @@ Replace a registered guild operation in `runtime` with a loud deprecation stub.
 
   `opts` requires `:replacement` and may include `:since`. Deprecated ops never
   return success; invocation throws ex-info with `:code :operation/deprecated`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L171-L190">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L211-L231">Source</a></sub></p>
 
 ## <a name="skein.spools.guild/deprecated-op">`deprecated-op`</a>
 ``` clojure
@@ -34,7 +43,7 @@ Replace a registered guild operation in `runtime` with a loud deprecation stub.
 Function.
 
 Fail loudly for a deprecated guild operation.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L124-L133">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L163-L172">Source</a></sub></p>
 
 ## <a name="skein.spools.guild/dispatch-op">`dispatch-op`</a>
 ``` clojure
@@ -43,7 +52,7 @@ Fail loudly for a deprecated guild operation.
 Function.
 
 Dispatch a guild-declared operation after parsing and validating input.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L116-L122">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L155-L161">Source</a></sub></p>
 
 ## <a name="skein.spools.guild/install!">`install!`</a>
 ``` clojure
@@ -57,7 +66,7 @@ Install the built-in `guild` operation into `runtime`.
   The guild name is read from runtime metadata when available. Passing
   `guild-name` records a fallback value for contexts without runtime metadata.
   Re-running is reload-safe and clears prior guild declarations in this runtime.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L208-L227">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L273-L293">Source</a></sub></p>
 
 ## <a name="skein.spools.guild/ops">`ops`</a>
 ``` clojure
@@ -66,7 +75,16 @@ Install the built-in `guild` operation into `runtime`.
 Function.
 
 Return JSON-safe metadata describing the installed guild API.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L192-L206">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L233-L247">Source</a></sub></p>
+
+## <a name="skein.spools.guild/reconcile">`reconcile`</a>
+``` clojure
+(reconcile {:keys [runtime]})
+```
+Function.
+
+Reset Guild's runtime-owned declarations for a freshly applied module.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L264-L271">Source</a></sub></p>
 
 ## <a name="skein.spools.guild/register-op!">`register-op!`</a>
 ``` clojure
@@ -83,4 +101,4 @@ Register a guild operation in `runtime`'s CLI operation registry.
   Guild-specific schema. `fn-sym` must be a fully qualified symbol resolving in
   the weaver JVM. The handler receives the usual op context plus parsed JSON
   input at `:guild/input`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L135-L163">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L174-L203">Source</a></sub></p>

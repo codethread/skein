@@ -8,7 +8,7 @@
   declaration is a small map (`:kind`, `:name`, `:owner`, `:doc`, plus `:keys`
   for an attribute namespace or `:family`/`:direction`/`:declared-acyclic?` for
   an edge). The registry is runtime-owned per-spool state that survives
-  `reload!`, versioned so a shape change cannot silently reuse a stale map, and
+  module refresh, versioned so a shape change cannot silently reuse a stale map, and
   seeded at init with the reflected `relations.alpha` edge catalog plus the
   core-owned `note/*` attribute namespace.
 
@@ -18,6 +18,7 @@
   (:require [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [skein.api.format.alpha :as format-alpha]
+            [skein.api.registry.alpha :as registry]
             [skein.api.relations.alpha :as relations]
             [skein.api.runtime.alpha :as runtime]
             [skein.api.spool.alpha :refer [fail! reject-unknown-keys! require-valid!]]))
@@ -30,6 +31,10 @@
   single source of the `vocab --kind` allow-list reused by the batteries op."
   #{:attr-namespace :edge})
 
+(def ^:private vocab-kind :vocab)
+(def ^:private defaults-owner :skein.owner/system)
+(def ^:private repl-owner :skein.owner/repl)
+
 (defn declare!
   "Record C1 `declaration` in `runtime`'s vocabulary registry and return it.
 
@@ -38,13 +43,30 @@
   *same* `:owner` is an idempotent replace, while a *different* owner throws
   `ex-info` carrying `:name`/`:kind`/`:existing-owner`/`:declaring-owner`, so
   ownership of a namespace or edge type is a hard, single-owner edge. The
-  conflict check runs inside the `swap!`, so concurrent cross-owner declarations
-  cannot race past it."
+  complete direct partition is replaced under the runtime-owned registry handle,
+  so concurrent public declarations cannot race past the owner check."
   [runtime declaration]
   (let [declaration (validate-declaration! declaration)
         {kind :kind decl-name :name} declaration
-        k [kind decl-name]]
-    (swap! (registry runtime) register-declaration k declaration)
+        k [kind decl-name]
+        handle (registry runtime)
+        _ (locking handle
+            (let [effective (registry/effective handle vocab-kind)]
+              (when-let [existing (get effective k)]
+                (when (not= (:owner existing) (:owner declaration))
+                  (throw (ex-info "Vocabulary declaration owner conflict"
+                                  {:name decl-name
+                                   :kind kind
+                                   :existing-owner (:owner existing)
+                                   :declaring-owner (:owner declaration)}))))
+              (let [entries (assoc (get-in (registry/snapshot handle)
+                                           [:partitions vocab-kind repl-owner :entries]
+                                           {})
+                                   k declaration)]
+                (registry/replace-owner! handle vocab-kind repl-owner
+                                         {:layer :direct
+                                          :entries entries
+                                          :overrides (set (keys entries))}))))]
     declaration))
 
 (defn declarations
@@ -62,7 +84,7 @@
      (require-valid! ::declarations-opts opts
                      "vocab/declarations :kind must be :attr-namespace or :edge"))
    (let [kind (:kind opts)]
-     (->> (vals @(registry runtime))
+     (->> (vals (registry/effective (registry runtime) vocab-kind))
           (filter (fn [d] (or (nil? kind) (= kind (:kind d)))))
           (sort-by (juxt :kind :name))
           vec))))
@@ -126,22 +148,6 @@
 
 ;; --- Owner-guarded recording ---------------------------------------------
 
-(defn- register-declaration
-  "Registry `swap!` update fn: record `declaration` under key `k`, unless a
-  *different* `:owner` already holds that `[:kind :name]` — then throw the
-  owner-conflict `ex-info`. Living inside the `swap!` keeps the conflict check
-  and the write atomic, so two racing cross-owner declarations cannot both clear
-  a stale read and let the later write silently win."
-  [reg-map k declaration]
-  (when-let [existing (get reg-map k)]
-    (when (not= (:owner existing) (:owner declaration))
-      (throw (ex-info "Vocabulary declaration owner conflict"
-                      {:name (:name declaration)
-                       :kind (:kind declaration)
-                       :existing-owner (:owner existing)
-                       :declaring-owner (:owner declaration)}))))
-  (assoc reg-map k declaration))
-
 ;; --- Core seed -----------------------------------------------------------
 
 (defn- edge-declaration
@@ -183,23 +189,23 @@
 
 ;; --- Versioned runtime-owned store ---------------------------------------
 
-(def ^:private state-version
-  "Shape version for vocab's runtime spool-state map. Bump whenever `new-state`'s
-  key set changes: spool-state survives `reload!`, so a post-upgrade reload would
-  otherwise reuse a preserved map missing the new key. The
-  `state-shape-matches-declared-version` test fails loudly if `new-state` and
-  this version drift apart."
-  1)
-
-(defn- new-state
-  "Build the initial registry state, already carrying the core seed. This
-  init-fn is the seed site (there is no `install!` hook): a fresh runtime reads
-  the reflected edges and `note/*` back before any spool activation runs."
+(defn- new-registry
+  "Build the runtime-owned `:vocab` kind with the core seed in its defaults
+  partition. The direct handle lets module publication discover this open core
+  kind with the other domain handles."
   []
-  {:registry (atom (index-by-key (seed-declarations)))})
+  (let [handle (doto (registry/registry)
+                 (registry/declare-kind! {:id vocab-kind
+                                          :entry-spec ::declaration
+                                          :binding-moment :vocabulary-read}))]
+    (registry/replace-owner! handle vocab-kind defaults-owner
+                             {:layer :defaults
+                              :entries (index-by-key (seed-declarations))
+                              :overrides #{}})
+    handle))
 
 (defn- state [runtime]
-  (runtime/spool-state runtime ::state {:version state-version} new-state))
+  (runtime/spool-state runtime ::registry {:version 2} new-registry))
 
 (defn- registry [runtime]
-  (:registry (state runtime)))
+  (state runtime))

@@ -292,9 +292,16 @@
 
    :synthesis {:harness :sol-med}})
 
-(defn install!
-  "Register this repository's reviewer rosters with the delegation spool."
-  []
-  {:rosters [(agents/defroster! :change-review change-review)
-             (agents/defroster! :complex-patch-review complex-patch-review)
-             (agents/defroster! :docs-review docs-review)]})
+(defn contribute
+  "Contribute this repository's reviewer rosters as the workspace-owned
+  partition of delegation's roster kind.
+
+  Owning the partition is what makes deletion-by-omission work: removing a roster
+  from this file and refreshing drops it from the live registry, because
+  publication replaces this module's complete `roster-kind` partition rather than
+  upserting into a shared REPL owner. Roster data is validated against
+  `:ct.spools.delegation/roster` at publication."
+  [_]
+  {agents/roster-kind {:change-review change-review
+                       :complex-patch-review complex-patch-review
+                       :docs-review docs-review}})

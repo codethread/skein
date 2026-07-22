@@ -48,17 +48,16 @@ Activate it from trusted startup config after syncing approved roots:
          '[skein.api.runtime.alpha :as runtime])
 
 (def runtime (current/runtime))
-(runtime/sync! runtime)
-(runtime/use! runtime :cron
+(runtime/module! runtime :cron
   {:ns 'skein.spools.cron
    :spools ['skein.spools/cron]
-   :call 'skein.spools.cron/install!
+   :contribute 'skein.spools.cron/contribute
+   :reconcile 'skein.spools.cron/reconcile
    :required? true})
 ```
 
-`install!` creates the execution executor and registers no jobs. Trusted config
-registers jobs afterwards with `register!`, so the repo decides what runs on a
-cadence.
+The module reconciler registers no jobs. Trusted config contributes jobs from
+dependent modules, so the repo decides what runs on a cadence.
 
 ## Registering jobs
 
