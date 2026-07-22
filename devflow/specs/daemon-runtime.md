@@ -134,8 +134,11 @@ The weaver runtime is the long-lived local Clojure process that owns strand stor
   `{:marker "vN" :provenance :claimed|:tag}` or the `:none` shape. Operations
   that require marker arithmetic must reject `:none`; they must not invent a
   default. `:skein.core.specs/release-marker-claim` and
-  `:skein.core.specs/release-marker-result` own these shapes. Foreground parsing
-  uses a declared arg-spec, including whole-value payload resolution.
+  `:skein.core.specs/release-marker-result` own these shapes;
+  `skein.api.runtime.alpha` promises them to spool consumers as its
+  alpha-qualified `release-marker-claim`/`release-marker-result` aliases, so
+  spools reference the shapes without requiring `skein.core.specs`. Foreground
+  parsing uses a declared arg-spec, including whole-value payload resolution.
 - **SPEC-004.C39b:** Retired. The read-only `config-dir` and `spools-file` accessors were
   trimmed from `skein.api.runtime.alpha` with zero external consumers; `spools-file`
   survives as module plumbing behind the C39c write seam. The ID is not reused.

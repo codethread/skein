@@ -42,8 +42,7 @@
             [skein.api.runtime.alpha :as runtime-api]
             [skein.api.runtime.glossary.alpha :as glossary]
             [skein.api.vocab.alpha :as vocab]
-            [skein.api.weaver.alpha :as weaver]
-            [skein.core.specs :as specs])
+            [skein.api.weaver.alpha :as weaver])
   (:import [java.io PushbackReader StringReader]
            [java.nio.file FileVisitResult Files LinkOption SimpleFileVisitor]
            [java.nio.file.attribute FileAttribute]))
@@ -66,7 +65,7 @@
   (s/and (s/keys :req-un [::root])
          #(exact-keys? #{:root} %)))
 (s/def ::roots (s/map-of symbol? ::manifest-root :min-count 1))
-(s/def ::requires (s/map-of symbol? ::specs/release-marker-claim))
+(s/def ::requires (s/map-of symbol? ::runtime-api/release-marker-claim))
 (s/def :spool/format #{1})
 (s/def ::advisory-manifest
   (s/and (s/keys :req [:spool/format]
@@ -85,7 +84,7 @@
 (s/def ::spool-add-result
   (s/and (s/keys :req-un [::operation ::status ::family ::entry ::requirements])
          #(exact-keys? #{:operation :status :family :entry :requirements} %)))
-(s/def ::tag ::specs/release-marker-claim)
+(s/def ::tag ::runtime-api/release-marker-claim)
 (s/def ::sha #(and (string? %) (boolean (re-matches #"[0-9a-f]{40}" %))))
 (s/def ::coordinate
   (s/and (s/keys :req-un [::tag ::sha])
@@ -96,10 +95,10 @@
 (s/def ::spool-bump-result
   (s/and (s/keys :req-un [::operation ::status ::family ::old ::new ::compare-url ::requirements])
          #(exact-keys? #{:operation :status :family :old :new :compare-url :requirements} %)))
-(s/def ::declared #(s/valid? :skein.core.weaver.spool-sync/family-entry %))
-(s/def ::effective-coordinate #(s/valid? :skein.core.weaver.spool-sync/coordinate %))
-(s/def ::provenance #(s/valid? :skein.core.weaver.spool-sync/provenance %))
-(s/def ::claims #(s/valid? :skein.core.weaver.spool-sync/claims %))
+(s/def ::declared ::runtime-api/spool-entry)
+(s/def ::effective-coordinate ::runtime-api/spool-coordinate)
+(s/def ::provenance ::runtime-api/spool-provenance)
+(s/def ::claims ::runtime-api/spool-claims)
 (s/def ::root-outcome
   (s/and map?
          #(let [status (:status %)]
@@ -120,7 +119,7 @@
          #(exact-keys? #{:declared :effective-coordinate :provenance :claims :roots :modules} %)))
 (s/def ::families (s/map-of symbol? ::status-family))
 (s/def ::pending-generation (s/nilable ::runtime-api/pending-generation))
-(s/def ::release-marker ::specs/release-marker-result)
+(s/def ::release-marker ::runtime-api/release-marker-result)
 (s/def ::spool-status-result
   (s/and (s/keys :req-un [::operation ::families ::requirements ::pending-generation ::release-marker])
          #(exact-keys? #{:operation :families :requirements :pending-generation :release-marker} %)))
@@ -193,12 +192,14 @@
                     {:state state :allowed (vec (sort readable-states))})))
   state)
 
+(s/def ::read-limit pos-int?)
+
 (defn- validate-read-limit
   "Return limit when it is a positive integer, else fail loudly."
   [limit]
-  (when-not (s/valid? ::specs/read-limit limit)
+  (when-not (s/valid? ::read-limit limit)
     (throw (ex-info "Read result limit must be a positive integer"
-                    {:limit limit :explain (s/explain-str ::specs/read-limit limit)})))
+                    {:limit limit :explain (s/explain-str ::read-limit limit)})))
   limit)
 
 (defn- validate-vocab-kind
