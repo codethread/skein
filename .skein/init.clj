@@ -111,17 +111,17 @@
 ;; binds how they are notified in gitignored init.local.clj (loaded after this
 ;; file on startup and reload). Unbound chime records loud notifier-missing
 ;; failures.
-(runtime/use! runtime :skein/spools-chime
-              {:ns 'skein.spools.chime
-               :spools ['skein.spools/chime]
-               :call 'skein.spools.chime/install!
-               :required? true})
-(runtime/use! runtime :attention
-              {:file "attention.clj"
-               :spools ['skein.macros/macros 'ct.spools/agent-run]
-               :after [:skein/spools-chime :skein/spools-shuttle :macros/patterns]
-               :call 'attention/install!
-               :required? true})
+(runtime/module! runtime :skein/spools-chime
+                 {:ns 'skein.spools.chime
+                  :spools ['skein.spools/chime]
+                  :contribute 'skein.spools.chime/contribute
+                  :reconcile 'skein.spools.chime/reconcile
+                  :required? true})
+(runtime/module! runtime :attention
+                 {:file "attention.clj"
+                  :spools ['skein.macros/macros 'ct.spools/agent-run]
+                  :after [:skein/spools-chime :skein/spools-shuttle :macros/patterns]
+                  :required? true})
 ;; kanban is an external git-distributed spool (codethread/kanban.spool). The
 ;; board loads independently; the repo-specific tracker binding below joins it
 ;; to devflow after both spools are active.

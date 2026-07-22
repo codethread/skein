@@ -112,6 +112,22 @@ No open question blocks task generation.
 
 ## PLAN-Olr-001.P9 Developer Notes
 
+### PLAN-Olr-001.DN15 Workspace contribution macros (Task 10): 2026-07-22
+
+- `defop`, `defquery`, `defpattern`/`defp`, and `defrule` now collect complete
+  module contribution entries directly. The former remember/forget/install
+  registries and the workspace top-level forget choreography are gone; module
+  omission is therefore the one deletion path for file- and namespace-backed
+  sources.
+
+### PLAN-Olr-001.DN16 Chime owner reconciliation (Task 8): 2026-07-22
+
+- Chime owns a versioned runtime registry kind for rules. Refresh publication
+  is followed by monitor-serialized baseline reconciliation before Chime swaps
+  its visible effective rules; removed rules clear seen entries and restored or
+  replaced rules begin from a fresh baseline. Attention is one module
+  contribution and its timestamp warning memory is bounded runtime state.
+
 ### PLAN-Olr-001.DN1 Proposal review: 2026-07-20
 
 - Opus run `gkt3x` required per-family binding units, declarative/resource separation, stable module-key ownership, load-time namespace attribution, preservation of a code-only seam, async snapshot/defer semantics, and an honest one-time generation migration.

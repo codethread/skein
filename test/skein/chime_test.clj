@@ -412,4 +412,4 @@
    #_{:clj-kondo/ignore [:unresolved-var]}
    #'chime/new-state
    #{:notifier-binding :rule-registry :seen-notifications :failure-log
-     :scanned-batch-ids}))
+     :scanned-batch-ids :rule-kinds}))

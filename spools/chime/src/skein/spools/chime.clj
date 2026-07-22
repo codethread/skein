@@ -4,11 +4,13 @@
   Chime watches strand mutations, evaluates small userland rules, and sends
   attention notices through a workspace-bound local notifier command. It owns
   only weaver-lifetime runtime state and composes the public weaver/event API."
-  (:require [clojure.string :as str]
+  (:require [clojure.spec.alpha :as s]
+            [clojure.string :as str]
             [skein.api.current.alpha :as current]
             [skein.api.events.alpha :as events]
             [skein.api.hooks.alpha :as hooks]
             [skein.api.weaver.alpha :as weaver]
+            [skein.api.registry.alpha :as registry]
             [skein.api.runtime.alpha :as runtime]
             [skein.api.spool.alpha :refer [fail!]])
   (:import [java.io OutputStreamWriter]
@@ -26,17 +28,38 @@
 
 (declare baseline-rule! rt)
 
+(def ^:private rule-kind :skein.spools.chime/rules)
+(def ^:private repl-owner :skein.owner/repl)
+
+(s/def ::key keyword?)
+(s/def ::fn (s/and symbol? namespace))
+(s/def ::rule-entry
+  (s/and (s/keys :req-un [::key ::fn])
+         #(and (keyword? (:key %))
+               (symbol? (:fn %))
+               (namespace (:fn %)))))
+
 (def ^:private state-version
   "Shape version for chime's runtime spool-state map. Bump whenever `new-state`'s
   key set changes: spool-state survives `reload!`, so a post-upgrade reload would
   otherwise reuse a preserved map missing the new key (docs/spools/writing-shared-spools.md
   'Versioned spool state', SPEC-004.C95). The `state-shape-matches-declared-version`
   test fails loudly if `new-state` and this version drift apart."
-  1)
+  2)
+
+(defn- new-rule-kinds []
+  (doto (registry/registry)
+    (registry/declare-kind! {:id rule-kind
+                             :entry-spec ::rule-entry
+                             :binding-moment :chime/scan})))
 
 (defn- new-state []
   {:notifier-binding (atom nil)
+   ;; Only this map is read by event scans. Module publication updates the
+   ;; registry handle first; reconcile! seeds changed effective rules under this
+   ;; same monitor before replacing the visible view (MI2).
    :rule-registry (atom {})
+   :rule-kinds (new-rule-kinds)
    :seen-notifications (atom #{})
    :failure-log (atom [])
    :scanned-batch-ids (atom [])})
@@ -46,6 +69,7 @@
 
 (defn- notifier-binding [] (:notifier-binding (state)))
 (defn- rule-registry [] (:rule-registry (state)))
+(defn- rule-kinds [] (:rule-kinds (state)))
 (defn- seen-notifications [] (:seen-notifications (state)))
 (defn- failure-log [] (:failure-log (state)))
 (defn- scanned-batch-ids [] (:scanned-batch-ids (state)))
@@ -197,14 +221,22 @@
   [name fn-symbol]
   (let [rule-key (rule-name name)
         rule {:key rule-key :fn fn-symbol}
-        registry (rule-registry)]
+        visible (rule-registry)
+        kinds (rule-kinds)]
     (resolve-rule-fn fn-symbol)
     ;; Registration, event scans, and the pre-commit mutation barrier share this
     ;; monitor. Seed before publishing; a mutation cannot commit and enqueue its
     ;; event until the baseline and rule become visible together.
-    (locking registry
+    (locking visible
       (baseline-rule! rule)
-      (swap! registry assoc rule-key rule))
+      (let [entries (assoc (get-in (registry/snapshot kinds)
+                                   [:partitions rule-kind repl-owner :entries]
+                                   {})
+                           rule-key rule)]
+        (registry/replace-owner! kinds rule-kind repl-owner
+                                 {:layer :direct :entries entries
+                                  :overrides (set (keys entries))}))
+      (swap! visible assoc rule-key rule))
     {:key rule-key :fn fn-symbol}))
 
 (defn rules
@@ -216,11 +248,21 @@
   "Unregister a notification rule by key."
   [name]
   (let [rule-key (rule-name name)
-        registry (rule-registry)]
-    (locking registry
-      (when-not (contains? @registry rule-key)
-        (fail! "Rule not found" {:rule rule-key :available (sort (keys @registry))}))
-      (swap! registry dissoc rule-key)
+        visible (rule-registry)
+        kinds (rule-kinds)]
+    (locking visible
+      (when-not (contains? @visible rule-key)
+        (fail! "Rule not found" {:rule rule-key :available (sort (keys @visible))}))
+      (let [entries (dissoc (get-in (registry/snapshot kinds)
+                                    [:partitions rule-kind repl-owner :entries]
+                                    {})
+                            rule-key)]
+        (if (seq entries)
+          (registry/replace-owner! kinds rule-kind repl-owner
+                                   {:layer :direct :entries entries
+                                    :overrides (set (keys entries))})
+          (registry/remove-owner! kinds rule-kind repl-owner)))
+      (swap! visible dissoc rule-key)
       (swap! (seen-notifications)
              #(into #{} (remove (fn [[seen-rule-key _]] (= rule-key seen-rule-key))) %)))
     {:unregistered rule-key}))
@@ -301,18 +343,18 @@
   computed once per scan. Batch events and their per-strand fanout share a
   `:batch/id`, and only the first event of a batch triggers a scan."
   ([event]
-   (let [registry (rule-registry)]
-     (locking registry
+   (let [visible (rule-registry)]
+     (locking visible
        (if (already-scanned-batch? event)
-         {:scanned 0 :rules (count @registry) :skipped :chime/already-scanned}
+         {:scanned 0 :rules (count @visible) :skipped :chime/already-scanned}
          (let [runtime (rt)]
            (binding [*runtime* runtime]
              (let [strands (affected-strands event)
                    context {:event event :ready-ids (ready-id-set)}]
                (doseq [strand strands
-                       rule (vals @registry)]
+                       rule (vals @visible)]
                  (dispatch-rule! context strand rule))
-               {:scanned (count strands) :rules (count @registry)})))))))
+               {:scanned (count strands) :rules (count @visible)})))))))
   ([] (scan! {:event/type :chime/scan})))
 
 (defn on-event
@@ -328,6 +370,37 @@
   (locking (rule-registry) nil)
   nil)
 
+(defn contribute
+  "Materialize Chime's rule kind for dependent module contributions."
+  [{:keys [runtime]}]
+  (runtime/spool-state runtime ::state {:version state-version} new-state)
+  {})
+
+(defn reconcile
+  "Baseline changed effective rules, then make the complete view visible.
+
+  Publication has already validated every owner partition. This second phase is
+  deliberately serialized with scans and mutation pre-commit hooks: a changed
+  or restored rule receives its baseline before the event lane can observe it.
+  Removed rules lose their seen entries at the same time (MI2/MI3)."
+  [{:keys [runtime]}]
+  (binding [*runtime* runtime]
+    (let [visible (rule-registry)
+          effective (registry/effective (rule-kinds) rule-kind)]
+      (locking visible
+        (let [before @visible
+              changed (->> effective
+                           (keep (fn [[rule-key rule]]
+                                   (when (not= rule (get before rule-key)) rule)))
+                           vec)
+              removed (into #{} (remove (set (keys effective))) (keys before))]
+          (doseq [rule changed] (baseline-rule! rule))
+          (when (seq removed)
+            (swap! (seen-notifications)
+                   #(into #{} (remove (fn [[rule-key _]] (contains? removed rule-key))) %)))
+          (reset! visible effective)))))
+  {:reconciled :chime})
+
 (defn install!
   "Install chime's mutation barrier and event handler into the active weaver.
 
@@ -335,6 +408,7 @@
   `register!` and a notifier with `set-notifier!`."
   []
   (let [runtime (rt)]
+    (runtime/spool-state runtime ::state {:version state-version} new-state)
     (hooks/register-hook! runtime :chime/registration-barrier mutation-hook-types
                      'skein.spools.chime/mutation-registration-barrier!
                      {:order Long/MAX_VALUE :spool "chime"})

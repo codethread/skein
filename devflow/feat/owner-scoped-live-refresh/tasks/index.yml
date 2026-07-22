@@ -37,7 +37,7 @@ tasks:
   - id: 8
     description: Convert Chime and attention rules
     task_file: tasks/008-chime-owner-reconciliation.md
-    status: pending
+    status: complete
     blocked_by: [10, 24]
   - id: 9
     description: Convert cron and scheduler references
@@ -47,7 +47,7 @@ tasks:
   - id: 10
     description: Replace workspace remember forget install macros
     task_file: tasks/010-workspace-contribution-macros.md
-    status: pending
+    status: complete
     blocked_by: [5, 24]
   - id: 11
     description: Cut bootstrap and workspace config to modules
@@ -57,7 +57,7 @@ tasks:
   - id: 12
     description: Convert agent-run live registries and bindings
     task_file: tasks/012-agent-run-owner-refresh.md
-    status: pending
+    status: in_progress
     blocked_by: [7, 24]
   - id: 13
     description: Convert delegation and bench registries

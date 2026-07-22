@@ -5,16 +5,11 @@
   notified in gitignored init.local.clj with (chime/set-notifier! {:argv [...]})."
   (:require [clojure.string :as str]
             [skein.api.current.alpha :as current]
+            [skein.api.runtime.alpha :as runtime]
             [skein.api.graph.alpha :as graph]
             [skein.api.weaver.alpha :as weaver]
-            [skein.macros.rules :refer [defrule forget-rules! install-rules!]]
+            [skein.macros.rules :refer [defrule]]
             [ct.spools.agent-run :as shuttle]))
-
-;; Reload correctness: clear this namespace's remembered rules before the
-;; defrule forms below re-register them, so a targeted reload (load-file +
-;; reload!) installs exactly what this file's current source defines rather than
-;; also re-registering rules since renamed or removed (TEN-003).
-(forget-rules! 'attention)
 
 (defn- config-attr
   "Read strand attribute k, tolerating keyword- or string-keyed maps."
@@ -118,10 +113,17 @@
 (def ^:private sqlite-timestamp-formatter
   (java.time.format.DateTimeFormatter/ofPattern "yyyy-MM-dd HH:mm:ss"))
 
-(def ^:private logged-ts-parse-failures
-  "Distinct unparseable `updated_at` values already warned about, so a
-  persistently malformed row does not respam the log on every chime scan."
-  (atom #{}))
+(def ^:private timestamp-state-version 1)
+(def ^:private timestamp-failure-memory 100)
+
+(defn- new-timestamp-state []
+  {:logged-ts-parse-failures (atom [])})
+
+(defn- logged-ts-parse-failures []
+  (:logged-ts-parse-failures
+   (runtime/spool-state (current/runtime) ::timestamp-state
+                        {:version timestamp-state-version}
+                        new-timestamp-state)))
 
 (defn- strand-age-ms
   "Milliseconds since a strand's last mutation, parsing SQLite's UTC
@@ -139,8 +141,9 @@
              (.toInstant java.time.ZoneOffset/UTC)
              (.toEpochMilli)))
       (catch Exception e
-        (when-not (contains? @logged-ts-parse-failures ts)
-          (swap! logged-ts-parse-failures conj ts)
+        (when-not (some #(= ts %) @(logged-ts-parse-failures))
+          (swap! (logged-ts-parse-failures)
+                 #(vec (take-last timestamp-failure-memory (conj % ts))))
           (binding [*out* *err*]
             (println (str "[attention] WARN parked-run detector could not parse strand updated_at;"
                           " the detector is disabled for this strand "
@@ -168,10 +171,3 @@
                 (quot parked-run-threshold-ms 60000) " minutes with no in-flight claim."
                 " This is the silent-parking signature — verify the weaver's agent-run"
                 " executors are healthy and the run was not dropped by a reload.")}))
-
-(defn install!
-  "Register this repository's chime attention rules."
-  []
-  {:installed true
-   :namespace 'attention
-   :chime-rules (install-rules! 'attention)})
