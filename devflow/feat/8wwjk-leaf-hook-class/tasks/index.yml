@@ -1,0 +1,51 @@
+tasks:
+  - id: 1
+    description: Accretive fractal mechanism + applied spool op (design slice)
+    task_file: tasks/001-fractal-mechanism-design-slice.md
+    status: pending
+    blocked_by: []
+  - id: 2
+    description: Batteries sweep — remaining ops, renderer, contract docs
+    task_file: tasks/002-batteries-sweep.md
+    status: pending
+    blocked_by: [1]
+  - id: 3
+    description: System ops, guild/text-search, in-repo local spools, smoke
+    task_file: tasks/003-system-ops-and-local-spools.md
+    status: pending
+    blocked_by: [1]
+  - id: 4
+    description: Workspace config ops, workflows, defop macro, fixtures
+    task_file: tasks/004-workspace-config-sweep.md
+    status: pending
+    blocked_by: [1]
+  - id: 5
+    description: Enforcement flip — delete defaults, strict validation everywhere
+    task_file: tasks/005-enforcement-flip.md
+    status: pending
+    blocked_by: [2, 3, 4]
+  - id: 6
+    description: Root spec promotion + docs sweep + api docs
+    task_file: tasks/006-spec-promotion-and-docs.md
+    status: pending
+    blocked_by: [5]
+  - id: 7
+    description: kanban.spool adoption + release tag
+    task_file: tasks/007-kanban-spool-adoption.md
+    status: pending
+    blocked_by: [5]
+  - id: 8
+    description: agent-harness.spool adoption (agent-run/delegation/bench) + release tag
+    task_file: tasks/008-agent-harness-spool-adoption.md
+    status: pending
+    blocked_by: [5]
+  - id: 9
+    description: devflow.spool adoption + release tag
+    task_file: tasks/009-devflow-spool-adoption.md
+    status: pending
+    blocked_by: [5]
+  - id: 10
+    description: Pin bumps + full acceptance gates
+    task_file: tasks/010-pin-bumps-and-acceptance.md
+    status: pending
+    blocked_by: [6, 7, 8, 9]

@@ -58,8 +58,11 @@ last pin bump, and green at acceptance.
 - In-repo registrants: batteries (all ops + reference renderer), `help` builtin,
   guild, text-search, `.skein/config.clj` ops, `.skein/workflows.clj`,
   `.skein/spools/macros` `defop`, test fixtures, smoke suite.
-- Sibling spools (own repos, released by tag, pinned in `spools.edn`): kanban,
-  delegation, bench, agent-harness, workflow.
+- Sibling spool repos (released by annotated tag, pinned in `.skein/spools.edn`):
+  `kanban.spool` (codethread/kanban, v6), `devflow.spool` (codethread/devflow,
+  v3), `agent-harness.spool` (ct.spools/agent-run, v11 — roots agent-run,
+  delegation, bench). In-repo local spools (workflow, text-search, chime, cron,
+  macros) belong to the in-repo sweep, not the fan-out.
 - Docs: root specs (delta promotion), `docs/reference.md`, spool authoring guide
   CLI-style section, generated `*.api.md`.
 - Go CLI: verification only (pre-op help alias vs deeper paths); no code changes
@@ -94,8 +97,9 @@ last pin bump, and green at acceptance.
 - **PLAN-Lhc-001.PH5 (sibling spool fan-out — terra-med, one seat per repo):**
   Per spool: adopt leaf classes (and real nesting where grammars used positional
   actions — kanban `task` is the known case; each spool task enumerates its own
-  matrix), suite green against the feature checkout, release tag, pin bump in
-  skein-src. Ceremony per repo conventions (`spool bump`, annotated `vN` tags).
+  matrix), suite green against the feature checkout, annotated release tag
+  pushed. The pin bump in skein-src is a single coordinator-sequenced task after
+  all releases exist.
 - **PLAN-Lhc-001.PH6 (acceptance):** Full locked suite under the flock, Go tests,
   smoke, `spool-suite-gate` green again, quality gates at zero; land via the
   coordinator landing workflow.
