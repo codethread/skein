@@ -3,8 +3,8 @@
 **Document ID:** `DELTA-OlrDrt-001`
 **Root spec:** [daemon-runtime.md](../../../specs/daemon-runtime.md)
 **Feature:** [../proposal.md](../proposal.md)
-**Status:** Reviewed
-**Last Updated:** 2026-07-20
+**Status:** Merged
+**Last Updated:** 2026-07-22
 
 ## DELTA-OlrDrt-001.P1 Summary
 

@@ -82,7 +82,7 @@ tasks:
   - id: 17
     description: Promote reviewed spec deltas
     task_file: tasks/017-promote-spec-deltas.md
-    status: pending
+    status: complete
     blocked_by: [16]
   - id: 18
     description: Run cross-repository acceptance matrix

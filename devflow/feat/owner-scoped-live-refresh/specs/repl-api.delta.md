@@ -3,8 +3,8 @@
 **Document ID:** `DELTA-OlrRepl-001`
 **Root spec:** [repl-api.md](../../../specs/repl-api.md)
 **Feature:** [../proposal.md](../proposal.md)
-**Status:** Reviewed
-**Last Updated:** 2026-07-20
+**Status:** Merged
+**Last Updated:** 2026-07-22
 
 ## DELTA-OlrRepl-001.P1 Summary
 
