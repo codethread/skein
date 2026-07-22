@@ -1,4 +1,4 @@
-# Skein Batteries Spool
+# Skein Batteries spool
 
 `skein.spools.batteries` registers the everyday `strand` command surface: add/update/show/supersede/burn/list/ready/subgraph, plus the `weave`, `query`, `pattern`, `vocab`, and `spool` ops.
 

@@ -115,30 +115,7 @@ The weaver runtime is the long-lived local Clojure process that owns strand stor
 - **SPEC-004.C37:** Runtime extensions are normal trusted Clojure spools/modules made available to the weaver through selected workspace startup (`init.clj` then `init.local.clj`) or live weaver REPL workflows.
 - **SPEC-004.C38:** Extension code runs with weaver process authority. Sandboxing, untrusted execution, remote authorization, and capability restriction are outside this contract.
 - **SPEC-004.C39:** Skein ships the blessed source-visible `skein.api.runtime.alpha` privileged runtime loader/config helper for spool-workspace workflows. Privileged loader/config helpers do not live under `skein.spools.*`; that namespace family is reserved for authorable spools and examples.
-- **SPEC-004.C39a:** A runtime resolves one immutable release-marker record at
-  construction. An explicit `:release-marker` startup claim (or the foreground
-  weaver's `--release-marker` option) wins; otherwise an annotated `v<int>` Git
-  tag pointing exactly at the Skein source checkout's HEAD is used when the
-  checkout is resolvable. Git-root discovery works from source and compiled
-  classpath layouts. A successful inspection with no matching annotated tag is
-  one inspected-checkout path to `:none`; a filesystem classpath rooted outside
-  a Git checkout is another. Command startup, unexpected nonzero Git failures,
-  invalid root output, and stderr noise fail loudly with command, root, exit,
-  and stderr.
-  When the classpath resource does not identify a filesystem checkout, the
-  record is
-  `{:marker nil :provenance :none}`. Claims must use canonical `v<int>` syntax
-  without leading zeroes. `v0` is reserved and rejected with the first-public-
-  marker policy; malformed claims fail startup loudly. The read-only
-  `skein.api.runtime.alpha/release-marker` accessor returns
-  `{:marker "vN" :provenance :claimed|:tag}` or the `:none` shape. Operations
-  that require marker arithmetic must reject `:none`; they must not invent a
-  default. `:skein.core.specs/release-marker-claim` and
-  `:skein.core.specs/release-marker-result` own these shapes;
-  `skein.api.runtime.alpha` promises them to spool consumers as its
-  alpha-qualified `release-marker-claim`/`release-marker-result` aliases, so
-  spools reference the shapes without requiring `skein.core.specs`. Foreground
-  parsing uses a declared arg-spec, including whole-value payload resolution.
+- **SPEC-004.C39a:** A runtime resolves one immutable release-marker record at construction. An explicit `:release-marker` startup claim (or the foreground weaver's `--release-marker` option) wins; otherwise an annotated `v<int>` Git tag pointing exactly at the Skein source checkout's HEAD is used when the checkout is resolvable. Git-root discovery works from source and compiled classpath layouts. A successful inspection with no matching annotated tag is one inspected-checkout path to `:none`; a filesystem classpath rooted outside a Git checkout is another. Command startup, unexpected nonzero Git failures, invalid root output, and stderr noise fail loudly with command, root, exit, and stderr. When the classpath resource does not identify a filesystem checkout, the record is `{:marker nil :provenance :none}`. Claims must use canonical `v<int>` syntax without leading zeroes. `v0` is reserved and rejected with the first-public-marker policy; malformed claims fail startup loudly. The read-only `skein.api.runtime.alpha/release-marker` accessor returns `{:marker "vN" :provenance :claimed|:tag}` or the `:none` shape. Operations that require marker arithmetic must reject `:none`; they must not invent a default. `:skein.core.specs/release-marker-claim` and `:skein.core.specs/release-marker-result` own these shapes; `skein.api.runtime.alpha` promises them to spool consumers as its alpha-qualified `release-marker-claim`/`release-marker-result` aliases, so spools reference the shapes without requiring `skein.core.specs`. Foreground parsing uses a declared arg-spec, including whole-value payload resolution.
 - **SPEC-004.C39b:** Retired. The read-only `config-dir` and `spools-file` accessors were
   trimmed from `skein.api.runtime.alpha` with zero external consumers; `spools-file`
   survives as module plumbing behind the C39c write seam. The ID is not reused.
