@@ -1,8 +1,11 @@
-.PHONY: build install dash api-docs docs-site docs-serve docs-check fmt fmt-check lint lint-go lint-clj lint-splint reflect-check deps-report security-report test-warm test-warm-stop spool-suite-gate
+.PHONY: build install dash api-docs docs-site docs-serve docs-check fmt fmt-check fmt-check-clj fmt-check-go lint lint-go lint-clj lint-splint lint-conventions reflect-check deps-report security-report security-report-clj security-report-go test-warm test-warm-stop spool-suite-gate
 
 GO_CLI := ./cli/cmd/strand
 MILL_CLI := ./cli/cmd/mill
-SOURCE_LDFLAGS := -X skein-strand-cli/internal/config.InstalledSource=$(CURDIR)
+# BuildID falls back to the compiled-in "dev" when git is unavailable; it is
+# informational (skew attribution), so unlike InstalledSource it may degrade.
+BUILD_ID := $(shell git rev-parse --short HEAD 2>/dev/null || echo dev)
+SOURCE_LDFLAGS := -X skein-strand-cli/internal/config.InstalledSource=$(CURDIR) -X skein-strand-cli/internal/config.BuildID=$(BUILD_ID)
 GOFUMPT_VERSION := v0.8.0
 GOLANGCI_LINT_VERSION := v2.1.6
 GOVULNCHECK_VERSION := v1.1.4
@@ -32,9 +35,9 @@ install:
 		echo "make install: resolved canonical Skein source '$$src' is empty or not a directory" >&2; \
 		exit 1; \
 	fi; \
-	echo "make install: stamping InstalledSource=$$src"; \
-	go install -ldflags "-X skein-strand-cli/internal/config.InstalledSource=$$src" $(GO_CLI) && \
-	go install -ldflags "-X skein-strand-cli/internal/config.InstalledSource=$$src" $(MILL_CLI)
+	echo "make install: stamping InstalledSource=$$src BuildID=$(BUILD_ID)"; \
+	go install -ldflags "-X skein-strand-cli/internal/config.InstalledSource=$$src -X skein-strand-cli/internal/config.BuildID=$(BUILD_ID)" $(GO_CLI) && \
+	go install -ldflags "-X skein-strand-cli/internal/config.InstalledSource=$$src -X skein-strand-cli/internal/config.BuildID=$(BUILD_ID)" $(MILL_CLI)
 
 # code-owner TUI over live agent runs; polls the strand CLI
 dash:
@@ -51,7 +54,20 @@ api-docs:
 docs-site:
 	uvx --from mkdocs --with mkdocs-material --with markdown-gfm-admonition mkdocs build --strict
 
+# Growth budget for AGENTS.md, which holds only what the live surface cannot
+# tell an agent. Placement judgment lives with the docs-drift reviewer
+# (guidance belongs to prime/about manuals, devflow/specs, or an automated
+# check); this cap forces that conversation when the file grows.
+AGENTS_MD_LINE_BUDGET := 70
+
 docs-check:
+	@lines=$$(awk 'END{print NR}' AGENTS.md) || { echo "docs-check: cannot read AGENTS.md" >&2; exit 1; }; \
+	case "$$lines" in ''|*[!0-9]*) echo "docs-check: unexpected AGENTS.md line count '$$lines'" >&2; exit 1;; esac; \
+	if [ "$$lines" -gt $(AGENTS_MD_LINE_BUDGET) ]; then \
+		echo "AGENTS.md is $$lines lines, over the $(AGENTS_MD_LINE_BUDGET)-line budget."; \
+		echo "Move guidance to the surface that owns it (prime/about manuals, devflow/specs, an automated check) instead of growing AGENTS.md."; \
+		exit 1; \
+	fi
 	$(MAKE) api-docs
 	git diff --exit-code -- 'spools/*.api.md' 'spools/executors/*.api.md' 'docs/api/*.api.md'
 	$(MAKE) docs-site
@@ -63,17 +79,31 @@ fmt:
 	clojure -M:format/fix
 	cd cli && go run mvdan.cc/gofumpt@$(GOFUMPT_VERSION) -w .
 
-fmt-check:
-	clojure -M:format
-	cd cli && test -z "$$(go run mvdan.cc/gofumpt@$(GOFUMPT_VERSION) -l .)"
+fmt-check: fmt-check-clj fmt-check-go
 
-lint: lint-clj lint-splint lint-go
+fmt-check-clj:
+	clojure -M:format
+
+fmt-check-go:
+	cd cli && out="$$(go run mvdan.cc/gofumpt@$(GOFUMPT_VERSION) -l .)" && test -z "$$out"
+
+lint: lint-clj lint-splint lint-conventions lint-go
 
 lint-clj:
 	clojure -M:lint/clj-kondo
 
 lint-splint:
 	clojure -M:lint/splint
+
+# repo conventions that prose alone cannot hold: versioned tenet references,
+# ns docstrings everywhere, no local bindings named after clojure.core macros,
+# and requires embedded in quoted forms resolving to real namespaces
+lint-conventions:
+	@if git grep -n -E 'TEN-''000([^@]|$$)' -- . ':!devflow/TENETS.md'; then \
+		echo 'lint-conventions: bare TEN-''000 reference(s); use TEN-''000@1' >&2; \
+		exit 1; \
+	fi
+	clojure -M:lint/conventions
 
 lint-go:
 	cd cli && go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION) run --config ../.golangci.yml ./...
@@ -87,8 +117,12 @@ deps-report:
 	# local-only deep NVD scan; needs CLJ_WATSON_NVD_API_KEY exported
 	-clojure -M:security/clj-watson-nvd
 
-security-report:
+security-report: security-report-clj security-report-go
+
+security-report-clj:
 	-clojure -M:security/clj-watson
+
+security-report-go:
 	-cd cli && go run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
 
 # Per-worktree warm test loop: probe-or-boot the worktree's warm REPL and run the
@@ -98,32 +132,38 @@ test-warm:
 	NS="$(NS)" bash scripts/test-warm
 
 # Single local-reproduction surface for the spool-suite gate (PLAN-ssc-001.A1):
-# run the pinned external spool suites (codethread/devflow.spool, kanban.spool)
+# run the pinned external spool suites (codethread/devflow.spool, kanban.spool,
+# agent-harness.spool)
 # against this checkout's HEAD, closing the untested skein-src->spool direction.
-# The two shas are read from deps.edn as EDN (never restated here, never line-
+# The three family coordinates are read from .skein/spools.edn as EDN (never line-
 # grepped) and the target aborts loudly rather than run against an empty sha.
 # Each spool source is materialized at its pin into a mktemp scratch root beside a
 # `skein-src` link to the invoking checkout ($(CURDIR)), matching the spools'
 # committed `:local/root "../skein-src"`. devflow.spool needs the moved
 # workflow-spool root injected at job time via -Sdeps (NG2-safe; never an edit to
-# the spool's own deps.edn); kanban.spool carries its own workflow-spool root and
-# runs plain. On a red suite the target names the spool, its resolved sha, and the
-# one command that reproduces it locally. Requires OpenJDK on PATH, e.g.
+# the spool's own deps.edn); kanban.spool and agent-harness.spool carry their own
+# local roots and run plain. On a red suite the target names the spool, its
+# resolved sha, and the one command that reproduces it locally. Requires OpenJDK on PATH, e.g.
 # PATH="/opt/homebrew/opt/openjdk/bin:$$PATH" make spool-suite-gate.
 spool-suite-gate:
 	@set -e; \
 	src="$(CURDIR)"; \
-	coords="$$(clojure -M -e '(let [deps (clojure.edn/read-string (slurp "deps.edn")) ed (get-in deps [:aliases :test :extra-deps]) g (fn [c] (let [m (get ed c) sha (:git/sha m) url (:git/url m)] (when-not (and (string? sha) (string? url)) (binding [*out* *err*] (println (str "spool-suite-gate: deps.edn :aliases :test :extra-deps is missing :git/url or :git/sha for " c "; refusing to run against HEAD/an empty sha"))) (System/exit 1)) [url sha]))] (let [[du ds] (g (quote io.github.codethread/devflow.spool)) [ku ks] (g (quote io.github.codethread/kanban.spool))] (println du ds ku ks) (flush) (System/exit 0)))')" || coords=""; \
+	coords="$$(clojure -M -e '(let [spools (:spools (clojure.edn/read-string (slurp ".skein/spools.edn"))) g (fn [family] (let [m (get spools family) sha (:git/sha m) url (:git/url m)] (when-not (and (string? sha) (string? url)) (binding [*out* *err*] (println (str "spool-suite-gate: .skein/spools.edn is missing :git/url or :git/sha for family " family "; refusing to run against HEAD/an empty sha"))) (System/exit 1)) [url sha]))] (let [[du ds] (g (quote codethread/devflow)) [ku ks] (g (quote codethread/kanban)) [au as] (g (quote ct.spools/agent-run))] (println du ds ku ks au as) (flush) (System/exit 0)))')"; \
 	if [ -z "$$coords" ]; then \
-		echo "spool-suite-gate: could not extract spool coordinates from deps.edn (unparseable, or missing the :aliases :test :extra-deps spool pins); refusing to run against HEAD/an empty sha" >&2; \
+		echo "spool-suite-gate: coordinate extraction printed nothing for families codethread/devflow, codethread/kanban, ct.spools/agent-run in .skein/spools.edn (expected \"url sha\" pairs); refusing to run against HEAD/an empty sha" >&2; \
 		exit 1; \
 	fi; \
 	set -- $$coords; \
-	durl="$$1"; dsha="$$2"; kurl="$$3"; ksha="$$4"; \
-	if [ -z "$$durl" ] || [ -z "$$dsha" ] || [ -z "$$kurl" ] || [ -z "$$ksha" ]; then \
-		echo "spool-suite-gate: incomplete spool coordinates extracted from deps.edn" >&2; \
-		exit 1; \
-	fi; \
+	durl="$$1"; dsha="$$2"; kurl="$$3"; ksha="$$4"; aurl="$$5"; asha="$$6"; \
+	check_pair() { \
+		if [ -z "$$2" ] || [ -z "$$3" ]; then \
+			echo "spool-suite-gate: family $$1 extracted an empty url or sha from .skein/spools.edn (url=$$2 sha=$$3); refusing to run" >&2; \
+			exit 1; \
+		fi; \
+	}; \
+	check_pair devflow "$$durl" "$$dsha"; \
+	check_pair kanban "$$kurl" "$$ksha"; \
+	check_pair agent-run "$$aurl" "$$asha"; \
 	root="$$(mktemp -d)"; \
 	trap 'rm -rf "$$root"' EXIT; \
 	ln -s "$$src" "$$root/skein-src"; \
@@ -145,8 +185,10 @@ spool-suite-gate:
 	}; \
 	materialize devflow.spool "$$durl" "$$dsha" io.github.codethread/devflow.spool; \
 	materialize kanban.spool "$$kurl" "$$ksha" io.github.codethread/kanban.spool; \
+	materialize agent-harness.spool "$$aurl" "$$asha" io.github.codethread/agent-run.agent-harness; \
 	dcmd="clojure -Sdeps '{:deps {io.skein/workflow-spool {:local/root \"../skein-src/spools/workflow\"}}}' -M:test"; \
 	kcmd="clojure -M:test"; \
+	acmd="clojure -M:test"; \
 	echo "==> spool-suite-gate: devflow.spool@$$dsha (with workflow-spool injection)"; \
 	if ! ( cd "$$root/devflow.spool" && eval "$$dcmd" ); then \
 		printf '\n%s\n' "spool-suite-gate: devflow.spool@$$dsha FAILED against skein-src HEAD ($$src)" >&2; \
@@ -161,7 +203,14 @@ spool-suite-gate:
 		echo "  or, in a sibling layout with ./skein-src beside ./kanban.spool, from kanban.spool/: $$kcmd" >&2; \
 		exit 1; \
 	fi; \
-	echo "spool-suite-gate: OK (devflow.spool@$$dsha, kanban.spool@$$ksha) against skein-src HEAD"
+	echo "==> spool-suite-gate: agent-harness.spool@$$asha"; \
+	if ! ( cd "$$root/agent-harness.spool" && eval "$$acmd" ); then \
+		printf '\n%s\n' "spool-suite-gate: agent-harness.spool@$$asha FAILED against skein-src HEAD ($$src)" >&2; \
+		echo "  reproduce: make spool-suite-gate" >&2; \
+		echo "  or, in a sibling layout with ./skein-src beside ./agent-harness.spool, from agent-harness.spool/: $$acmd" >&2; \
+		exit 1; \
+	fi; \
+	echo "spool-suite-gate: OK (devflow.spool@$$dsha, kanban.spool@$$ksha, agent-harness.spool@$$asha) against skein-src HEAD"
 
 # Reap the worktree's warm REPL by recorded PID (PID only, never `pkill -f`) and
 # remove the runtime files (PLAN-Ttv-001.R1). The land cleanup step calls this

@@ -30,7 +30,7 @@ Deliver repo-first Skein configuration by making the CLI select the nearest pare
 
 ## PLAN-RepoFirstConfig-001.P4 Contract and migration impact
 
-- **PLAN-RepoFirstConfig-001.CM1:** This intentionally breaks the old no-flag `$XDG_CONFIG_HOME/skein` default. TEN-000 permits alpha contract correction; ordinary no-flag use becomes repo-first.
+- **PLAN-RepoFirstConfig-001.CM1:** This intentionally breaks the old no-flag `$XDG_CONFIG_HOME/skein` default. TEN-000@1 permits alpha contract correction; ordinary no-flag use becomes repo-first.
 - **PLAN-RepoFirstConfig-001.CM2:** Existing explicit `--config-dir` workflows remain the supported path for tests, smoke, disposable worlds, and non-repo automation.
 - **PLAN-RepoFirstConfig-001.CM3:** `.skein/config.json` is local and gitignored by default because it contains the Skein source checkout path. Shared repo config lives in `init.clj` and `libs.edn`. Fresh clones with committed `.skein` but no local `config.json` must get a direct `strand init --source <skein-source>` / `SKEIN_SOURCE` remediation.
 - **PLAN-RepoFirstConfig-001.CM4:** `libs.local.edn` can override shared coordinates. This may intentionally change which local root is loaded for one user without changing colleagues' config.
@@ -84,7 +84,7 @@ Outcome: Clojure and Go tests cover repo discovery/init/layering/overrides, smok
 - **PLAN-RepoFirstConfig-001.TC1:** Current Go config resolution is in `cli/internal/config`; current Clojure world resolution is in `src/skein/weaver/config.clj`.
 - **PLAN-RepoFirstConfig-001.TC2:** Current weaver startup loads only selected config-dir `init.clj`; current reload in `skein.weaver.api/reload-config!` also reloads only `init.clj`. The landed event system means reload must also preserve event clearing/restart semantics while avoiding a shared-only reload window.
 - **PLAN-RepoFirstConfig-001.TC3:** Current approved library config reads only `libs.edn` and rejects alternate files; this feature changes that contract to an effective layered config.
-- **PLAN-RepoFirstConfig-001.TC4:** Specs currently state no implicit cwd world switching and XDG fallback. This feature intentionally supersedes that alpha design under TEN-000.
+- **PLAN-RepoFirstConfig-001.TC4:** Specs currently state no implicit cwd world switching and XDG fallback. This feature intentionally supersedes that alpha design under TEN-000@1.
 - **PLAN-RepoFirstConfig-001.TC5:** Keep embedded SQL/data behavior untouched; this is a world/config/runtime loading change, not a strand model change.
 
 ## PLAN-RepoFirstConfig-001.P9 Developer Notes

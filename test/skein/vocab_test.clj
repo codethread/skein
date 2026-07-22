@@ -5,11 +5,16 @@
   reads are runtime-first, sorted, and narrowable."
   (:require [clojure.test :refer [deftest is testing]]
             [skein.api.relations.alpha :as relations]
+            [skein.api.registry.alpha :as registry]
             [skein.api.vocab.alpha :as vocab]
-            [skein.spools.test-support :refer [assert-state-shape with-runtime]]))
+            [skein.spools.test-support :refer [with-runtime]]))
 
 (defn- attr-decl [name owner]
   {:kind :attr-namespace :name name :owner owner :doc (str name " attributes")})
+
+(defn- find-declaration [runtime kind name]
+  (some #(when (= [kind name] [(:kind %) (:name %)]) %)
+        (vocab/declarations runtime)))
 
 (deftest fresh-runtime-carries-core-seed
   (testing "the reflected edge catalog and core note/* are present before any install!"
@@ -20,14 +25,14 @@
                  (set (map :name edges)))
               "one owned :edge declaration per catalog entry")
           (is (every? #(= :skein/core (:owner %)) edges))
-          (let [depends (vocab/declaration rt :edge "depends-on")]
+          (let [depends (find-declaration rt :edge "depends-on")]
             (is (= {:kind :edge :name "depends-on" :owner :skein/core
                     :family :operational
                     :direction "blocked --depends-on--> blocker"
                     :declared-acyclic? true}
                    (dissoc depends :doc))
                 "edge declaration reflects catalog family/direction/acyclicity")))
-        (let [note (vocab/declaration rt :attr-namespace "note")]
+        (let [note (find-declaration rt :attr-namespace "note")]
           (is (= 'skein.api.notes.alpha (:owner note)))
           (is (= :attr-namespace (:kind note)))
           ;; note/kind is declared as an open, guidance-only advisory key — a
@@ -39,8 +44,8 @@
     (fn [rt _]
       (let [decl (attr-decl "widget" :my.spool/init)]
         (is (= decl (vocab/declare! rt decl)) "declare! returns the recorded map")
-        (is (= decl (vocab/declaration rt :attr-namespace "widget")))
-        (is (nil? (vocab/declaration rt :attr-namespace "undeclared")))
+        (is (= decl (find-declaration rt :attr-namespace "widget")))
+        (is (nil? (find-declaration rt :attr-namespace "undeclared")))
         (is (contains? (set (vocab/declarations rt)) decl))
         (testing "declarations are sorted by [:kind :name]"
           (let [all (vocab/declarations rt)]
@@ -63,7 +68,12 @@
                               (vocab/declare! rt {:kind :attr-namespace :name "x"}))))
       (testing "unknown read opt key"
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"unknown keys"
-                              (vocab/declarations rt {:bogus true})))))))
+                              (vocab/declarations rt {:bogus true}))))
+      (testing "unknown read :kind fails loudly instead of matching nothing"
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #":kind must be"
+                              (vocab/declarations rt {:kind :bogus})))
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #":kind must be"
+                              (vocab/declarations rt {:kind nil})))))))
 
 (deftest declare-is-single-owner-hard-edge
   (with-runtime
@@ -79,26 +89,24 @@
       (testing "same owner is an idempotent replace (the reload invariant)"
         (let [replaced (assoc (attr-decl "widget" :owner-a) :doc "revised")]
           (is (= replaced (vocab/declare! rt replaced)))
-          (is (= "revised" (:doc (vocab/declaration rt :attr-namespace "widget")))))))))
+          (is (= "revised" (:doc (find-declaration rt :attr-namespace "widget")))))))))
 
-(deftest declare-conflict-check-is-atomic
-  ;; Regression for the cross-owner TOCTOU window: the owner-conflict check must
-  ;; live inside the swap! update fn, so a conflicting write that lands after
-  ;; this declarer's read still throws instead of silently overwriting. swap!
-  ;; runs exactly this fn, so exercising it directly against a registry map that
-  ;; already carries owner-a proves the guard is on the swap path — deterministic
-  ;; and thread-free.
-  (let [k [:attr-namespace "widget"]
-        registered {k (attr-decl "widget" :owner-a)}
-        loser (attr-decl "widget" :owner-b)
-        ex (try (#'vocab/register-declaration registered k loser)
-                (catch clojure.lang.ExceptionInfo e e))]
-    (is (some? ex) "the swap update fn throws on a cross-owner write")
-    (is (= {:name "widget" :kind :attr-namespace
-            :existing-owner :owner-a :declaring-owner :owner-b}
-           (ex-data ex)))))
-
-(deftest state-shape-matches-declared-version
-  ;; Drift alarm for vocab's versioned spool-state: a key added to new-state
-  ;; without a state-version bump would survive reload! as a stale map.
-  (assert-state-shape #'vocab/new-state #{:registry}))
+(deftest core-vocab-defaults-restore-after-owner-removal
+  (with-runtime
+    (fn [rt _]
+      (let [handle (#'vocab/registry rt)
+            kind :vocab
+            owner :workspace/test
+            note-key [:attr-namespace "note"]
+            overridden (assoc (get (registry/effective handle kind) note-key)
+                              :doc "Workspace note vocabulary")]
+        (registry/replace-owner! handle kind owner
+                                 {:layer :workspace
+                                  :entries {note-key overridden}
+                                  :overrides #{note-key}})
+        (is (= "Workspace note vocabulary"
+               (:doc (get (registry/effective handle kind) note-key))))
+        (registry/remove-owner! handle kind owner)
+        (is (= 'skein.api.notes.alpha
+               (:owner (get (registry/effective handle kind) note-key)))
+            "removing the workspace owner restores the core defaults entry")))))

@@ -27,6 +27,8 @@
                      {:doc "Emit `--count` NDJSON lines, then a terminator count."
                       :stream? true
                       :arg-spec {:op "test-stream"
+                                 :hook-class :mutating
+                                 :deadline-class :unbounded
                                  :flags {:count {:type :int
                                                  :doc "Number of lines to emit (default 3)."}}}}
                      'skein.test.fixtures.stream-op/test-stream-op)

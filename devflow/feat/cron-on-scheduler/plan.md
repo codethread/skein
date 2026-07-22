@@ -95,7 +95,7 @@ this matters; scope boundaries are its non-goals (`.NG1`–`.NG6`).
 
 - **PLAN-cron-on-scheduler-001.A5 — deterministic join for offloaded jobs
   (`cron/await-idle!`).** Because job bodies run off the event lane on the
-  execution executor, `skein.api.events.alpha/await-quiescent!` returns before a
+  execution executor, `skein.test.alpha/await-quiescent!` returns before a
   job finishes; tests need a join that never sleeps. Add a drain/quiescence seam
   `cron/await-idle!` (mirroring `await-quiescent!`): an in-flight latch (a counter
   plus a condition/monitor) is incremented **on the event lane inside
@@ -104,7 +104,7 @@ this matters; scope boundaries are its non-goals (`.NG1`–`.NG6`).
   expires, throwing loudly on timeout (TEN-003). Incrementing on the lane before
   submit closes the race: once `advance!` → scheduler pump → `fire-wake` returns
   and the lane quiesces, any offloaded job is already counted, so the test
-  sequence `advance!` → `events/await-quiescent!` → `cron/await-idle!` →
+  sequence `advance!` → `test-alpha/await-quiescent!` → `cron/await-idle!` →
   assert-outcome is fully deterministic.
 
 - **PLAN-cron-on-scheduler-001.A6 — deletions.** Remove cron's parallel timing
@@ -303,7 +303,7 @@ intended `git status --short`.
   keys every wake `cron/<id>` and owns exactly one wake per registered job.
 - **PLAN-cron-on-scheduler-001.TC3:** Reference patterns — restart durability:
   `test/skein/scheduler_e2e_test.clj`; drain/quiescence join:
-  `test/skein/events_quiescence_test.clj` (`events/await-quiescent!`); house plan
+  `test/skein/events_quiescence_test.clj` (`test-alpha/await-quiescent!`); house plan
   style: `devflow/archive/26-07-05__weaver-scheduler/weaver-scheduler.plan.md`.
 - **PLAN-cron-on-scheduler-001.TC4:** Versioned spool-state rules:
   `docs/writing-shared-spools.md` ("Versioned spool state") and SPEC-004.C95 — bump
@@ -435,7 +435,7 @@ intended `git status --short`.
 - `await-idle!` is the deterministic join: an `:in-flight-count` atom incremented
   on the lane before submit and decremented in the executor `finally`, plus an
   `:idle-monitor` Object it `wait`s on until zero or the budget expires (throws on
-  timeout). Test flow is `advance!` → `events/await-quiescent!` → `await-idle!`.
+  timeout). Test flow is `advance!` → `test-alpha/await-quiescent!` → `await-idle!`.
 - Deleted the parallel timing substrate: `schedule-fire!`, `execute-job!`'s
   reschedule, `:future`/`:next-fire-at`, the clock pump (`fire-due!`, `due?`,
   `register-pump!`, `::pump`, `install!`'s pump call), and the `initial-delay-fn`
@@ -522,7 +522,7 @@ intended `git status --short`.
   next-fire timing view.
 - Updated `spools/cron.cookbook.md` recipes to registration-over-wakes, removed
   the old first-fire seed recipe, and added the deterministic test join sequence
-  `advance!` → `events/await-quiescent!` → `cron/await-idle!`.
+  `advance!` → `test-alpha/await-quiescent!` → `cron/await-idle!`.
 - Regenerated `spools/cron.api.md` with `make api-docs` after confirming cron
   docstrings no longer surface the removed seed/timer wording.
 

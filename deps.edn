@@ -9,23 +9,12 @@
         org.slf4j/slf4j-nop {:mvn/version "1.7.36"}
         com.bhauman/rebel-readline {:mvn/version "0.1.11"}}
  :aliases
- {:test {:extra-paths ["test" "spools/workflow/src" "spools/ephemeral/src" "spools/roster/src" "spools/loom/src" "spools/carder/src" "spools/text-search/src" "spools/bobbin/src" "spools/guild/src" "spools/selvage/src" "spools/agent-run/src" "spools/delegation/src" "spools/chime/src" "spools/cron/src" "spools/bench/src"
+ ;; "scripts" is on the test path so the one-shot cutover scripts under
+ ;; scripts/cutover can be exercised by a registered test namespace rather than
+ ;; only standalone; the runner's registry, not the classpath, decides what runs.
+ {:test {:extra-paths ["test" "scripts" "spools/workflow/src" "spools/text-search/src" "spools/guild/src" "spools/chime/src" "spools/cron/src"
                        ".skein/spools/macros/src"]
-         ;; devflow is a git-distributed spool. Keep this sha exactly synchronized
-         ;; with .skein/spools.edn: config_test loads .skein/config.clj in-process,
-         ;; while the weaver consumes the spools.edn coordinate.
-         :extra-deps {io.github.codethread/devflow.spool
-                      {:git/url "https://github.com/codethread/devflow.spool.git"
-                       :git/sha "e9b28f5db61820b28a1ac1b590cc87e70c835cac"}
-                      ;; kanban is a git-distributed spool. Keep this sha exactly
-                      ;; synchronized with .skein/spools.edn (config_test enforces
-                      ;; the pairing): config_test loads .skein/config.clj
-                      ;; in-process, while the weaver consumes the spools.edn
-                      ;; coordinate.
-                      io.github.codethread/kanban.spool
-                      {:git/url "https://github.com/codethread/kanban.spool.git"
-                       :git/sha "54eea43e3afc50c3f17335d297a74af8d6767704"}
-                      ;; Test-only ergonomics: readable nested-map/JSON assertions
+         :extra-deps {;; Test-only ergonomics: readable nested-map/JSON assertions
                       ;; (match?) and spec-driven property tests (defspec). Kept
                       ;; off the main src/weaver classpath.
                       nubank/matcher-combinators {:mvn/version "3.9.1"}
@@ -48,18 +37,21 @@
   :smoke {:jvm-opts ["--enable-native-access=ALL-UNNAMED"]
           :main-opts ["-m" "skein.smoke"]}
   :format {:extra-deps {dev.weavejester/cljfmt {:mvn/version "0.13.1"}}
-           :main-opts ["-m" "cljfmt.main" "check" "src" "spools/batteries/src" "spools/workflow/src" "spools/ephemeral/src" "spools/roster/src" "spools/loom/src" "spools/carder/src" "spools/text-search/src" "spools/bobbin/src" "spools/guild/src" "spools/selvage/src" "test" "dev" "scripts"
+           :main-opts ["-m" "cljfmt.main" "check" "src" "spools/batteries/src" "spools/workflow/src" "spools/text-search/src" "spools/guild/src" "test" "dev" "scripts"
                        ".skein/init.clj" ".skein/config.clj" ".skein/workflows.clj" ".skein/harnesses.clj"
-                       ".skein/attention.clj" ".skein/nvd_scan.clj" ".skein/reviewers.clj"]}
+                       ".skein/kanban_tracker.clj" ".skein/attention.clj" ".skein/nvd_scan.clj" ".skein/reviewers.clj"]}
   :format/fix {:extra-deps {dev.weavejester/cljfmt {:mvn/version "0.13.1"}}
-               :main-opts ["-m" "cljfmt.main" "fix" "src" "spools/batteries/src" "spools/workflow/src" "spools/ephemeral/src" "spools/roster/src" "spools/loom/src" "spools/carder/src" "spools/text-search/src" "spools/bobbin/src" "spools/guild/src" "spools/selvage/src" "test" "dev" "scripts"
+               :main-opts ["-m" "cljfmt.main" "fix" "src" "spools/batteries/src" "spools/workflow/src" "spools/text-search/src" "spools/guild/src" "test" "dev" "scripts"
                            ".skein/init.clj" ".skein/config.clj" ".skein/workflows.clj" ".skein/harnesses.clj"
-                           ".skein/attention.clj" ".skein/nvd_scan.clj" ".skein/reviewers.clj"]}
+                           ".skein/kanban_tracker.clj" ".skein/attention.clj" ".skein/nvd_scan.clj" ".skein/reviewers.clj"]}
   :lint/clj-kondo {:extra-deps {clj-kondo/clj-kondo {:mvn/version "2025.06.05"}}
-                   :main-opts ["-m" "clj-kondo.main" "--lint" "src" "spools/batteries/src" "spools/workflow/src" "spools/ephemeral/src" "spools/roster/src" "spools/loom/src" "spools/carder/src" "spools/text-search/src" "spools/bobbin/src" "spools/guild/src" "spools/selvage/src" "test"]}
+                   :main-opts ["-m" "clj-kondo.main" "--lint" "src" "spools/batteries/src" "spools/workflow/src" "spools/text-search/src" "spools/guild/src" "test"]}
+  :lint/conventions {:extra-paths ["scripts"]
+                     :extra-deps {clj-kondo/clj-kondo {:mvn/version "2025.06.05"}}
+                     :main-opts ["-m" "quality.conventions-check"]}
   :lint/splint {:extra-deps {io.github.noahtheduke/splint {:mvn/version "1.21.0"}}
-                :main-opts ["-m" "noahtheduke.splint" "--output" "clj-kondo" "src" "spools/batteries/src" "spools/workflow/src" "spools/ephemeral/src" "spools/roster/src" "spools/loom/src" "spools/carder/src" "spools/text-search/src" "spools/bobbin/src" "spools/guild/src" "spools/selvage/src" "test"]}
-  :reflect-check {:extra-paths ["scripts" "spools/workflow/src" "spools/ephemeral/src" "spools/roster/src" "spools/loom/src" "spools/carder/src" "spools/text-search/src" "spools/bobbin/src" "spools/guild/src" "spools/selvage/src" "spools/agent-run/src" "spools/delegation/src" "spools/chime/src" "spools/cron/src" "spools/bench/src"]
+                :main-opts ["-m" "noahtheduke.splint" "--output" "clj-kondo" "src" "spools/batteries/src" "spools/workflow/src" "spools/text-search/src" "spools/guild/src" "test"]}
+  :reflect-check {:extra-paths ["scripts" "spools/workflow/src" "spools/text-search/src" "spools/guild/src" "spools/chime/src" "spools/cron/src"]
                   :jvm-opts ["--enable-native-access=ALL-UNNAMED" "-Dclojure.compiler.direct-linking=true"]
                   :main-opts ["-m" "quality.reflect-check"]}
   :deps/antq {:extra-deps {com.github.liquidz/antq {:mvn/version "2.11.1276"}}

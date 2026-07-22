@@ -6,31 +6,31 @@
 (def spool-docs
   [{:name "batteries" :source "spools/batteries/src/skein/spools/batteries.clj" :outfile "spools/batteries.api.md"}
    {:name "workflow" :source "spools/workflow/src/skein/spools/workflow.clj" :outfile "spools/workflow.api.md"}
-   {:name "ephemeral" :source "spools/ephemeral/src/skein/spools/ephemeral.clj" :outfile "spools/ephemeral.api.md"}
    {:name "guild" :source "spools/guild/src/skein/spools/guild.clj" :outfile "spools/guild.api.md"}
-   {:name "bobbin" :source "spools/bobbin/src/skein/spools/bobbin.clj" :outfile "spools/bobbin.api.md"}
-   {:name "selvage" :source "spools/selvage/src/skein/spools/selvage.clj" :outfile "spools/selvage.api.md"}
-   {:name "carder" :source "spools/carder/src/skein/spools/carder.clj" :outfile "spools/carder.api.md"}
-   {:name "roster" :source "spools/roster/src/skein/spools/roster.clj" :outfile "spools/roster.api.md"}
-   {:name "loom" :source "spools/loom/src/skein/spools/loom.clj" :outfile "spools/loom.api.md"}
    {:name "text-search" :source "spools/text-search/src/skein/spools/text_search.clj" :outfile "spools/text-search.api.md"}
-   {:name "agent-run" :source "spools/agent-run/src/skein/spools/agent_run.clj" :outfile "spools/agent-run.api.md"}
-   {:name "delegation" :source "spools/delegation/src/skein/spools/delegation.clj" :outfile "spools/delegation.api.md"}
    {:name "shell" :source "spools/workflow/src/skein/spools/executors/shell.clj" :outfile "spools/executors/shell.api.md"}
-   {:name "subagent" :source "spools/agent-run/src/skein/spools/executors/subagent.clj" :outfile "spools/executors/subagent.api.md"}
    {:name "chime" :source "spools/chime/src/skein/spools/chime.clj" :outfile "spools/chime.api.md"}
-   {:name "cron" :source "spools/cron/src/skein/spools/cron.clj" :outfile "spools/cron.api.md"}
-   {:name "bench" :source "spools/bench/src/skein/spools/bench.clj" :outfile "spools/bench.api.md"}])
+   {:name "cron" :source "spools/cron/src/skein/spools/cron.clj" :outfile "spools/cron.api.md"}])
 
 ;; The blessed spool-facing API tier (SPEC-005.C2). Generated reference only —
 ;; the behavior contracts stay in the root specs.
 (def alpha-api-docs
-  (for [nm ["batch" "cli" "current" "events" "format" "graph" "hooks" "notes"
-            "patterns" "peers" "relations" "runtime" "scheduler" "spool" "views"
-            "vocab" "weaver"]]
-    {:name nm
-     :source (str "src/skein/api/" nm "/alpha.clj")
-     :outfile (str "docs/api/" nm ".api.md")}))
+  (concat
+   (for [nm ["batch" "cli" "clock" "current" "events" "format" "graph" "hooks"
+             "notes" "patterns" "peers" "registry" "relations" "return-shape"
+             "runtime" "scheduler" "spool" "vocab" "weaver"]]
+     {:name nm
+      :source (str "src/skein/api/" (if (= nm "return-shape") "return_shape" nm) "/alpha.clj")
+      :outfile (str "docs/api/" nm ".api.md")})
+   [{:name "runtime-glossary"
+     :source "src/skein/api/runtime/glossary/alpha.clj"
+     :outfile "docs/api/runtime-glossary.api.md"}
+    {:name "runtime-help-transform"
+     :source "src/skein/api/runtime/help_transform/alpha.clj"
+     :outfile "docs/api/runtime-help-transform.api.md"}
+    {:name "test"
+     :source "src/skein/test/alpha.clj"
+     :outfile "docs/api/test.api.md"}]))
 
 (doseq [{:keys [source outfile]} (concat spool-docs alpha-api-docs)]
   (quickdoc/quickdoc

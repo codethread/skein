@@ -6,8 +6,23 @@
 Explicit-runtime API for trusted weaver runtime loader/config workflows.
 
   Callers own runtime selection and pass the target weaver runtime as the first
-  argument. Use `skein.api.current.alpha/runtime` only at trusted in-process entry
-  points that need to capture the active runtime.
+  argument. Use `skein.api.current.alpha/runtime` only at trusted in-process
+  entry points that need to capture the active runtime.
+
+  The module reads as the live-image lifecycle: read the approved/declared
+  config (`approved`, `declared`, `release-marker`), edit the primary
+  `spools.edn` (`upsert-spool-entry!`, `remove-spool-entry!`), declare stable
+  modules (`module!`), reconcile the running image against them (`refresh!`,
+  with `plan` its effect-free dry-run), inspect the joined offline picture
+  (`status`), reach for the advanced code-only seam (`reload-code!`), and serve
+  runtime-owned state and time to trusted spools (`spool-state`, `clock`, `now`).
+
+  `module!`/`refresh!`/`plan`/`status`/`reload-code!` are the lifecycle surface:
+  declarations are data, refresh replaces owner-complete contributions and
+  reconciles resources without stopping the live image, and `reload-code!` is
+  the sharp code-only tool. Component sub-specs live in
+  `skein.api.runtime.internal.shapes`; every registered key stays
+  alpha-qualified.
 
 
 
@@ -19,7 +34,63 @@ Explicit-runtime API for trusted weaver runtime loader/config workflows.
 Function.
 
 Return the normalized approved spool roots for `runtime`'s config dir.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L63-L66">Source</a></sub></p>
+
+  Each root entry includes `:provenance :spools-edn|:local-overlay`; overlay
+  entries also include their explicit `:claims` marker. `:families` maps family
+  symbols to the declared `spools.edn` entry, effective post-overlay coordinate,
+  provenance, and overlay claim or nil. The result conforms to
+  `::approved-result`.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L47-L57">Source</a></sub></p>
+
+## <a name="skein.api.runtime.alpha/clock">`clock`</a>
+``` clojure
+(clock runtime)
+```
+Function.
+
+Return `runtime`'s installed `skein.api.clock.alpha/Clock`.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L358-L361">Source</a></sub></p>
+
+## <a name="skein.api.runtime.alpha/declared">`declared`</a>
+``` clojure
+(declared runtime)
+(declared runtime running-marker)
+```
+Function.
+
+Return declared spool families with release-floor validation as data.
+
+  `:families` has the same declared/effective projection as `approved`.
+  `:requirements` is valid with pending validations, or invalid with findings
+  and bump suggestions. Stage-1 structural errors still throw. The explicit
+  `running-marker` arity accepts nil to leave Skein floor checks pending. The
+  result conforms to `::declared-result`.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L63-L75">Source</a></sub></p>
+
+## <a name="skein.api.runtime.alpha/module!">`module!`</a>
+``` clojure
+(module! runtime key opts)
+```
+Function.
+
+Declare one stable runtime module under keyword `key` for `runtime`.
+
+  `opts` is closed to a source target (`:ns` synced namespace symbol, or
+  workspace-relative `:file` string — exactly one is required), optional
+  approved `:spools` root prerequisites, optional module-key `:after`
+  dependencies, an optional fully qualified `:contribute` symbol, an optional
+  fully qualified `:reconcile` symbol, and an optional boolean `:required?`.
+  When `:contribute` is omitted the module's contribution is the declaration
+  data collected from the authoring forms evaluated in its source, so a plain
+  file of authoring forms is a complete module (DELTA-OlrRepl-001.CC3).
+
+  During startup-file collection this only stages the declaration and performs
+  no source load, publication, or reconcile. Outside collection it replaces the
+  desired declaration for `key` and refreshes that module plus affected
+  dependents (CC4). Whole-module removal is expressed by omitting the module
+  from a successfully collected full graph, not here. Malformed declarations
+  fail loudly. The staged or refreshed result conforms to `::module-result`.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L241-L261">Source</a></sub></p>
 
 ## <a name="skein.api.runtime.alpha/now">`now`</a>
 ``` clojure
@@ -31,49 +102,101 @@ Return the current java.time.Instant from `runtime`'s clock seam.
 
   Defaults to the real wall clock; deterministic tests inject an advanceable
   clock through `skein.test.alpha/set-clock!`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L127-L133">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L367-L373">Source</a></sub></p>
 
-## <a name="skein.api.runtime.alpha/reload!">`reload!`</a>
+## <a name="skein.api.runtime.alpha/plan">`plan`</a>
 ``` clojure
-(reload! runtime)
+(plan runtime)
+(plan runtime opts)
 ```
 Function.
 
-Reload startup files from `runtime`'s config dir after clearing registries.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L92-L95">Source</a></sub></p>
+Return the dry-run intentions of `refresh!` without publishing or reconciling.
 
-## <a name="skein.api.runtime.alpha/reload-spool!">`reload-spool!`</a>
+  `plan` and `(plan runtime {:only keys})` collect and diff against the current
+  synchronized roots without fetching, synchronizing, publishing, reconciling,
+  or recording coordinator state. They return a `::refresh-result`-shaped map
+  flagged `:dry-run? true` with a `:caveat`. The one honest caveat, stated in
+  the result and here: collection may load module source code and record that
+  load in the namespace ledger. Malformed options fail loudly. The result
+  conforms to `::plan-result` (DELTA-OlrRepl-001.CC14).
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L293-L307">Source</a></sub></p>
+
+## <a name="skein.api.runtime.alpha/refresh!">`refresh!`</a>
 ``` clojure
-(reload-spool! runtime coord)
+(refresh! runtime)
+(refresh! runtime opts)
 ```
 Function.
 
-Make `coord`'s latest synced source live in `runtime`.
+Reconcile `runtime`'s live image against its declared module graph.
 
-  `coord` is a `spools.edn` coordinate symbol (e.g. `skein.spools/kanban`) — a
-  spool is many namespaces and sync state is keyed by coordinate, not namespace.
-  Returns a data-first map naming the coordinate, its resolved canonical root, and
-  the namespaces reloaded in reload order with their source files.
+  The no-opts arity re-reads `init.clj`/`init.local.clj`, collects the complete
+  layered graph, and applies the Weaver Runtime refresh contract: it composes
+  approved-root synchronization, changed-source reload, contribution collection
+  and classification, owner-complete registry publication, and resource
+  reconciliation, leaving queued events, recent failures, and unrelated
+  spool-state live. `(refresh! runtime {:only keys})` refreshes a non-empty set
+  of known module keys and affected dependents against the active declaration
+  graph without re-reading startup files. Unknown option keys, an empty or
+  malformed `:only`, and unknown module keys fail loudly. Content-identical
+  staged contributions skip publication and reconcile. The atomic multi-phase
+  reconcile is the coordinator that startup also drives; this surface owns the
+  arities, request classification, and result validation. The joined result
+  conforms to `::refresh-result` (DELTA-OlrRepl-001.CC7).
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L267-L286">Source</a></sub></p>
 
-  Fills the gap neither existing reload path covers: `reload!` re-runs startup
-  files but does not unload already-loaded namespaces or vars, and a bare `(require
-  ns :reload)` is classloader-blind to per-spool synced roots — so neither picks up
-  updated synced spool code. `reload-spool!` does. It reloads code only and leaves
-  re-registration to the caller (a targeted re-`use!` of the spool's activation, or
-  a full `reload!` when the bump changes registrations across the config).
+## <a name="skein.api.runtime.alpha/release-marker">`release-marker`</a>
+``` clojure
+(release-marker runtime)
+```
+Function.
 
-  Redefinition semantics — this re-`load-file`s sources, rebinding vars in place;
-  it unloads nothing, so definitions minted before the reload are not migrated.
-  Concretely: a `defmulti` dispatch table survives (re-evaluating `defmulti` is a
-  no-op, so methods registered against the prior table stay and a changed dispatch
-  signature is not picked up), a re-evaluated `defprotocol` mints a fresh interface
-  so instances built before the reload no longer satisfy the new protocol
-  (`satisfies?`/`instance?` go false), and any instance or captured var from before
-  the reload keeps its old definition. A revision that deletes or renames a
-  namespace also leaves the old one loaded until restart.
+Return the running Skein release marker and its provenance.
 
-  Fails loudly on an unresolvable `coord`, carrying a `:reason` keyword in ex-data.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L97-L125">Source</a></sub></p>
+  The result has marker `vN` and provenance `:claimed` for an explicit startup
+  claim, marker `vN` and provenance `:tag` for an annotated tag on the source
+  checkout's HEAD, or `{:marker nil :provenance :none}` when the checkout
+  resource is absent or non-filesystem, or successful inspection finds no
+  matching annotated tag. Git startup, checkout-root resolution, and nonzero
+  Git command failures throw. Consumers that require marker arithmetic must
+  reject `:none` explicitly. The result conforms to
+  `:skein.core.specs/release-marker-result`; marker claims conform to
+  `:skein.core.specs/release-marker-claim`.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L83-L99">Source</a></sub></p>
+
+## <a name="skein.api.runtime.alpha/reload-code!">`reload-code!`</a>
+``` clojure
+(reload-code! runtime root-lib)
+```
+Function.
+
+Make `root-lib`'s current synced source live in dependency order (code only).
+
+  The advanced code-only seam: it loads the selected synced root's namespaces in
+  dependency order and records exact load-ledger entries, then classifies the
+  generation's loaded code against current source. It performs no module
+  contribution publication or resource reconciliation — use `refresh!` for the
+  normal path. `root-lib` is a root-lib symbol from a family's effective `:roots`
+  map (e.g. `skein.spools/kanban`); an unresolvable root fails loudly with a
+  `:reason` in ex-data. The result names the reloaded root, its canonical path,
+  the namespaces reloaded with their sources, and the residual and hard-conflict
+  outcomes from the post-reload classification, conforming to
+  `::reload-code-result` (DELTA-OlrRepl-001.CC9).
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L330-L350">Source</a></sub></p>
+
+## <a name="skein.api.runtime.alpha/remove-spool-entry!">`remove-spool-entry!`</a>
+``` clojure
+(remove-spool-entry! runtime lib)
+```
+Function.
+
+Remove `lib` from `runtime`'s primary `spools.edn`.
+
+  Refuses a missing family or a family whose root libs appear in another
+  family's `:requires`, naming all requirers. Inputs and result conform to
+  `::spool-family` and `::spool-write-result`. Only the primary file is changed.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L141-L168">Source</a></sub></p>
 
 ## <a name="skein.api.runtime.alpha/spool-state">`spool-state`</a>
 ``` clojure
@@ -90,74 +213,44 @@ Return runtime-owned state for a spool key, creating it with `init-fn` once.
   lifetime. Spools should use this accessor instead of reaching into runtime
   internals.
 
-  Spool state survives `reload!` by design, so a spool whose state shape changed
-  between deploys would otherwise silently reuse a preserved value that is
+  Spool state survives `refresh!` by design, so a spool whose state shape changed
+  between refreshes would otherwise silently reuse a preserved value that is
   missing the new keys. The four-arg arity guards against that: pass opts
   `{:version v :migrate-fn f}` and, when a preserved value's stored version does
   not `=` `version`, the runtime deliberately reinits (or, with `:migrate-fn`,
   hands the old value to `f` to produce the new one) instead of reusing a
   shape-mismatched map. Silent reuse of shape-mismatched state is impossible
-  once a version is declared. A malformed opts map fails loudly at the call site
-  (see `validate-spool-state-opts!`) rather than degrading to the unversioned
-  path.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L353-L406">Source</a></sub></p>
+  once a version is declared. Opts conform to
+  `:skein.api.runtime.alpha/spool-state-opts`; a malformed map fails loudly at
+  the call site rather than degrading to the unversioned path.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L392-L446">Source</a></sub></p>
 
-## <a name="skein.api.runtime.alpha/sync!">`sync!`</a>
+## <a name="skein.api.runtime.alpha/status">`status`</a>
 ``` clojure
-(sync! runtime)
+(status runtime)
 ```
 Function.
 
-Load approved spool roots and Maven jars into `runtime`.
+Return `runtime`'s offline, read-only joined module status.
 
-  Returns `{:spools ...}` plus `:retained-spool-state` when preserved spool-state
-  entries are from an older or unknown generation. Refuses non-additive diffs,
-  including Maven version changes for already-loaded coordinates, by throwing
-  ExceptionInfo with `:reason :non-additive-sync-diff`, `:diff`,
-  `:pending-generation`, and `:remedy`; later successful calls include the
-  pending generation until the weaver process is replaced.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L68-L82">Source</a></sub></p>
+  Reports desired modules and their declaration layers/shadows, active
+  contributions, module and resource outcomes, root outcomes, and the joined
+  loaded-code picture (current bindings, prior bindings, residuals, hard
+  conflicts) with the last refresh result. It performs no network access, file
+  write, source load, registration, or reconcile. The result conforms to
+  `::status-result` (DELTA-OlrRepl-001.CC8, DELTA-OlrDrt-001.CC15).
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L314-L324">Source</a></sub></p>
 
-## <a name="skein.api.runtime.alpha/syncs">`syncs`</a>
+## <a name="skein.api.runtime.alpha/upsert-spool-entry!">`upsert-spool-entry!`</a>
 ``` clojure
-(syncs runtime)
+(upsert-spool-entry! runtime lib entry)
 ```
 Function.
 
-Return `runtime`'s most recent approved-root sync state.
+Insert or replace `lib` in `runtime`'s primary `spools.edn`.
 
-  The result is `{:spools ...}` and may include the latest recorded
-  `:pending-generation` from a refused non-additive sync diff.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L84-L90">Source</a></sub></p>
-
-## <a name="skein.api.runtime.alpha/use">`use`</a>
-``` clojure
-(use runtime key)
-```
-Function.
-
-Return one module-use registry entry from `runtime` by key.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L258-L261">Source</a></sub></p>
-
-## <a name="skein.api.runtime.alpha/use!">`use!`</a>
-``` clojure
-(use! runtime key opts)
-```
-Function.
-
-Load a runtime module and record its module-use state under keyword key.
-
-  Opts load either a synced namespace via `:ns` or a file via `:file`, and may
-  include `:call` to invoke a no-arg function after load. Returns a registry
-  entry with status `:loaded`, `:skipped`, or `:failed`; failed required uses
-  rethrow after recording failure metadata.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L211-L251">Source</a></sub></p>
-
-## <a name="skein.api.runtime.alpha/uses">`uses`</a>
-``` clojure
-(uses runtime)
-```
-Function.
-
-Return `runtime`'s module-use registry as data-first maps.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L253-L256">Source</a></sub></p>
+  `lib` and `entry` conform to `::spool-family` and `::spool-entry`. The full
+  post-edit config is validated through sync's stage-1 contract before an atomic
+  write. Only the `:spools` map is rewritten, so comments outside it are kept.
+  The result conforms to `::spool-write-result`.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L116-L135">Source</a></sub></p>

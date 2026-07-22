@@ -20,7 +20,7 @@ Skein's current direct `strand -> per-world weaver socket` model makes users rem
 - **PROP-MillRouterRuntime-001.NG2:** No semantic payload handling in `mill`; it does not inspect strand mutation/query bodies beyond routing metadata.
 - **PROP-MillRouterRuntime-001.NG3:** No automatic ordinary-command weaver autostart. If a selected repo has no running weaver, ordinary strand commands fail with remediation to run `strand weaver start`.
 - **PROP-MillRouterRuntime-001.NG4:** No cross-repo query, aggregate dashboard, or active-weaver listing requirement for MVP.
-- **PROP-MillRouterRuntime-001.NG5:** No backwards compatibility for existing repo-local `.skein/state` or `.skein/data` runtime artifacts under TEN-000.
+- **PROP-MillRouterRuntime-001.NG5:** No backwards compatibility for existing repo-local `.skein/state` or `.skein/data` runtime artifacts under TEN-000@1.
 
 ## PROP-MillRouterRuntime-001.P4 Proposed scope
 

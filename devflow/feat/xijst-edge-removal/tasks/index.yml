@@ -1,0 +1,16 @@
+tasks:
+  - id: 1
+    description: Implement exact edge removal and core transitions
+    task_file: tasks/001-implement-edge-removal-core.md
+    status: complete
+    blocked_by: []
+  - id: 2
+    description: Prove public hook event and API contract
+    task_file: tasks/002-prove-public-batch-contract.md
+    status: complete
+    blocked_by: [1]
+  - id: 3
+    description: Promote spec and finish user documentation
+    task_file: tasks/003-promote-spec-and-docs.md
+    status: complete
+    blocked_by: [2]

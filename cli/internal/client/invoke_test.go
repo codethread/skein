@@ -46,6 +46,51 @@ func TestRelaySingleSuccessDoesNotHTMLEscapeResult(t *testing.T) {
 	}
 }
 
+func TestRelaySingleVerbatimPrintsRawText(t *testing.T) {
+	// A default help transform's output rides back as a `verbatim` frame whose
+	// result is a JSON string; the relay prints the decoded text raw, never as a
+	// JSON-quoted string (DELTA-Dtf-002.CC1).
+	frame := `{"protocol_version":1,"request_id":"r1","ok":true,"result":"RENDERED add: usage <id>","error":null,"verbatim":true}` + "\n"
+	out, er, code := relay(t, frame)
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d (stderr=%q)", code, er)
+	}
+	if out != "RENDERED add: usage <id>\n" {
+		t.Fatalf("verbatim result must relay raw text with a trailing newline, got %q", out)
+	}
+	if strings.Contains(out, `"`) {
+		t.Fatalf("verbatim text must not be JSON-quoted, got %q", out)
+	}
+	if er != "" {
+		t.Fatalf("expected empty stderr, got %q", er)
+	}
+}
+
+func TestRelaySingleVerbatimPreservesExistingTrailingNewline(t *testing.T) {
+	// The transform's string already ends in a newline; the relay must not double
+	// it (byte-faithful, mirroring the stream relay).
+	frame := `{"protocol_version":1,"request_id":"r1","ok":true,"result":"line one\nline two\n","error":null,"verbatim":true}` + "\n"
+	out, _, code := relay(t, frame)
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d", code)
+	}
+	if out != "line one\nline two\n" {
+		t.Fatalf("verbatim relay must preserve the string's own trailing newline, got %q", out)
+	}
+}
+
+func TestRelaySingleNonVerbatimStringStaysJSON(t *testing.T) {
+	// A normal op that legitimately returns a JSON string value keeps canonical
+	// JSON relay: the verbatim path must not blanket-unquote every string result.
+	out, _, code := relay(t, `{"protocol_version":1,"request_id":"r1","ok":true,"result":"plain","error":null}`+"\n")
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d", code)
+	}
+	if strings.TrimSpace(out) != `"plain"` {
+		t.Fatalf("a non-verbatim string result must relay as JSON, got %q", out)
+	}
+}
+
 func TestRelaySingleErrorGoesToStderrNonZero(t *testing.T) {
 	frame := `{"protocol_version":1,"request_id":"r1","ok":false,"result":null,"error":{"type":"domain","code":"op/not-found","message":"Operation not found","details":{"available":["add","list"]}}}` + "\n"
 	out, er, code := relay(t, frame)

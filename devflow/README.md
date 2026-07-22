@@ -4,23 +4,27 @@ Active feature work is tracked on the kanban board and as devflow workflow runs 
 
 Always study [TENETS](./TENETS.md) and [PHILOSOPHY](./PHILOSOPHY.md). No code, spec or idea can violate these unless explicitly stated and cited in an agreed RFC first.
 
+[RFCs](./rfcs/) propose work that then ships; [ADRs](./adrs/) record a decision reached, including a decision to keep a tenet and *not* build something.
+
 ## Root specs
 
 Root specs are canonical for shipped behavior:
 
 - [Strand Model](./specs/strand-model.md) — strand records, state lifecycle, burn deletion, JSON attributes, relation semantics, and readiness rules.
 - [CLI Surface](./specs/cli.md) — the op-only public CLI: the `strand` invoke-envelope dispatcher (zero builtin subcommands), the `mill` router/bootstrap/lifecycle surface, and NDJSON single/stream response relay; per-command behavior lives in `spools/batteries.md`.
-- [REPL API](./specs/repl-api.md) — interactive Clojure helper contract, including connected REPL, runtime spool workspace helpers, lifecycle hook helpers, and the `skein.test.alpha` author-side weaver-world test helpers.
-- [Weaver Runtime](./specs/daemon-runtime.md) — local long-lived weaver lifecycle, storage model with schema generations and the forward-migration contract, metadata, transports, trusted startup config, query registry, runtime spool workspace model, and synchronous lifecycle hooks.
+- [REPL API](./specs/repl-api.md) — interactive Clojure helper contract, including recursive arg-spec and return trees, connected REPL, runtime spool workspace helpers, lifecycle hook helpers, and the `skein.test.alpha` author-side weaver-world test helpers.
+- [Weaver Runtime](./specs/daemon-runtime.md) — local long-lived weaver lifecycle, storage model with schema generations and the forward-migration contract, leaf-resolved operation metadata and hook gates, transports, trusted startup config, query registry, runtime spool workspace model, and synchronous lifecycle hooks.
 - [Alpha Surface](./specs/alpha-surface.md) — the contract index drawing the line around shipped alpha surface: which tiers are in-contract (root specs, blessed API namespaces, opt-in reference spool docs) and which surface is explicitly internal (mill socket protocol, unenumerated error codes, `skein.core.*`).
 
 ## Active features
 
-_No active features currently._
+- `tz0ki-discovery-tiers` — reworks the discovery surface around one canonical, versioned, fractal help envelope (`help`/`about`/`prime` meta-verbs, a runtime glossary of named failure outcomes, a config-electable default help transform with a `--json` raw floor, and a trailing-`--help` grammar). Contracts promoted into `cli.md` (SPEC-002.C39/C44–C47), `daemon-runtime.md` (SPEC-004.C106–C112), and `repl-api.md` (SPEC-003.C66–C69); awaiting finish/archive.
+- `8wwjk-leaf-hook-class` — promotes mandatory per-leaf hook and deadline classes, recursive arity-N subcommands, recursive return routing, and deep help slicing into the root specs; adoption work remains in the feature tasks.
 
 ## Archived features
 
 Archived feature folders preserve historical planning context. Current shipped contracts are the root specs above, even if older archive notes describe pre-spec documentation locations.
+Default `rg` searches skip `archive/`; use `rg --no-ignore devflow/archive` when you need those records.
 
 - `26-06-24__agent-tool-interface` — shipped agent-operable CLI/REPL interface for the todo graph MVP.
 - `26-06-24__db-owned-task-ids` — shipped generated task ids and creation-time `--link` edges.
@@ -30,7 +34,7 @@ Archived feature folders preserve historical planning context. Current shipped c
 - `26-06-25__go-cli-migration` — shipped native Go `todo` CLI over the daemon JSON Unix socket, with JSON-only machine output and Clojure REPL/config retained for rich workflows.
 - `26-06-25__user-daemon-home` — shipped config-dir daemon worlds, fixed selected-world socket discovery, default daemon init, and connected REPL/stdin UX.
 - `26-06-25__runtime-plugin-system` — shipped an earlier trusted local plugin/library MVP. Its public `load-plugin!` and plugin metadata surface has been superseded by the runtime spool workspace model in the canonical root specs.
-- `26-06-26__runtime-library-workspace` — shipped config-dir Clojure library workspaces with `libs.edn`, approved local roots, daemon-side `atom.libs.alpha/sync!` and `use!`, module-use introspection, and replacement of the plugin-directory public extension API.
+- `26-06-26__runtime-library-workspace` — shipped the superseded config-dir Clojure library workspace model with `libs.edn`, approved local roots, daemon-side acquisition and activation, and replacement of the plugin-directory public extension API.
 - `26-06-26__runtime-transformation-primitives` — shipped built-in `atom.graph.alpha` / `atom.views.alpha` helpers for set-oriented graph/query composition and daemon-memory read-only views.
 - `26-06-26__remove-legacy-clojure-cli` — shipped removal of the legacy `skein.cli` Clojure CLI entrypoint, its tests, and stale spec references, leaving the Go `strand` binary as the sole scripted CLI.
 - `26-06-26__skein-rename` — shipped Skein/strand/weaver rename, strand model lifecycle/retention, `strand` CLI, and `skein.*` namespaces.
@@ -40,7 +44,7 @@ Archived feature folders preserve historical planning context. Current shipped c
 - `26-06-28__cli-attribute-inputs` — shipped file, stdin, and bulk JSON attribute input sources for `strand add`.
 - `26-06-28__batch-graph-upsert` — shipped transactional trusted Clojure batch graph mutation primitive with local refs, create/update/burn/edge upsert support, weaver events, and `skein.api.batch.alpha/apply!`.
 - `26-06-29__edge-relation-families` — shipped state lifecycle model, declared acyclic relation families, core supersession, edge predicates, relation-scoped traversal, and annotation catalog.
-- `26-07-03__library-author-testing-support` — shipped weaver storage handles with real in-memory SQLite for trusted tests, explicit storage metadata/status, the `skein.test.alpha` author-side weaver-world helpers, and `docs/library-authoring.md`.
+- `26-07-03__library-author-testing-support` — shipped weaver storage handles with real in-memory SQLite for trusted tests, explicit storage metadata/status, the `skein.test.alpha` author-side weaver-world helpers, and `docs/spools/testing.md`.
 - `26-06-29__repo-first-config` — shipped repo-local `.skein` world selection, layered shared/local config, local extension overrides, and fail-loud no-global default behavior.
 - `26-06-29__weaver-lifecycle-hooks` — shipped synchronous trusted lifecycle hooks for payload gating, attribute normalization, and pre-commit mutation policy.
 - `26-06-30__mill-router-runtime` — shipped local Go `mill` router/supervisor, mill-routed `strand` commands, Git-root repo bootstrap, XDG runtime/data worlds, startup storage initialization, and connected REPL attachment through mill metadata.
@@ -60,14 +64,13 @@ Archived feature folders preserve historical planning context. Current shipped c
 - `26-07-02__docs-pass-review` — archived approved documentation review notes.
 - `26-07-02__weaver-guild` — shipped local weaver peering: portable config-declared weaver names, `skein.api.peers.alpha` discovery/`call!` client, and the `skein.spools.guild` op-declaration spool.
 - `26-07-03__agents-spool` — shipped the `skein.spools.agents` spool owning the full `strand agent` delegation surface (delegate/retry/status/plan) over the pure shuttle engine, with repo `.skein/config.clj` shrunk to genuine workspace tuning.
-- `26-07-03__spool-git-distribution` — shipped registry-free git spool distribution (RFC-017): sha-pinned `:git` coordinates in `spools.edn`, content-addressed fetch cache with verified tag labels, and explicit `use!` activation. Its original optional metadata-file gating was superseded by the Maven-only spool contract.
+- `26-07-03__spool-git-distribution` — shipped registry-free git spool distribution (RFC-017): sha-pinned `:git` coordinates in `spools.edn`, content-addressed fetch cache with verified tag labels, and explicit activation. Its original optional metadata-file gating was superseded by the Maven-only spool contract.
 - `26-07-04__op-only-cli` — shipped RFC-019: removed all builtin strand commands and the `op` prefix; `strand` became a pure invoke-envelope dispatcher with named payloads and stream relay, `mill` absorbed init/weaver lifecycle/repl, the shipped command surface moved to the `skein.spools.batteries` spool over the new blessed `skein.api.cli.alpha` parser, and the socket collapsed to `invoke` + minimal `status` with op-metadata deadlines and hook gating.
-- `26-07-04__spool-contract` — shipped the minimal spool contract: retired the `spool.edn` manifest (README Dependency information / Activation snippets replace it; RFC-018 rejected as mooted), strengthened required `use!` to throw on `:not-approved`/`:not-synced`/`:sync-failed`, and allowed uniform Maven-only spool `deps.edn :deps` resolved via sync-time `add-libs`.
+- `26-07-04__spool-contract` — shipped the minimal spool contract: retired the `spool.edn` manifest (README dependency information and activation snippets replaced it; RFC-018 was rejected as mooted), made required activation fail loudly on unavailable roots, and allowed uniform Maven-only spool `deps.edn :deps` resolved during acquisition.
 - `26-07-05__review-fanout` — shipped the declarative reviewer roster: spec-defined roster data (`.skein/reviewers.clj`), `defroster!`/`rosters`, `agent review --roster` fan-out with per-reviewer contracts/scopes, review-pass tags, and the public `roster-review-specs` composition seam for workflow authors.
 - `26-07-05__op-help-convention` — shipped the op help invocation convention: `<op> help|-h|--help` alias for subcommand-declaring ops resolved before hook gating, reserved help tokens, byte-faithful CLI JSON (stdout + stderr details), and the kanban op migrated to declared `:subcommands`.
 - `26-07-05__argspec-subcommands` — shipped declarative `:subcommands` in the blessed arg-spec DSL: parser-owned routing with loud missing/unknown errors, registration-time structural validation, `strand help <op>` subcommand rendering, and batteries `query`/`pattern` migrated off the fake subcommand positional.
 - `26-07-05__agent-panels` — shipped shuttle session continuation (`:resume` harness splice over captured session ids, `retry --fresh`, persistence-friendly harness defaults that never require persistence) and the panel primitive (seats × blackboard × turn wiring × synthesis compiled from spec'd data; turn-as-run barriers), with `review!`/`council!` as presets — cross-vendor councils, per-seat continuity, poll-loop prompts deleted.
-- `26-07-05__roster-spool` — shipped the `skein.spools.roster` reference spool: canonical `roster/*` active-work vocabulary, register/heartbeat/finish/list/await helpers, a `strand roster` surface, and loud stale-entry surfacing that never auto-burns entries.
 - `26-07-05__weaver-scheduler` — shipped the weaver-owned scheduler primitive: durable `wake-at` records in dedicated SQLite tables, startup/reload re-arming, fully-qualified-symbol handler resolution, at-least-once serialized async dispatch, and data-first introspection.
-- `26-07-09__deterministic-test-time` — shipped two test-time control seams — a runtime-owned clock component (`skein.api.runtime.alpha/now` read, `skein.test.alpha/set-clock!`/`advance!` controls, and a clock-pump registry `advance!` drives) and an `skein.api.events.alpha/await-quiescent!` event-lane settle primitive — collapsed the scheduler onto the shared runtime clock, migrated the timer/event serial suites onto the seams, and graduated them from the serial island to the parallel batch.
+- `26-07-09__deterministic-test-time` — shipped two test-time control seams — a runtime-owned clock component (`skein.api.runtime.alpha/now` read, `skein.test.alpha/set-clock!`/`advance!` controls, and a clock-pump registry `advance!` drives) and an `skein.test.alpha/await-quiescent!` event-lane settle primitive — collapsed the scheduler onto the shared runtime clock, migrated the timer/event serial suites onto the seams, and graduated them from the serial island to the parallel batch.
 - `26-07-22__r85t4-sqlite-schema-story` — shipped the SQLite schema-generation contract: `PRAGMA user_version` stamping with adoption of unstamped worlds, a canonical two-mode structural validator behind `init!`, diagnostic refusals in both skew directions, and the maintained forward-migration ladder contract (SPEC-004.C91b–C91d) with executable ladder machinery deferred to the first real generation bump.

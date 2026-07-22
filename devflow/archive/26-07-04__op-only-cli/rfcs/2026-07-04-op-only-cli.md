@@ -1,6 +1,6 @@
 # Op-only CLI: root-level op dispatch, batteries spool, invoke envelope
 
-**Document ID:** `RFC-019` **Status:** Open **Date:** 2026-07-04 **Related:** [CLI Surface](../specs/cli.md) (SPEC-002), [REPL API](../specs/repl-api.md), [Weaver Runtime](../specs/daemon-runtime.md), [TENETS](../TENETS.md) (TEN-000/001/003/004/006), [PHILOSOPHY](../PHILOSOPHY.md), `src/skein/core/weaver/socket.clj` (allowlist + dispatch case), `src/skein/api/weaver/alpha.clj` (`register-op!`, `register-built-in-ops!`)
+**Document ID:** `RFC-019` **Status:** Open **Date:** 2026-07-04 **Related:** [CLI Surface](../specs/cli.md) (SPEC-002), [REPL API](../specs/repl-api.md), [Weaver Runtime](../specs/daemon-runtime.md), [TENETS](../TENETS.md) (TEN-000@1/001/003/004/006), [PHILOSOPHY](../PHILOSOPHY.md), `src/skein/core/weaver/socket.clj` (allowlist + dispatch case), `src/skein/api/weaver/alpha.clj` (`register-op!`, `register-built-in-ops!`)
 
 ## RFC-019.P1 Problem
 
@@ -8,7 +8,7 @@ The strand surface has two parallel dispatch tiers. Shipped commands (`add`, `up
 
 The shipped surface therefore bypasses the extension model it ships, and every new capability is a Go binary release plus protocol accretion rather than a spool change. PHILOSOPHY.md claims the Emacs shape — tiny core, everything else loadable — but the command surface does not have it. Discovery is likewise split three ways (`op help`, `query explain`, `pattern explain`) with three metadata shapes.
 
-TEN-000 applies: no migration or compatibility shims are in scope.
+TEN-000@1 applies: no migration or compatibility shims are in scope.
 
 ## RFC-019.P2 Goals
 
@@ -26,7 +26,7 @@ TEN-000 applies: no migration or compatibility shims are in scope.
 - **RFC-019.NG2:** No stream-in / bidirectional session protocol. Requests stay one bounded envelope (RFC-019.REC4).
 - **RFC-019.NG3:** No output shaping: no `--format`, `--quiet`, or pretty rendering. JSON/NDJSON only (TEN-001, SPEC-002.C4 carried forward).
 - **RFC-019.NG4:** No hook bypass flags, ever. Received-payload hooks remain the trust surface.
-- **RFC-019.NG5:** No compatibility layer for the removed builtin commands or the `op` prefix (TEN-000).
+- **RFC-019.NG5:** No compatibility layer for the removed builtin commands or the `op` prefix (TEN-000@1).
 
 ## RFC-019.P4 Design
 
@@ -121,6 +121,6 @@ Op registration accretes a metadata map designed once, alongside the parser arg-
 
 - **RFC-019.C1:** SPEC-002 is rewritten: it shrinks to the dispatcher contract (flags, envelope, framing, precedence) plus a new/expanded mill spec section for `init` and `weaver *`. Per-command contracts move to `spools/batteries.md`. SPEC-004 (Weaver Runtime) accretes the invoke envelope, response framing, op metadata classes, `replace-op!`, and registry provenance.
 - **RFC-019.C2:** `cli/` deletes the strand Cobra command tree in favor of dispatcher flag parsing + envelope assembly; `skein.core.weaver.socket` deletes the allowlist and `dispatch` case.
-- **RFC-019.C3:** Repo config and docs drop the `op` prefix everywhere: `strand op agent delegate` → `strand agent delegate`, `strand op devflow-start` → `strand devflow-start`, `strand op backlog add` → `strand backlog add`. CLAUDE.md, `.agents/skills/strand/SKILL.md`, spool docs, and the devflow spool's emitted instructions all update (TEN-000: hard cutover, no aliases).
+- **RFC-019.C3:** Repo config and docs drop the `op` prefix everywhere: `strand op agent delegate` → `strand agent delegate`, `strand op devflow-start` → `strand devflow-start`, `strand op backlog add` → `strand backlog add`. CLAUDE.md, `.agents/skills/strand/SKILL.md`, spool docs, and the devflow spool's emitted instructions all update (TEN-000@1: hard cutover, no aliases).
 - **RFC-019.C4:** Received-payload hooks gate on op name + envelope; the read/mutating distinction becomes op-metadata-declared (D7) rather than a fixed protocol list (SPEC-002.C24 superseded).
 - **RFC-019.C5:** Version skew between Go bin and weaver reduces to envelope protocol version; command-surface evolution no longer requires binary releases.

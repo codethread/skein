@@ -25,7 +25,15 @@ type MillMetadata struct {
 	StateRoot       string `json:"state_root"`
 	SocketPath      string `json:"socket_path"`
 	StartedAt       string `json:"started_at"`
+	// MillBuild is the writing mill's config.BuildID; absent in metadata from
+	// builds that predate stamping, so it never joins the required-field set.
+	MillBuild string `json:"mill_build,omitempty"`
 }
+
+// ErrMillProtocolMismatch marks metadata written by a live mill speaking a
+// different mill protocol than this binary: the fix is version alignment, so
+// callers must not append the generic "start one with: mill start" remedy.
+var ErrMillProtocolMismatch = errors.New("mill protocol mismatch")
 
 type MillRequest struct {
 	ProtocolVersion int              `json:"protocol_version"`
@@ -42,6 +50,7 @@ type MillWorldRequest struct {
 	Source         string `json:"source,omitempty"`
 	Name           string `json:"name,omitempty"`
 	ReadyTimeoutMs int64  `json:"ready_timeout_ms,omitempty"`
+	Stealth        bool   `json:"stealth,omitempty"`
 }
 
 type MillResponse struct {
@@ -118,6 +127,9 @@ func MillCallPayload(operation string, world MillWorldRequest, payload map[strin
 func ReadMillMetadata() (MillMetadata, error) {
 	metadata, err := readMillMetadata()
 	if err != nil {
+		if errors.Is(err, ErrMillProtocolMismatch) {
+			return MillMetadata{}, err
+		}
 		return MillMetadata{}, fmt.Errorf("%w; start one with: mill start", err)
 	}
 	return metadata, nil
@@ -155,8 +167,8 @@ func readMillMetadata() (MillMetadata, error) {
 	if err != nil {
 		return MillMetadata{}, err
 	}
-	if m.ProtocolVersion != MillProtocolVersion || m.PID == 0 || m.MillID == "" || m.StateRoot == "" || m.SocketPath == "" || m.StartedAt == "" {
-		return MillMetadata{}, errors.New("malformed mill metadata: missing required fields")
+	if missing := missingMetadataFields(m); len(missing) > 0 {
+		return MillMetadata{}, fmt.Errorf("malformed mill metadata: missing required fields %v in %s", missing, file)
 	}
 	if !samePath(m.StateRoot, root) {
 		return MillMetadata{}, fmt.Errorf("mill metadata state root mismatch: %s", m.StateRoot)
@@ -167,5 +179,47 @@ func readMillMetadata() (MillMetadata, error) {
 	if !pidAlive(m.PID) {
 		return MillMetadata{}, fmt.Errorf("stale mill metadata: pid %d is not alive", m.PID)
 	}
+	// Checked after pidAlive so the message can truthfully say the mill is
+	// running: this is version skew, not an absent or stale mill.
+	if m.ProtocolVersion != MillProtocolVersion {
+		return MillMetadata{}, fmt.Errorf(
+			"%w: the running mill (pid %d, build %s) wrote %s with mill protocol v%d, but this strand (build %s) speaks v%d; rebuild strand from the running mill's checkout, or restart mill from this build",
+			ErrMillProtocolMismatch, m.PID, buildLabel(m.MillBuild), file, m.ProtocolVersion, buildLabel(config.BuildID), MillProtocolVersion)
+	}
 	return m, nil
+}
+
+// missingMetadataFields names required metadata fields carrying zero values.
+// A zero protocol version is a missing field; a non-zero, non-matching one is
+// the ErrMillProtocolMismatch case decided after liveness.
+func missingMetadataFields(m MillMetadata) []string {
+	var missing []string
+	if m.ProtocolVersion == 0 {
+		missing = append(missing, "protocol_version")
+	}
+	if m.PID == 0 {
+		missing = append(missing, "pid")
+	}
+	if m.MillID == "" {
+		missing = append(missing, "mill_id")
+	}
+	if m.StateRoot == "" {
+		missing = append(missing, "state_root")
+	}
+	if m.SocketPath == "" {
+		missing = append(missing, "socket_path")
+	}
+	if m.StartedAt == "" {
+		missing = append(missing, "started_at")
+	}
+	return missing
+}
+
+// buildLabel renders a stamped build id, or names the absence of one so skew
+// messages stay explicit when either binary predates build stamping.
+func buildLabel(build string) string {
+	if build == "" {
+		return "unstamped"
+	}
+	return build
 }

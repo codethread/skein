@@ -24,7 +24,7 @@ Implement RFC-017: git-coordinate spool distribution (SHA-pinned, content-addres
 
 ## SGD-PLAN-001.P4 Contract and migration impact
 
-- **SGD-PLAN-001.CM1:** Durable contract changes are fully described in the two feature spec deltas; existing `:local/root` workspaces are untouched (grammar is additive, TEN-000 alpha—no migration needed).
+- **SGD-PLAN-001.CM1:** Durable contract changes are fully described in the two feature spec deltas; existing `:local/root` workspaces are untouched (grammar is additive, TEN-000@1 alpha—no migration needed).
 
 ## SGD-PLAN-001.P5 Implementation phases
 

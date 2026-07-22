@@ -65,9 +65,11 @@ func main() {
 	}})
 	initCmd := &cobra.Command{Use: "init", Short: "Bootstrap missing selected config workspace files through the local mill", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
 		workspace, _ := cmd.Flags().GetString("workspace")
-		return runInit(workspace)
+		stealth, _ := cmd.Flags().GetBool("stealth")
+		return runInit(workspace, stealth)
 	}}
 	initCmd.Flags().String("workspace", "", "explicit workspace selection (defaults to repo-local .skein)")
+	initCmd.Flags().Bool("stealth", false, "keep repo-local .skein and Claude guidance untracked through .git/info/exclude")
 	root.AddCommand(initCmd)
 
 	weaver := &cobra.Command{Use: "weaver", Short: "Manage supervised weavers"}
@@ -114,14 +116,14 @@ func main() {
 	root.AddCommand(weaver)
 
 	skein := &cobra.Command{Use: "skein", Short: "Skein orientation for agents"}
-	skein.AddCommand(&cobra.Command{Use: "prime", Short: "Print Skein orientation: resolved source path and the docs/spools to read", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
-		return runPrime("skein", primeSkein)
+	skein.AddCommand(&cobra.Command{Use: "prime", Short: "Print orientation for building on .skein: resolved source path and the docs to read", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+		return runPrime("skein")
 	}})
 	root.AddCommand(skein)
 
 	strandCmd := &cobra.Command{Use: "strand", Short: "Strand workflow guidance for agents"}
 	strandCmd.AddCommand(&cobra.Command{Use: "prime", Short: "Print the strand planning/tracking workflow", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
-		return runPrime("strand", primeStrand)
+		return runPrime("strand")
 	}})
 	root.AddCommand(strandCmd)
 
@@ -152,7 +154,7 @@ func start() error {
 	defer func() { _ = os.Remove(socketPath) }()
 	defer func() { _ = os.Remove(metadataPath) }()
 
-	meta := client.MillMetadata{ProtocolVersion: client.MillProtocolVersion, PID: os.Getpid(), MillID: fmt.Sprintf("mill-%d-%d", os.Getpid(), time.Now().UnixNano()), StateRoot: root, SocketPath: socketPath, StartedAt: time.Now().UTC().Format(time.RFC3339Nano)}
+	meta := client.MillMetadata{ProtocolVersion: client.MillProtocolVersion, PID: os.Getpid(), MillID: fmt.Sprintf("mill-%d-%d", os.Getpid(), time.Now().UnixNano()), StateRoot: root, SocketPath: socketPath, StartedAt: time.Now().UTC().Format(time.RFC3339Nano), MillBuild: config.BuildID}
 	b, err := json.MarshalIndent(meta, "", "  ")
 	if err != nil {
 		return err
@@ -194,12 +196,45 @@ func (s *server) handle(conn net.Conn) {
 	case "status", "ping":
 		_ = json.NewEncoder(conn).Encode(client.MillResponse{ProtocolVersion: client.MillProtocolVersion, RequestID: req.RequestID, OK: true, Result: map[string]any{"healthy": true, "protocol_version": client.MillProtocolVersion, "pid": s.meta.PID, "mill_id": s.meta.MillID, "state_root": s.meta.StateRoot, "socket_path": s.meta.SocketPath, "started_at": s.meta.StartedAt}})
 	case "init":
-		world, err := config.BootstrapWorld(req.World.CWD, req.World.ConfigDir, req.World.Source)
-		if err != nil {
-			_ = json.NewEncoder(conn).Encode(errorResponse(req.RequestID, "domain", "mill/init-failed", "mill init failed", err.Error()))
+		if err := validateInitRequest(req.World); err != nil {
+			_ = json.NewEncoder(conn).Encode(errorResponse(req.RequestID, "domain", "mill/init-invalid-request", "invalid mill init request", err.Error()))
 			return
 		}
-		_ = json.NewEncoder(conn).Encode(client.MillResponse{ProtocolVersion: client.MillProtocolVersion, RequestID: req.RequestID, OK: true, Result: map[string]any{"config_dir": world.ConfigDir, "config_file": world.ConfigFile}})
+		var world config.World
+		var stealth *config.StealthReport
+		var err error
+		if req.World.Stealth {
+			var report config.StealthReport
+			world, report, err = config.BootstrapStealthWorld(req.World.CWD)
+			stealth = &report
+		} else {
+			world, err = config.BootstrapWorld(req.World.CWD, req.World.ConfigDir, req.World.Source)
+		}
+		if err != nil {
+			var refusal *config.StealthRefusal
+			if errors.As(err, &refusal) {
+				details, detailsErr := refusal.Details()
+				if detailsErr != nil {
+					_ = json.NewEncoder(conn).Encode(errorResponse(req.RequestID, "domain", "mill/init-failed", "mill init failed", detailsErr.Error()))
+					return
+				}
+				_ = json.NewEncoder(conn).Encode(client.MillResponse{ProtocolVersion: client.MillProtocolVersion, RequestID: req.RequestID, OK: false, Error: &client.ResponseError{Type: "domain", Code: "mill/init-stealth-refused", Message: "mill stealth init refused", Details: details}})
+			} else {
+				_ = json.NewEncoder(conn).Encode(errorResponse(req.RequestID, "domain", "mill/init-failed", "mill init failed", err.Error()))
+			}
+			return
+		}
+		if stealth != nil {
+			result := config.StealthInitResult{ConfigDir: world.ConfigDir, ConfigFile: world.ConfigFile, Stealth: *stealth}
+			if err := result.Validate(); err != nil {
+				_ = json.NewEncoder(conn).Encode(errorResponse(req.RequestID, "domain", "mill/init-failed", "mill init failed", err.Error()))
+				return
+			}
+			_ = json.NewEncoder(conn).Encode(client.MillResponse{ProtocolVersion: client.MillProtocolVersion, RequestID: req.RequestID, OK: true, Result: result})
+			return
+		}
+		result := map[string]any{"config_dir": world.ConfigDir, "config_file": world.ConfigFile}
+		_ = json.NewEncoder(conn).Encode(client.MillResponse{ProtocolVersion: client.MillProtocolVersion, RequestID: req.RequestID, OK: true, Result: result})
 	case "weaver-start":
 		result, err := s.startWeaver(req.World)
 		if err != nil {
@@ -243,6 +278,13 @@ func (s *server) handle(conn net.Conn) {
 	default:
 		_ = json.NewEncoder(conn).Encode(errorResponse(req.RequestID, "protocol", "mill/unknown-operation", "unknown mill operation", req.Operation))
 	}
+}
+
+func validateInitRequest(world client.MillWorldRequest) error {
+	if world.Stealth && strings.TrimSpace(world.ConfigDir) != "" {
+		return errors.New("stealth init cannot select an explicit workspace")
+	}
+	return nil
 }
 
 func cleanupPreviousMillState(root, socketPath, metadataPath string) error {

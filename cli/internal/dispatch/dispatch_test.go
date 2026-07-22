@@ -323,6 +323,84 @@ func TestVersionAndHelpAreLocal(t *testing.T) {
 	}
 }
 
+func TestNoOpHelpStaysUsage(t *testing.T) {
+	var c capture
+	harness(t, &c)
+	// With no op named, --help/-h and bare strand all print dispatcher usage.
+	for _, args := range [][]string{{"--help"}, {"-h"}, {}} {
+		out, _, code := runDispatch("", args...)
+		if code != 0 {
+			t.Fatalf("no-op help exit %d for %v", code, args)
+		}
+		if !strings.Contains(out, "strand [dispatcher-flags]") {
+			t.Fatalf("no-op help should print usage for %v:\n%s", args, out)
+		}
+	}
+	if c.called {
+		t.Fatalf("no-op help must not transport")
+	}
+}
+
+func TestPreOpHelpWithOpIsError(t *testing.T) {
+	var c capture
+	harness(t, &c)
+	// Once an op is named, a pre-op --help is an error (was: static usage),
+	// redirecting to `strand help <op>` or a trailing --help (DELTA-Dtf-001.CC6).
+	for _, args := range [][]string{
+		{"--help", "agent"},
+		{"-h", "agent"},
+		{"--workspace", "ws", "--help", "list"},
+	} {
+		out, er, code := runDispatch("", args...)
+		if code == 0 {
+			t.Fatalf("pre-op --help must fail for %v (stdout=%q)", args, out)
+		}
+		if !strings.Contains(er, "--help must follow") || !strings.Contains(er, "strand help") {
+			t.Fatalf("pre-op --help should redirect for %v: %q", args, er)
+		}
+	}
+	if c.called {
+		t.Fatalf("pre-op --help error must not transport")
+	}
+}
+
+func TestTrailingHelpShipsVerbatim(t *testing.T) {
+	var c capture
+	harness(t, &c)
+	// A --help trailing the op is opaque argv the weaver rewrites; the dispatcher
+	// transports it verbatim rather than intercepting it.
+	_, er, code := runDispatch("", "agent", "--help")
+	if code != 0 {
+		t.Fatalf("trailing --help exit %d stderr=%q", code, er)
+	}
+	if !c.called {
+		t.Fatalf("trailing --help must transport to the weaver")
+	}
+	if c.envelope["name"] != "agent" {
+		t.Fatalf("op name = %v", c.envelope["name"])
+	}
+	if !reflect.DeepEqual(toAnySlice(c.envelope["argv"]), []any{"--help"}) {
+		t.Fatalf("argv = %#v, want [--help]", c.envelope["argv"])
+	}
+}
+
+func TestJSONFlagInHelpSurfaceShipsVerbatim(t *testing.T) {
+	var c capture
+	harness(t, &c)
+	// --json is a help-op flag parsed weaver-side (leading-only there). The thin
+	// dispatcher parses no arg-spec, so it ships everything after the op verbatim.
+	_, er, code := runDispatch("", "help", "custom", "--json")
+	if code != 0 {
+		t.Fatalf("exit %d stderr=%q", code, er)
+	}
+	if c.envelope["name"] != "help" {
+		t.Fatalf("op name = %v", c.envelope["name"])
+	}
+	if !reflect.DeepEqual(toAnySlice(c.envelope["argv"]), []any{"custom", "--json"}) {
+		t.Fatalf("argv = %#v, want [custom --json]", c.envelope["argv"])
+	}
+}
+
 func toAnySlice(v any) []any {
 	switch s := v.(type) {
 	case []any:

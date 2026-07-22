@@ -5,7 +5,7 @@
 Two conventions hold across the tier:
 
 - **The runtime is explicit.** Every operational function takes the target weaver runtime as its first argument. Capture it once at a trusted entry point with `skein.api.current.alpha/runtime` and thread it through; nothing else reads ambient state.
-- **Registries are weaver-lifetime.** Queries, patterns, views, events, and hooks registered at a REPL vanish on restart. Register from startup-loaded code (`init.clj` or an installed spool) when they should survive.
+- **Registries are weaver-lifetime.** Queries, patterns, events, and hooks registered at a REPL vanish on restart. Register from startup-loaded code (`init.clj` or an installed spool) when they should survive.
 
 ## Which namespace owns your concern
 
@@ -14,7 +14,8 @@ Two conventions hold across the tier:
 | Namespace | Reach for it when |
 | --- | --- |
 | [`current`](./current.api.md) | You are at a trusted in-process entry point and need to capture the active runtime (or probe for one without fabricating it). |
-| [`runtime`](./runtime.api.md) | Loader/config workflows: `sync!` approved spool roots, `use!` a module, `reload!` startup config, read `spool-state`, read the runtime clock. |
+| [`runtime`](./runtime.api.md) | Module/config workflows: declare, plan, refresh, inspect status, reload code, read `spool-state`, and read the runtime clock. |
+| [`clock`](./clock.api.md) | Code needs one capability for current time and sleeping, including deterministic polling with a manual test Clock. |
 
 ### Strand data
 
@@ -38,8 +39,8 @@ Two conventions hold across the tier:
 | Namespace | Reach for it when |
 | --- | --- |
 | [`patterns`](./patterns.api.md) | Agents should submit intent and your config decides the graph shape: spec-checked, create-only weave patterns invokable from the CLI. |
-| [`views`](./views.api.md) | Registering named read-only projections callable from trusted Clojure. |
 | [`cli`](./cli.api.md) | Declaring an op's argv shape as data — the parser and help renderer behind every registered op; never hand-write usage strings. |
+| [`return-shape`](./return-shape.api.md) | Declaring and checking the JSON-compatible values returned by registered ops. |
 
 ### Vocabulary and prose
 
@@ -48,7 +49,7 @@ Two conventions hold across the tier:
 | [`vocab`](./vocab.api.md) | Declaring the attribute namespaces and edge types your module owns, so the graph's vocabulary stays discoverable data. |
 | [`relations`](./relations.api.md) | Looking up the shipped relation catalog — advisory data, not a storage allowlist. |
 | [`format`](./format.api.md) | Authoring long prose as `|`-margin blocks (`fill`, `reflow`) instead of unreadable string literals. |
-| [`spool`](./spool.api.md) | Writing a spool and needing the shared authoring helpers: `fail!`, `reject-unknown-keys!`, `require-valid!`, attribute key/get coercion, and deadline polling. |
+| [`spool`](./spool.api.md) | Writing a spool and needing the shared authoring helpers: `fail!`, `reject-unknown-keys!`, `require-valid!`, attribute key/get coercion, and Clock-based polling. |
 
 ### Talking to other weavers
 
@@ -56,4 +57,4 @@ Two conventions hold across the tier:
 | --- | --- |
 | [`peers`](./peers.api.md) | Discovering and calling local sibling weavers from mill-published runtime metadata. |
 
-Two blessed namespaces live outside `skein.api.*` but inside the same contract tier: `skein.test.alpha` (deterministic-test seams: weaver-world fixtures and clock control) and `skein.userland.alpha` (downstream-only ergonomics that no `skein.*` namespace may require). See [SPEC-005.C2](../../devflow/specs/alpha-surface.md) for the full tier membership.
+Two blessed namespaces live outside `skein.api.*` but inside the same contract tier: [`skein.test.alpha`](./test.api.md) (weaver-world fixtures, lane settling, and clock control) and `skein.userland.alpha` (downstream-only ergonomics that no `skein.*` namespace may require). See [SPEC-005.C2](../../devflow/specs/alpha-surface.md) for the full tier membership.

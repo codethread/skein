@@ -3,21 +3,21 @@
 
   Reads and validates the `spools.edn`/`spools.local.edn` allowlist, materializes
   git-pinned spool roots into the content-addressed cache, vets each root's
-  Maven dependencies, and loads approved roots into a runtime's spool classloader
-  while recording per-spool sync outcomes. Also resolves and loads module-use
-  targets — `:file` paths confined to the config-dir and `:ns` sources located
-  under synced roots — for `skein.api.runtime.alpha/use!`. Internal tier: the
-  trusted `skein.api.runtime.alpha` surface delegates its
-  `approved`/`sync!`/`syncs` publics and its module loading here and owns the
-  blessed contract (SPEC-004, SPEC-005.C5)."
+  Maven dependencies, and loads approved roots into a runtime's spool
+  classloader while recording per-root outcomes. It resolves module source
+  targets for the refresh coordinator and the advanced code-only reload seam.
+  Internal tier: the trusted runtime surface delegates approved/declared reads
+  and module loading here and owns the blessed contract (SPEC-004,
+  SPEC-005.C5)."
   (:require [clojure.java.io :as io]
+            [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [clojure.tools.deps.interop :as deps-interop]
             [clojure.tools.namespace.dependency :as ns-dep]
             [clojure.tools.namespace.parse :as ns-parse]
             [skein.core.format :as format]
             [skein.core.query :as query]
-            [skein.core.weaver.access :refer [approved-spool-sync-state
+            [skein.core.weaver.access :refer [approved-spool-sync-state release-marker
                                               with-spool-classloader config-dir spools-file
                                               canonical-root cache-base]])
   (:import [java.math BigInteger]
@@ -26,54 +26,388 @@
            [java.nio.file.attribute FileAttribute]))
 
 (def ^:private local-spool-keys #{:local/root})
-(def ^:private git-spool-keys #{:git/url :git/sha :git/tag :deps/root})
-(def ^:private approved-spool-keys (into local-spool-keys git-spool-keys))
+(def ^:private overlay-spool-keys #{:local/root :claims})
+(def ^:private git-spool-keys #{:git/url :git/sha :git/tag :roots :requires :skein/min})
 (def ^:private git-sha-pattern #"[0-9a-f]{40}")
+(def ^:private release-marker-pattern #"v([1-9][0-9]*)")
+
 (defn- non-blank-string? [value]
   (and (string? value) (not (str/blank? value))))
 
-(defn- deps-root-segments [deps-root]
-  (str/split deps-root #"/"))
+(defn- marker-ordinal
+  "Return a release marker's positive integer ordinal.
 
-(defn- relative-deps-root? [deps-root]
-  (and (non-blank-string? deps-root)
-       (not (.isAbsolute (io/file deps-root)))
-       (not (str/starts-with? deps-root "~"))
-       (not-any? #{".."} (deps-root-segments deps-root))))
+  Markers are exactly `vN`, where N is a positive base-10 integer. `v0` has a
+  dedicated policy failure because untagged repositories represent WIP."
+  [marker]
+  (when (= "v0" marker)
+    (throw (ex-info (format/reflow
+                     "|v0 is reserved; WIP repos stay untagged — v1 is the smallest
+                       |promise")
+                    {:marker marker})))
+  (if-let [[_ ordinal] (and (string? marker)
+                            (re-matches release-marker-pattern marker))]
+    (BigInteger. ^String ordinal)
+    (throw (ex-info "Release marker must match vN where N is a positive integer"
+                    {:marker marker}))))
 
-(defn- validate-approved-spool-entry! [source lib entry]
-  (when-not (symbol? lib)
-    (throw (ex-info "Spool coordinate must be a symbol" (assoc source :lib lib))))
+(defn- root-path-segments [root-path]
+  (str/split root-path #"/"))
+
+(defn- relative-root-path? [root-path]
+  (and (non-blank-string? root-path)
+       (not (.isAbsolute (io/file root-path)))
+       (not (str/starts-with? root-path "~"))
+       (not-any? #{".."} (root-path-segments root-path))))
+
+(s/def ::non-blank-string non-blank-string?)
+(s/def ::release-marker #(and (string? %) (boolean (re-matches release-marker-pattern %))))
+(s/def ::root-path relative-root-path?)
+(s/def ::roots (s/map-of symbol? ::root-path :min-count 1))
+(s/def ::requires (s/map-of symbol? ::release-marker))
+(s/def :git/url ::non-blank-string)
+(s/def :git/sha #(and (string? %) (boolean (re-matches git-sha-pattern %))))
+(s/def :git/tag ::release-marker)
+(s/def :skein/min ::release-marker)
+(s/def :local/root ::non-blank-string)
+(s/def ::claims (s/nilable ::release-marker))
+
+(defn- exact-keys? [allowed value]
+  (and (map? value) (every? allowed (keys value))))
+
+(s/def ::git-family-entry
+  (s/and #(exact-keys? git-spool-keys %)
+         (s/keys :req [:git/url :git/sha]
+                 :opt [:git/tag :skein/min]
+                 :opt-un [::roots ::requires])))
+(s/def ::local-family-entry
+  (s/and #(exact-keys? local-spool-keys %)
+         (s/keys :req [:local/root])))
+(s/def ::family-entry (s/or :git ::git-family-entry :local ::local-family-entry))
+(s/def ::overlay-entry
+  (s/and #(exact-keys? overlay-spool-keys %)
+         (s/keys :req [:local/root] :req-un [::claims])
+         #(s/valid? ::release-marker (:claims %))))
+
+(s/def ::family symbol?)
+(s/def ::coordinate
+  (s/or :git (s/and #(= :git (:kind %))
+                    #(exact-keys? #{:kind :git/url :git/sha :git/tag} %)
+                    (s/keys :req [:git/url :git/sha] :opt [:git/tag]))
+        :local (s/and #(= :local (:kind %))
+                      #(exact-keys? #{:kind :local/root} %)
+                      (s/keys :req [:local/root]))))
+(s/def ::roots-map ::roots)
+(s/def ::skein-min (s/nilable ::release-marker))
+(s/def ::provenance #{:spools-edn :local-overlay})
+(s/def ::source #(and (map? %) (#{:shared :local} (:kind %)) (non-blank-string? (:file %))))
+(s/def ::normalized-family
+  (s/keys :req-un [::family ::coordinate ::roots-map ::requires ::skein-min
+                   ::provenance ::source]
+          :opt-un [::claims]))
+
+(defn- duplicate-root-owners [families]
+  (->> families
+       (mapcat (fn [{:keys [family roots-map]}]
+                 (map (fn [root-lib] [root-lib family]) (keys roots-map))))
+       (group-by first)
+       (keep (fn [[root-lib owners]]
+               (when (< 1 (count owners))
+                 [root-lib (mapv second owners)])))
+       (into {})))
+
+(s/def ::normalized-families
+  (s/and (s/coll-of ::normalized-family :kind vector?)
+         #(empty? (duplicate-root-owners %))))
+
+(s/def ::spools (s/map-of symbol? ::family-entry))
+(s/def ::mvn-overrides map?)
+(s/def ::shared-spools-config
+  (s/and #(exact-keys? #{:spools :mvn-overrides} %)
+         (s/keys :req-un [::spools] :opt-un [::mvn-overrides])))
+(s/def ::families ::normalized-families)
+(s/def ::normalized-shared-spools-config
+  (s/and #(= #{:families :mvn-overrides} (set (keys %)))
+         (s/keys :req-un [::families ::mvn-overrides])))
+
+(defn- require-spec! [spec value message context]
+  (when-not (s/valid? spec value)
+    (throw (ex-info message
+                    (assoc context :spec spec :explain (s/explain-data spec value)))))
+  value)
+
+(defn- validate-marker! [marker context]
+  (try
+    (marker-ordinal marker)
+    marker
+    (catch clojure.lang.ExceptionInfo e
+      (throw (ex-info (ex-message e) (merge context (ex-data e)) e)))))
+
+(defn- validate-family-name! [source family]
+  (when-not (symbol? family)
+    (throw (ex-info "Spool family must be a symbol" (assoc source :family family)))))
+
+(defn- reject-legacy-root-shape! [source family entry]
+  (when (contains? entry :deps/root)
+    (throw (ex-info
+            (format/reflow
+             "|Legacy spool entry :deps/root is no longer supported; keep one entry
+               |per family and replace :deps/root with :roots {root-lib \"relative-path\"}")
+            (assoc source :family family :deps/root (:deps/root entry))))))
+
+(defn- validate-entry-map! [source family entry allowed-keys]
+  (validate-family-name! source family)
   (when-not (map? entry)
-    (throw (ex-info "Spool entry must be a map" (assoc source :lib lib :entry entry))))
-  (when-let [unknown (seq (remove approved-spool-keys (keys entry)))]
-    (throw (ex-info "Spool entry contains unknown keys" (assoc source :lib lib :keys (vec unknown)))))
+    (throw (ex-info "Spool entry must be a map" (assoc source :family family :entry entry))))
+  (reject-legacy-root-shape! source family entry)
+  (when-let [unknown (seq (remove allowed-keys (keys entry)))]
+    (throw (ex-info "Spool entry contains unknown keys"
+                    (assoc source :family family :keys (vec unknown))))))
+
+(defn- normalize-roots-map [source family entry]
+  (let [roots (if (contains? entry :roots) (:roots entry) {family "."})]
+    (when-not (and (map? roots) (seq roots))
+      (throw (ex-info "Git spool entry :roots must be a non-empty map"
+                      (assoc source :family family :roots roots))))
+    (doseq [[root-lib root-path] roots]
+      (when-not (symbol? root-lib)
+        (throw (ex-info "Spool root lib must be a symbol"
+                        (assoc source :family family :root-lib root-lib))))
+      (when-not (relative-root-path? root-path)
+        (throw (ex-info "Spool root path must be relative with no ~ or .. segments"
+                        (assoc source :family family :root-lib root-lib :root-path root-path)))))
+    roots))
+
+(defn- normalize-requires [source family entry]
+  (let [requires (if (contains? entry :requires) (:requires entry) {})]
+    (when-not (map? requires)
+      (throw (ex-info "Git spool entry :requires must be a map"
+                      (assoc source :family family :requires requires))))
+    (doseq [[root-lib marker] requires]
+      (when-not (symbol? root-lib)
+        (throw (ex-info "Required spool root must be a symbol"
+                        (assoc source :family family :requires root-lib))))
+      (validate-marker! marker (assoc source :family family :field :requires :requires root-lib)))
+    requires))
+
+(defn- normalize-shared-family [source family entry]
+  (validate-entry-map! source family entry (into local-spool-keys git-spool-keys))
   (let [local? (contains? entry :local/root)
         git? (some #(contains? entry %) git-spool-keys)]
-    (when (and (not local?) (not git?))
-      (throw (ex-info "Spool entry requires non-blank string :local/root"
-                      (assoc source :lib lib :local/root (:local/root entry) :entry entry))))
-    (when (and local? git?)
+    (when (= local? (boolean git?))
       (throw (ex-info "Spool entry requires exactly one coordinate kind"
-                      (assoc source :lib lib :entry entry))))
+                      (assoc source :family family :entry entry))))
     (if local?
-      (when-not (and (= local-spool-keys (set (keys entry)))
-                     (non-blank-string? (:local/root entry)))
-        (throw (ex-info "Spool entry requires non-blank string :local/root"
-                        (assoc source :lib lib :local/root (:local/root entry) :entry entry))))
+      (do
+        (when-not (non-blank-string? (:local/root entry))
+          (throw (ex-info "Spool entry requires non-blank string :local/root"
+                          (assoc source :family family :local/root (:local/root entry) :entry entry))))
+        (require-spec! ::family-entry entry "Spool family entry has an invalid shape"
+                       (assoc source :family family :entry entry))
+        (require-spec!
+         ::normalized-family
+         {:family family
+          :coordinate {:kind :local :local/root (:local/root entry)}
+          :roots-map {family "."}
+          :requires {}
+          :skein-min nil
+          :claims nil
+          :provenance :spools-edn
+          :source source}
+         "Normalized spool family has an invalid shape"
+         (assoc source :family family)))
       (do
         (when-not (non-blank-string? (:git/url entry))
           (throw (ex-info "Git spool entry requires non-blank string :git/url"
-                          (assoc source :lib lib :git/url (:git/url entry)))))
-        (when-not (and (string? (:git/sha entry)) (re-matches git-sha-pattern (:git/sha entry)))
+                          (assoc source :family family :git/url (:git/url entry)))))
+        (when-not (and (string? (:git/sha entry))
+                       (re-matches git-sha-pattern (:git/sha entry)))
           (throw (ex-info "Git spool entry requires 40 lowercase hex characters :git/sha"
-                          (assoc source :lib lib :git/sha (:git/sha entry)))))
-        (when (and (contains? entry :git/tag) (not (non-blank-string? (:git/tag entry))))
-          (throw (ex-info "Git spool entry :git/tag must be a non-blank string"
-                          (assoc source :lib lib :git/tag (:git/tag entry)))))
-        (when (and (contains? entry :deps/root) (not (relative-deps-root? (:deps/root entry))))
-          (throw (ex-info "Git spool entry :deps/root must be a relative path with no ~ or .. segments"
-                          (assoc source :lib lib :deps/root (:deps/root entry)))))))))
+                          (assoc source :family family :git/sha (:git/sha entry)))))
+        (when (contains? entry :git/tag)
+          (validate-marker! (:git/tag entry) (assoc source :family family :field :git/tag)))
+        (when (contains? entry :skein/min)
+          (validate-marker! (:skein/min entry) (assoc source :family family :field :skein/min)))
+        (let [normalized {:family family
+                          :coordinate (cond-> {:kind :git
+                                               :git/url (:git/url entry)
+                                               :git/sha (:git/sha entry)}
+                                        (contains? entry :git/tag) (assoc :git/tag (:git/tag entry)))
+                          :roots-map (normalize-roots-map source family entry)
+                          :requires (normalize-requires source family entry)
+                          :skein-min (:skein/min entry)
+                          :claims nil
+                          :provenance :spools-edn
+                          :source source}]
+          (require-spec! ::family-entry entry "Spool family entry has an invalid shape"
+                         (assoc source :family family :entry entry))
+          (require-spec! ::normalized-family normalized
+                         "Normalized spool family has an invalid shape"
+                         (assoc source :family family)))))))
+
+(defn- normalize-overlay [source family entry]
+  (validate-entry-map! source family entry overlay-spool-keys)
+  (when-not (non-blank-string? (:local/root entry))
+    (throw (ex-info "Spool overlay requires non-blank string :local/root"
+                    (assoc source :family family :local/root (:local/root entry) :entry entry))))
+  (when-not (contains? entry :claims)
+    (throw (ex-info "Local spool override requires an explicit release claim"
+                    (assoc source
+                           :error :override-without-claim
+                           :family family
+                           :local/root (:local/root entry)
+                           :fix "add :claims \"vN\" — the release whose contract this tree honors"))))
+  (validate-marker! (:claims entry) (assoc source :family family :field :claims))
+  (require-spec! ::overlay-entry entry "Local spool override has an invalid shape"
+                 (assoc source :family family :entry entry))
+  {:family family
+   :coordinate {:kind :local :local/root (:local/root entry)}
+   :claims (:claims entry)
+   :provenance :local-overlay
+   :source source})
+
+(defn- reject-shared-git-urls! [families]
+  (doseq [[git-url entries] (group-by #(get-in % [:coordinate :git/url])
+                                      (filter #(= :git (get-in % [:coordinate :kind])) families))
+          :when (> (count entries) 1)]
+    (throw (ex-info "Two spool families must not share :git/url"
+                    {:git/url git-url
+                     :families (mapv :family entries)}))))
+
+(defn- apply-overlays [shared-families overlays]
+  (reduce
+   (fn [families overlay]
+     (let [family (:family overlay)
+           base (get families family)]
+       (when-not base
+         (throw (ex-info "Local spool override must shadow a shared git family"
+                         {:error :override-without-base
+                          :family family
+                          :source (:source overlay)})))
+       (when-not (= :git (get-in base [:coordinate :kind]))
+         (throw (ex-info "Local spool override must shadow a shared git family"
+                         {:error :override-of-local-family
+                          :family family
+                          :source (:source overlay)})))
+       (assoc families family
+              (merge (select-keys base [:roots-map :requires :skein-min]) overlay))))
+   (into {} (map (juxt :family identity)) shared-families)
+   overlays))
+
+(defn- effective-marker [{:keys [coordinate claims]}]
+  (or claims (:git/tag coordinate)))
+
+(defn- root-family-index [families]
+  (into {}
+        (mapcat (fn [{:keys [family roots-map] :as entry}]
+                  (map (fn [root]
+                         [root {:family family
+                                :marker (effective-marker entry)}])
+                       (keys roots-map))))
+        families))
+
+(defn- reject-duplicate-root-libs! [families]
+  (when-let [[root-lib owners] (first (duplicate-root-owners families))]
+    (throw (ex-info "Spool root lib must be owned by exactly one family"
+                    {:reason :duplicate-spool-root
+                     :root-lib root-lib
+                     :families owners})))
+  (require-spec! ::normalized-families (vec families)
+                 "Approved spool families have an invalid shape" {})
+  families)
+
+(defn- requirement-findings [families]
+  (let [index (root-family-index families)]
+    (vec
+     (keep identity
+           (for [{:keys [family requires]} families
+                 [root minimum] requires
+                 :let [{required-family :family pinned :marker} (get index root)]]
+             (cond
+               (nil? required-family)
+               {:error :required-root-not-approved
+                :requirer family
+                :requires root
+                :minimum minimum}
+
+               (nil? pinned)
+               {:error :required-root-unmarked
+                :requirer family
+                :requires root
+                :minimum minimum
+                :family required-family}
+
+               (< (marker-ordinal pinned) (marker-ordinal minimum))
+               {:error :pin-below-minimum
+                :requirer family
+                :requires root
+                :minimum minimum
+                :family required-family
+                :pinned pinned}))))))
+
+(defn- skein-minimum-findings [families running-marker]
+  (if running-marker
+    (vec
+     (for [{:keys [family skein-min]} families
+           :when (and skein-min
+                      (< (marker-ordinal running-marker)
+                         (marker-ordinal skein-min)))]
+       {:error :skein-below-minimum
+        :spool family
+        :skein/min skein-min
+        :running running-marker}))
+    []))
+
+(defn- pending-skein-validations [families running-marker]
+  (when-not running-marker
+    (vec
+     (for [{:keys [family skein-min]} families
+           :when skein-min]
+       {:check :skein/min
+        :spool family
+        :skein/min skein-min
+        :status :pending
+        :reason :running-marker-unavailable}))))
+
+(defn- requirement-suggestions [findings]
+  (reduce (fn [result {:keys [error family minimum]}]
+            (if (= :pin-below-minimum error)
+              (update result family
+                      (fn [current]
+                        (if (and current
+                                 (>= (marker-ordinal current)
+                                     (marker-ordinal minimum)))
+                          current
+                          minimum)))
+              result))
+          {}
+          findings))
+
+(defn- validate-family-requirements! [families running-marker]
+  (when (= :none running-marker)
+    (let [floors (vec (keep (fn [{:keys [family skein-min]}]
+                              (when skein-min
+                                {:family family :skein/min skein-min}))
+                            families))]
+      (when (seq floors)
+        (throw (ex-info "Running Skein release marker is unavailable for declared floors"
+                        {:reason :release-marker-unavailable
+                         :floors floors
+                         :remedy "start the runtime with an explicit :release-marker claim"})))))
+  (when (and running-marker (not= :none running-marker))
+    (validate-marker! running-marker {:field :running}))
+  (let [findings (into (requirement-findings families)
+                       (skein-minimum-findings families
+                                               (when-not (= :none running-marker)
+                                                 running-marker)))]
+    (when (seq findings)
+      (throw (ex-info "Approved spool requirements are not satisfied"
+                      {:reason :spool-requirements-unsatisfied
+                       :findings findings
+                       :suggestions (requirement-suggestions findings)})))
+    (pending-skein-validations families
+                               (when-not (= :none running-marker)
+                                 running-marker))))
 
 (def ^:private allowed-spool-maven-coordinate-keys
   #{:mvn/version :exclusions :classifier :extension})
@@ -144,8 +478,8 @@
         overrides))))
 
 (defn- normalize-approved-spools-file
-  "Validate one approved-spool config file and resolve roots for this runtime."
-  [runtime name source config]
+  "Validate one approved-spool config file into stage-1 family records."
+  [name source config normalize-entry]
   (when-not (map? config)
     (throw (ex-info (str name " must contain a map") (assoc source :config config))))
   (when-let [unknown (seq (remove allowed-spools-file-keys (keys config)))]
@@ -153,47 +487,63 @@
   (when-not (map? (:spools config))
     (throw (ex-info (str name " requires :spools map") (assoc source :spools (:spools config)))))
   {:mvn-overrides (normalize-mvn-overrides name source config)
-   :spools (into {}
-                 (map (fn [[lib entry]]
-                        (validate-approved-spool-entry! source lib entry)
-                        (if (contains? entry :local/root)
-                          [lib {:kind :local
-                                :local/root (:local/root entry)
-                                :root (canonical-root runtime (:local/root entry))
-                                :source source}]
-                          (let [cache-root (io/file (cache-base) "skein" "spools" (:git/sha entry))
-                                root (cond-> cache-root
-                                       (:deps/root entry) (io/file (:deps/root entry)))]
-                            [lib (cond-> {:kind :git
-                                          :git/url (:git/url entry)
-                                          :git/sha (:git/sha entry)
-                                          :root (.getPath root)
-                                          :source source}
-                                   (contains? entry :git/tag) (assoc :git/tag (:git/tag entry))
-                                   (contains? entry :deps/root) (assoc :deps/root (:deps/root entry)))]))))
-                 (:spools config))})
+   :families (mapv (fn [[family entry]]
+                     (normalize-entry source family entry))
+                   (:spools config))})
 
-(defn- approved-spools-file [runtime name kind]
+(defn validate-shared-spools-config!
+  "Return stage-1 normalized records for a shared `spools.edn` config.
+
+  `file` names the source in validation failures. This is the shared validation
+  seam used by runtime config writes; it applies the same entry specs and error
+  classes as sync before any file is changed. Input conforms to
+  `::shared-spools-config`; the result conforms to
+  `::normalized-shared-spools-config`."
+  [file config]
+  (let [source {:kind :shared :file (.getPath (io/file file))}
+        normalized (normalize-approved-spools-file
+                    "spools.edn" source config normalize-shared-family)]
+    (require-spec! ::shared-spools-config config
+                   "spools.edn config has an invalid shape" source)
+    (require-spec! ::normalized-shared-spools-config normalized
+                   "spools.edn normalized config has an invalid shape" source)))
+
+(defn- read-config-edn-file
+  "Read an approved-spool EDN file, adding source context to expected failures."
+  [file message context]
+  (letfn [(contextual-message [t]
+            (str message (when-let [detail (ex-message t)] (str ": " detail))))]
+    (try
+      (query/read-edn-file file)
+      (catch java.io.IOException t
+        (throw (ex-info (contextual-message t) context t)))
+      (catch clojure.lang.ExceptionInfo t
+        (throw (ex-info (contextual-message t) context t)))
+      (catch RuntimeException t
+        ;; clojure.edn reports syntax and unknown-tag failures as exactly
+        ;; RuntimeException. RuntimeException subclasses are unexpected here and
+        ;; keep their original type rather than becoming config diagnostics.
+        (if (= RuntimeException (class t))
+          (throw (ex-info (contextual-message t) context t))
+          (throw t))))))
+
+(defn- approved-spools-file [runtime name kind normalize-entry]
   (let [file (spools-file runtime name)
         source {:kind kind
                 :file (.getPath file)}]
     (cond
       (and (not (.exists file))
            (not (java.nio.file.Files/isSymbolicLink (.toPath file))))
-      {:spools {}}
+      {:spools {}
+       :declared-spools {}}
 
       (not (.isFile file))
       (throw (ex-info (str name " is malformed or unreadable") source))
 
       :else
-      (normalize-approved-spools-file
-       runtime
-       name
-       source
-       (try
-         (query/read-edn-file file)
-         (catch Throwable t
-           (throw (ex-info (str name " is malformed or unreadable") source t))))))))
+      (let [config (read-config-edn-file file (str name " is malformed or unreadable") source)]
+        (assoc (normalize-approved-spools-file name source config normalize-entry)
+               :declared-spools (:spools config))))))
 
 (defn- legacy-config-present? [^java.io.File file]
   (or (.exists file)
@@ -209,32 +559,231 @@
                       {:legacy-files (vec legacy-files)
                        :config-dir (config-dir runtime)})))))
 
+(defn- kind-shaped-root? [entry]
+  (case (:kind entry)
+    :git (and (s/valid? :git/url (:git/url entry))
+              (s/valid? :git/sha (:git/sha entry))
+              (not (contains? entry :local/root)))
+    :local (and (s/valid? :local/root (:local/root entry))
+                (not-any? #(contains? entry %) [:git/url :git/sha :git/tag]))
+    false))
+
+(s/def ::root non-blank-string?)
+(s/def ::approved-root-entry
+  (s/and map?
+         kind-shaped-root?
+         #(non-blank-string? (:root %))
+         #(s/valid? ::source (:source %))
+         #(s/valid? ::provenance (:provenance %))))
+(s/def ::approved-root-map
+  (s/and (s/map-of symbol? ::approved-root-entry)
+         #(every? (fn [[lib entry]]
+                    (and (symbol? lib)
+                         (symbol? (::family (meta entry)))
+                         (s/valid? ::coordinate (::coordinate (meta entry)))
+                         (s/valid? ::provenance (::provenance (meta entry)))))
+                  %)))
+(s/def ::declared ::family-entry)
+(s/def ::effective-coordinate ::coordinate)
+(s/def ::approved-family-entry
+  (s/and #(exact-keys? #{:declared :effective-coordinate :roots-map :provenance :claims} %)
+         (s/keys :req-un [::declared ::effective-coordinate ::roots-map ::provenance ::claims])))
+(s/def ::approved-family-map (s/map-of symbol? ::approved-family-entry))
+(s/def ::pending-validations vector?)
+(s/def ::valid? boolean?)
+(s/def ::findings vector?)
+(s/def ::suggestions map?)
+(s/def ::valid-requirements
+  (s/and #(exact-keys? #{:valid? :pending-validations} %)
+         #(true? (:valid? %))
+         #(s/valid? ::pending-validations (:pending-validations %))))
+(s/def ::invalid-requirements
+  (s/and #(exact-keys? #{:valid? :findings :suggestions} %)
+         #(false? (:valid? %))
+         #(s/valid? ::findings (:findings %))
+         #(s/valid? ::suggestions (:suggestions %))))
+(s/def ::requirements (s/or :valid ::valid-requirements
+                            :invalid ::invalid-requirements))
+(s/def ::declared-result
+  (s/and #(exact-keys? #{:families :requirements} %)
+         #(s/valid? ::approved-family-map (:families %))
+         #(s/valid? ::requirements (:requirements %))))
+(s/def ::approved-result
+  (s/and #(exact-keys? #{:spools :families :mvn-overrides :pending-validations} %)
+         #(contains? % :spools)
+         #(s/valid? ::approved-root-map (:spools %))
+         #(s/valid? ::approved-family-map (:families %))
+         #(or (not (contains? % :mvn-overrides)) (map? (:mvn-overrides %)))
+         #(or (not (contains? % :pending-validations)) (vector? (:pending-validations %)))))
+
+(s/def ::status #{:loaded :already-available :failed})
+(s/def ::reason keyword?)
+(s/def ::sync-root-entry
+  (s/and map?
+         kind-shaped-root?
+         #(symbol? (:lib %))
+         #(symbol? (:family %))
+         #(s/valid? ::coordinate (:coordinate %))
+         #(s/valid? ::provenance (:provenance %))
+         #(non-blank-string? (:root %))
+         #(s/valid? ::source (:source %))
+         #(s/valid? ::status (:status %))
+         #(or (not= :failed (:status %)) (keyword? (:reason %)))))
+(s/def ::sync-root-map
+  (s/and (s/map-of symbol? ::sync-root-entry)
+         #(every? (fn [[lib entry]] (= lib (:lib entry))) %)))
+(s/def ::pending-generation
+  (s/and #(exact-keys? #{:status :generation :diff :approved-spools :remedy} %)
+         #(= :pending (:status %))
+         #(string? (:generation %))
+         #(map? (:diff %))
+         #(set? (:approved-spools %))
+         #(string? (:remedy %))))
+(s/def ::retained-spool-state vector?)
+(s/def ::sync-result
+  (s/and #(exact-keys? #{:spools :pending-validations :pending-generation
+                         :retained-spool-state} %)
+         #(contains? % :spools)
+         #(s/valid? ::sync-root-map (:spools %))
+         #(or (not (contains? % :pending-validations)) (vector? (:pending-validations %)))
+         #(or (not (contains? % :pending-generation))
+              (s/valid? ::pending-generation (:pending-generation %)))
+         #(or (not (contains? % :retained-spool-state)) (vector? (:retained-spool-state %)))))
+
+(defn- family-projection [shared families]
+  (into {}
+        (map (fn [{:keys [family coordinate roots-map claims provenance]}]
+               ;; roots-map is the normalized root set, with the implicit
+               ;; {family "."} sole-root already applied; carrying it here keeps
+               ;; roots a single source of truth so readers never re-derive them
+               ;; from the raw :declared entry, which may omit :roots.
+               [family {:declared (get (:declared-spools shared) family)
+                        :effective-coordinate coordinate
+                        :roots-map roots-map
+                        :provenance provenance
+                        :claims claims}]))
+        families))
+
+(defn- approved-stage-one [runtime]
+  (reject-legacy-spool-config! runtime)
+  (let [shared (approved-spools-file runtime "spools.edn" :shared normalize-shared-family)
+        local (approved-spools-file runtime "spools.local.edn" :local normalize-overlay)
+        _ (reject-shared-git-urls! (:families shared))
+        families (vals (apply-overlays (:families shared) (:families local)))
+        _ (reject-duplicate-root-libs! families)]
+    {:families families
+     :family-projection (family-projection shared families)
+     :overrides (merge (:mvn-overrides shared) (:mvn-overrides local))}))
+
+(defn- unavailable-marker-findings [floors]
+  (mapv (fn [{:keys [family] :as floor}]
+          {:error :release-marker-unavailable
+           :family family
+           :skein/min (:skein/min floor)})
+        floors))
+
+(defn- family-requirement-validation [families running-marker]
+  (try
+    {:requirements {:valid? true
+                    :pending-validations (or (validate-family-requirements! families running-marker)
+                                             [])}}
+    (catch clojure.lang.ExceptionInfo ex
+      (let [{:keys [reason findings suggestions floors]} (ex-data ex)]
+        (case reason
+          :spool-requirements-unsatisfied
+          {:requirements {:valid? false
+                          :findings findings
+                          :suggestions suggestions}
+           :exception ex}
+
+          :release-marker-unavailable
+          {:requirements {:valid? false
+                          :findings (unavailable-marker-findings floors)
+                          :suggestions {}}
+           :exception ex}
+
+          (throw ex))))))
+
+(defn declared-spools
+  "Return declared spool families with requirement validation as data.
+
+  Stage-1 structural errors fail loudly. Unsatisfied release floors return under
+  `:requirements` with `:valid? false`; they never hide the `:families`
+  projection. Omitting `running-marker` leaves Skein floor checks pending."
+  ([runtime]
+   (declared-spools runtime nil))
+  ([runtime running-marker]
+   (let [{:keys [families family-projection]} (approved-stage-one runtime)
+         {:keys [requirements]} (family-requirement-validation families running-marker)
+         result {:families family-projection
+                 :requirements requirements}]
+     (require-spec! ::declared-result result
+                    "Declared spool config has an invalid shape" {})
+     result)))
+
 (defn approved-spools
   "Read and validate the effective runtime spool allowlist.
 
-  The effective allowlist is `spools.edn` overlaid by `spools.local.edn`; local
-  entries replace shared entries with the same coordinate. Missing files
-  contribute no spools, while malformed present files fail loudly. The optional
-  top-level `:mvn-overrides` map is overlaid the same shared-then-local way and is
-  returned only when non-empty."
-  [runtime]
-  (reject-legacy-spool-config! runtime)
-  (let [shared (approved-spools-file runtime "spools.edn" :shared)
-        local (approved-spools-file runtime "spools.local.edn" :local)
-        overrides (merge (:mvn-overrides shared) (:mvn-overrides local))]
-    (cond-> {:spools (merge (:spools shared) (:spools local))}
-      (seq overrides) (assoc :mvn-overrides overrides))))
+  Stage 1 normalizes each `spools.edn` entry as one family, then applies claimed
+  `spools.local.edn` coordinate overlays while inheriting family roots and floors.
+  The returned `:spools` map remains keyed by root lib. `:families` maps each
+  family to its declared `spools.edn` entry, effective post-overlay coordinate,
+  provenance, and optional overlay claim. Missing files contribute no spools,
+  while malformed present files fail loudly. Stage 2 checks every root floor
+  before materialization. When `running-marker` is omitted, declared `:skein/min`
+  checks are returned under `:pending-validations`; explicit `:none` rejects
+  declared floors."
+  ([runtime]
+   (approved-spools runtime nil))
+  ([runtime running-marker]
+   (let [{:keys [families family-projection overrides]} (approved-stage-one runtime)
+         {:keys [requirements exception]} (family-requirement-validation families running-marker)
+         _ (when exception (throw exception))
+         pending-validations (:pending-validations requirements)
+         spools (into {}
+                      (mapcat
+                       (fn [{:keys [family coordinate roots-map claims provenance source]}]
+                         (let [kind (:kind coordinate)
+                               coordinate-root (if (= :git kind)
+                                                 (io/file (cache-base) "skein" "spools" (:git/sha coordinate))
+                                                 (io/file (canonical-root runtime (:local/root coordinate))))]
+                           (map (fn [[lib root-path]]
+                                  (let [root (if (= "." root-path)
+                                               coordinate-root
+                                               (io/file coordinate-root root-path))]
+                                    [lib (with-meta
+                                           (cond-> (assoc coordinate
+                                                          :root (.getPath root)
+                                                          :source source
+                                                          :provenance provenance)
+                                             claims (assoc :claims claims))
+                                           {::family family
+                                            ::coordinate coordinate
+                                            ::provenance provenance})]))
+                                roots-map)))
+                       families))
+         result (cond-> {:spools spools
+                         :families family-projection}
+                  (seq overrides) (assoc :mvn-overrides overrides)
+                  (seq pending-validations) (assoc :pending-validations pending-validations))]
+     (require-spec! ::approved-result result
+                    "Normalized approved spool config has an invalid shape" {})
+     result)))
 
 (defn- spool-source-fields [entry]
   (case (:kind entry)
     :local (select-keys entry [:local/root])
-    :git (select-keys entry [:git/url :git/sha :git/tag :deps/root])))
+    :git (select-keys entry [:git/url :git/sha :git/tag])))
 
 (defn- sync-result-base [lib entry]
   (merge {:lib lib
+          :family (::family (meta entry))
+          :coordinate (::coordinate (meta entry))
           :kind (:kind entry)
           :root (:root entry)
-          :source (:source entry)}
+          :source (:source entry)
+          :provenance (::provenance (meta entry))}
+         (select-keys entry [:claims])
          (spool-source-fields entry)))
 
 (defn- sync-failed [lib entry reason data]
@@ -253,7 +802,8 @@
   (let [deps-file (io/file root "deps.edn")]
     (when-not (.isFile deps-file)
       (throw (ex-info "Spool root must contain deps.edn" {:root root})))
-    (let [deps (query/read-edn-file deps-file)
+    (let [deps (read-config-edn-file deps-file "Spool deps.edn is malformed or unreadable"
+                                     {:root root :deps-file (.getPath deps-file)})
           paths (or (:paths deps) ["src"])
           ;; Approval covers the root only; a :paths entry resolving outside it
           ;; (via .. or a symlink) would load code the user never consented to.
@@ -416,14 +966,20 @@
             (when (= :cached outcome)
               (delete-tree! tmp))
             outcome)
+          ;; Cleanup must run for every abnormal exit, including JVM Errors and
+          ;; interruption, but the original throwable is always rethrown. This
+          ;; broad catch is cleanup-only; it never translates failure to data.
           (catch Throwable t
+            (when (instance? InterruptedException t)
+              (.interrupt (Thread/currentThread)))
             (delete-tree! tmp)
             (throw t)))))))
 
 (defn- read-spool-deps-edn [entry]
   (let [deps-file (io/file (:root entry) "deps.edn")]
     (when (.isFile deps-file)
-      (assoc (query/read-edn-file deps-file)
+      (assoc (read-config-edn-file deps-file "Spool deps.edn is malformed or unreadable"
+                                   {:root (:root entry) :deps-file (.getPath deps-file)})
              ::deps-file (.getPath deps-file)))))
 
 (defn- validate-spool-maven-deps! [entry deps]
@@ -501,25 +1057,50 @@
                            :add add
                            :procurer (select-keys basis [:mvn/repos :mvn/local-repo])}})))))))
 
-(defn- materialize-git-spool-outcome
-  "Materialize a git entry, returning {:fetch ...} or {:failed <sync-failed>}.
+(defn- materialize-git-family-outcome
+  "Materialize a git family, returning `{:fetch ...}` or failure data.
 
   Only the materialization call may translate throws into fetch/tag outcomes;
   anything thrown elsewhere in sync is a real error and must stay loud."
-  [lib entry]
+  [entry]
   (try
     {:fetch (materialize-git-spool! entry)}
     (catch clojure.lang.ExceptionInfo e
-      (if (= :tag-mismatch (:reason (ex-data e)))
-        {:failed (sync-failed lib entry :tag-mismatch (select-keys (ex-data e) [:tag :expected :actual]))}
-        (let [data (ex-data e)]
-          {:failed (sync-failed lib entry :fetch-failed
-                                (cond-> (fetch-failure data)
-                                  (:remote data) (assoc :remote (:remote data))
-                                  (:cache-path data) (assoc :cache-path (:cache-path data))))})))
-    (catch Throwable t
-      {:failed (sync-failed lib entry :fetch-failed {:exit 1
-                                                     :stderr (stderr-tail (ex-message t))})})))
+      (let [data (ex-data e)]
+        (cond
+          (= :tag-mismatch (:reason data))
+          {:failure {:reason :tag-mismatch
+                     :data (select-keys data [:tag :expected :actual])}}
+
+          (integer? (:exit data))
+          {:failure {:reason :fetch-failed
+                     :data (cond-> (fetch-failure data)
+                             (:remote data) (assoc :remote (:remote data))
+                             (:cache-path data) (assoc :cache-path (:cache-path data)))}}
+
+          :else
+          (throw e))))
+    (catch java.io.IOException t
+      {:failure {:reason :fetch-failed
+                 :data {:exit 1
+                        :stderr (stderr-tail (ex-message t))}}})))
+
+(defn- materialize-families
+  "Materialize each approved git family once and index its outcome by family."
+  [spools]
+  (into {}
+        (map (fn [[family entries]]
+               (let [entry (val (first entries))]
+                 [family (when (= :git (:kind entry))
+                           (materialize-git-family-outcome entry))])))
+        (group-by (comp ::family meta val) spools)))
+
+(defn- runtime-add-failure [lib entry fetch t]
+  {:failed (sync-failed lib entry :runtime-add-failed
+                        (cond-> {:message (ex-message t)
+                                 :class (str (class t))}
+                          (ex-data t) (assoc :data (ex-data t))
+                          fetch (assoc :fetch fetch)))})
 
 (defn- materialize-and-validate-spool
   "Phase 1: materialize a git root, verify it on disk, and validate it per-root.
@@ -529,13 +1110,12 @@
   `:runtime-add-failed` Maven-policy/source-path failure), or `{:survivor {...}}`
   carrying the lib, entry, validated Maven deps, vetted source-path `File`s, and
   any `:fetch` outcome for the shared resolution phase."
-  [lib entry]
-  (let [{:keys [fetch failed]} (when (= :git (:kind entry))
-                                 (materialize-git-spool-outcome lib entry))
+  [lib entry materialization]
+  (let [{:keys [fetch failure]} materialization
         root-file (io/file (:root entry))]
     (cond
-      failed
-      {:failed failed}
+      failure
+      {:failed (sync-failed lib entry (:reason failure) (:data failure))}
 
       (not (.exists root-file))
       {:failed (sync-failed lib entry :missing-root (cond-> {} fetch (assoc :fetch fetch)))}
@@ -556,12 +1136,10 @@
                       :maven-deps maven-deps
                       :source-paths source-paths
                       :fetch fetch}})
-        (catch Throwable t
-          {:failed (sync-failed lib entry :runtime-add-failed
-                                (cond-> {:message (ex-message t)
-                                         :class (str (class t))}
-                                  (ex-data t) (assoc :data (ex-data t))
-                                  fetch (assoc :fetch fetch)))})))))
+        (catch clojure.lang.ExceptionInfo t
+          (runtime-add-failure lib entry fetch t))
+        (catch java.io.IOException t
+          (runtime-add-failure lib entry fetch t))))))
 
 (defn- merge-maven-universe
   "Merge every surviving root's declared Maven deps into one resolution universe.
@@ -596,7 +1174,10 @@
 (defn- file-url-string [path]
   (str (.toURL (.toURI (io/file path)))))
 
-(declare clojure-source? parse-source-ns source-file->ns-sym)
+(declare clojure-source? parse-source-ns source-file->ns-sym namespace-sources-in-paths
+         classify-namespace-loads phase1-namespace-observations latest-bindings
+         load-synced-target! record-current-namespace-status! record-namespace-status!
+         with-namespace-load-observation)
 
 (def ^:private pending-generation-remedy
   "Operator-facing remedy for a non-additive spool sync diff."
@@ -649,6 +1230,83 @@
               (recur))))))
     (format "%064x" (BigInteger. 1 (.digest digest)))))
 
+(defn- sha256-byte-array [^bytes bs]
+  (let [digest (MessageDigest/getInstance "SHA-256")]
+    (.update digest bs)
+    (format "%064x" (BigInteger. 1 (.digest digest)))))
+
+(def ^:private sha256-pattern #"[0-9a-f]{64}")
+
+(s/def ::order pos-int?)
+(s/def ::ownership #{:spool})
+(s/def ::root-lib symbol?)
+(s/def ::owner keyword?)
+(s/def ::namespace symbol?)
+(s/def ::file non-blank-string?)
+(s/def ::sha256 #(and (string? %) (boolean (re-matches sha256-pattern %))))
+(s/def ::namespace-load-record
+  (s/and #(exact-keys? #{:order :ownership :root-lib :owner :namespace
+                         :file :root :sha256} %)
+         #(= :spool (:ownership %))
+         #(s/valid? ::order (:order %))
+         #(s/valid? ::root-lib (:root-lib %))
+         #(or (nil? (:owner %)) (s/valid? ::owner (:owner %)))
+         #(s/valid? ::namespace (:namespace %))
+         #(s/valid? ::file (:file %))
+         #(s/valid? ::root (:root %))
+         #(s/valid? ::sha256 (:sha256 %))))
+(s/def ::records (s/coll-of ::namespace-load-record :kind vector?))
+(s/def ::last-order nat-int?)
+(s/def ::namespace-load-ledger
+  (s/and #(exact-keys? #{:last-order :records} %)
+         #(s/valid? ::last-order (:last-order %))
+         #(s/valid? ::records (:records %))
+         #(= (:last-order %) (count (:records %)))
+         #(= (range 1 (inc (:last-order %))) (map :order (:records %)))))
+
+(defn- record-namespace-load!
+  "Append one successful spool namespace load to this generation's ledger."
+  [runtime {:keys [root-lib owner namespace file root sha256]}]
+  (let [recorded (volatile! nil)]
+    (swap! (:namespace-load-ledger runtime)
+           (fn [{:keys [last-order records]}]
+             (let [record {:order (inc last-order)
+                           :ownership :spool
+                           :root-lib root-lib
+                           :owner owner
+                           :namespace namespace
+                           :file (.getCanonicalPath (io/file file))
+                           :root (.getCanonicalPath (io/file root))
+                           :sha256 sha256}
+                   next-state {:last-order (:order record)
+                               :records (conj records record)}]
+               (require-spec! ::namespace-load-ledger next-state
+                              "Namespace load ledger has an invalid shape" {})
+               (vreset! recorded record)
+               next-state)))
+    @recorded))
+
+(defn namespace-load-ledger
+  "Return this runtime generation's append-only spool namespace load records."
+  [runtime]
+  (let [state @(:namespace-load-ledger runtime)]
+    (require-spec! ::namespace-load-ledger state
+                   "Namespace load ledger has an invalid shape" {})
+    (:records state)))
+
+(defn- load-source-bytes!
+  "Load one source file from bytes read exactly once; return their sha256.
+
+  Reading, hashing, and compiling the same byte array makes the returned hash
+  the hash of exactly what loaded — no window where the file changes between
+  fingerprinting and loading can record a hash the loaded code does not have."
+  [^String path]
+  (let [file (io/file path)
+        bs (java.nio.file.Files/readAllBytes (.toPath file))]
+    (with-open [rdr (io/reader (java.io.ByteArrayInputStream. bs))]
+      (clojure.lang.Compiler/load rdr path (.getName file)))
+    (sha256-byte-array bs)))
+
 (defn- root-fingerprint [source-paths]
   (->> source-paths
        (mapcat file-seq)
@@ -658,18 +1316,13 @@
        sort
        vec))
 
-(defn- root-namespace-set [source-paths]
-  (set (keep (fn [^java.io.File file]
-               (:ns (parse-source-ns {:file (.getCanonicalPath file)})))
-             (for [^java.io.File dir source-paths
-                   ^java.io.File file (file-seq dir)
-                   :when (clojure-source? file)]
-               file))))
-
-(defn- non-additive-diff [previous previous-fingerprints previous-maven approved survivors resolved-maven]
+(defn- non-additive-diff
+  [previous previous-fingerprints previous-maven approved survivors resolved-maven namespace-status]
   (let [previous-loaded (into {} (filter successful-sync?) previous)
         approved-libs (set (keys (:spools approved)))
         current-by-lib (into {} (map (juxt :lib identity)) survivors)
+        loaded-by-root (group-by :root-lib
+                                 (vals (latest-bindings (:ledger namespace-status))))
         removals (vec (for [[lib result] previous-loaded
                             :when (not (contains? approved-libs lib))]
                         (select-keys result [:lib :kind :root :source])))
@@ -684,23 +1337,28 @@
                                        fingerprint (when survivor (root-fingerprint (:source-paths survivor)))]
                                  :when (and survivor
                                             (= (:root result) (get-in survivor [:entry :root]))
-                                            (some find-ns (root-namespace-set (:source-paths survivor)))
+                                            (seq (get loaded-by-root lib))
                                             (or (nil? (get previous-fingerprints lib))
                                                 (not= (get previous-fingerprints lib) fingerprint)))]
                              {:lib lib
                               :root (:root result)
-                              :loaded-namespaces (filterv find-ns (root-namespace-set (:source-paths survivor)))}))
+                              :loaded-namespaces (mapv :namespace (get loaded-by-root lib))}))
         version-bumps (vec (for [[coord previous-version] previous-maven
                                  :let [new-version (get resolved-maven coord)]
                                  :when (and new-version (not= previous-version new-version))]
                              {:coordinate coord
                               :previous-version previous-version
-                              :new-version new-version}))]
+                              :new-version new-version}))
+        residuals (filterv #(not= :unclassified-root (:reason %))
+                           (:residuals namespace-status))
+        hard-conflicts (:hard-conflicts namespace-status)]
     (cond-> {}
       (seq removals) (assoc :removed-roots removals)
       (seq changed-roots) (assoc :changed-roots changed-roots)
       (seq redefinitions) (assoc :redefinitions redefinitions)
-      (seq version-bumps) (assoc :maven-version-bumps version-bumps))))
+      (seq version-bumps) (assoc :maven-version-bumps version-bumps)
+      (seq residuals) (assoc :namespace-residuals residuals)
+      (seq hard-conflicts) (assoc :hard-conflicts hard-conflicts))))
 
 (defn- stale-spool-state-report [runtime]
   (let [current (:generation-id runtime)]
@@ -730,6 +1388,54 @@
                      :pending-generation pending
                      :remedy pending-generation-remedy}))))
 
+(defn preflight-approved-sync!
+  "Classify the on-disk approved config against the loaded generation, writing
+  nothing on success.
+
+  Runs `sync-approved-spools`' classification sequence — read approved config,
+  materialize families, per-root phase-1 validation, structural diff
+  classification, atomic Maven-universe resolution, full diff classification —
+  without its state resets: sync state and the spool classloader are never
+  touched. A non-additive diff records the same `:pending-generation` a refused
+  sync records (the one permitted mutation) and throws its
+  `:non-additive-sync-diff` failure; an invalid config, a declared-floor
+  refusal, or an atomically failing Maven universe throws its own loud failure.
+  Per-root `:failed` outcomes are not refusals and pass. The 1-arity resolves
+  the running release marker exactly as the module refresh coordinator does,
+  so floor validation refuses the same configs. Callers use this to refuse a
+  destructive operation (a registry-clearing reload) before it starts
+  (SPEC-004.C46); it proves only that the sync phase would not throw now, not
+  that a later startup file will succeed."
+  ([runtime]
+   (let [{:keys [marker provenance]} (release-marker runtime)]
+     (preflight-approved-sync! runtime (if (= :none provenance) :none marker))))
+  ([runtime running-marker]
+   (let [previous @(:approved-spool-generation-state runtime)
+         previous-fingerprints @(:approved-spool-generation-fingerprints runtime)
+         previous-maven @(:approved-spool-generation-maven runtime)
+         approved (approved-spools runtime running-marker)
+         materializations (materialize-families (:spools approved))
+         phase1 (mapv (fn [[lib entry]]
+                        (materialize-and-validate-spool
+                         lib entry (get materializations (::family (meta entry)))))
+                      (:spools approved))
+         survivors (into [] (keep :survivor) phase1)
+         namespace-status (classify-namespace-loads
+                           runtime approved (phase1-namespace-observations phase1)
+                           {:observe-loaded? true})
+         structural-diff (non-additive-diff previous previous-fingerprints {} approved survivors {}
+                                            namespace-status)]
+     (when (seq structural-diff)
+       (fail-non-additive-diff! runtime structural-diff approved))
+     (let [universe (merge-maven-universe survivors (:mvn-overrides approved))
+           added (resolve-spool-maven-libs universe)
+           resolved-maven (into {} (map (fn [[lib coord]] [lib (resolved-maven-version lib coord)])) added)
+           diff (non-additive-diff previous previous-fingerprints previous-maven approved survivors resolved-maven
+                                   namespace-status)]
+       (when (seq diff)
+         (fail-non-additive-diff! runtime diff approved)))
+     nil)))
+
 (defn sync-approved-spools
   "Load approved spools into the runtime classloader and record per-spool status.
 
@@ -737,68 +1443,99 @@
   per-root `:failed` outcomes. Phase 2 resolves the union of every surviving root's
   Maven deps (with `:mvn-overrides` applied) once against skein's launch classpath,
   adds the delta jars and each surviving root's source paths to the single spool
-  classloader, and classifies each root `:loaded`/`:already-available`. Maven
-  A non-additive diff restores the previous public sync state, records a
+  classloader, and classifies each root `:loaded`/`:already-available`. A
+  non-additive diff restores the previous public sync state, records a
   `:pending-generation`, and throws before touching the classloader. Maven
   resolution is atomic: a cross-root version conflict or an unresolvable universe
-  fails the whole sync loudly, leaving `{}` sync state rather than partial results."
-  [runtime]
-  ;; Stale state clears before anything that can throw — a structural spools.edn
-  ;; failure or an atomic-resolution abort both leave {} rather than stale results.
-  (let [public-previous @(approved-spool-sync-state runtime)
-        previous @(:approved-spool-generation-state runtime)
-        previous-fingerprints @(:approved-spool-generation-fingerprints runtime)
-        previous-maven @(:approved-spool-generation-maven runtime)]
-    (reset! (approved-spool-sync-state runtime) {})
-    (let [approved (approved-spools runtime)
-          phase1 (mapv (fn [[lib entry]] (materialize-and-validate-spool lib entry))
-                       (:spools approved))
-          failed (into {} (keep :failed) phase1)
-          survivors (into [] (keep :survivor) phase1)
-          structural-diff (non-additive-diff previous previous-fingerprints {} approved survivors {})
-          _ (when (seq structural-diff)
-              (reset! (approved-spool-sync-state runtime) public-previous)
-              (fail-non-additive-diff! runtime structural-diff approved))
-          universe (merge-maven-universe survivors (:mvn-overrides approved))
-          added (resolve-spool-maven-libs universe)
-          resolved-maven (into {} (map (fn [[lib coord]] [lib (resolved-maven-version lib coord)])) added)
-          diff (non-additive-diff previous previous-fingerprints previous-maven approved survivors resolved-maven)
-          _ (when (seq diff)
-              (reset! (approved-spool-sync-state runtime) public-previous)
-              (fail-non-additive-diff! runtime diff approved))
-          loader (:spool-classloader runtime)
-          pre-urls (set (map str (.getURLs ^java.net.URLClassLoader loader)))
-          _ (add-delta-jars! loader added pre-urls)
-          survivor-results (into {}
-                                 (map (fn [{:keys [lib entry maven-deps source-paths fetch]}]
-                                        (add-source-paths! loader source-paths)
-                                        [lib (cond-> (assoc (sync-result-base lib entry)
-                                                            :status (spool-load-status maven-deps source-paths added pre-urls))
-                                               fetch (assoc :fetch fetch))]))
-                                 survivors)
-          results (into (sorted-map) (concat failed survivor-results))
-          fingerprints (into {} (map (juxt :lib (comp root-fingerprint :source-paths))) survivors)
-          retained (stale-spool-state-report runtime)]
-      (reset! (approved-spool-sync-state runtime) results)
-      (reset! (:approved-spool-generation-state runtime)
-              (merge (into (sorted-map) previous)
-                     (into (sorted-map) (filter successful-sync?) results)))
-      (reset! (:approved-spool-generation-fingerprints runtime) (merge previous-fingerprints fingerprints))
-      (reset! (:approved-spool-generation-maven runtime) (merge previous-maven resolved-maven))
-      (cond-> {:spools results}
-        (seq retained) (assoc :retained-spool-state retained)
-        @(:pending-spool-generation runtime) (assoc :pending-generation @(:pending-spool-generation runtime))))))
+  fails the whole sync loudly, leaving `{}` sync state rather than partial results.
+  A running release marker enables `:skein/min` validation. An omitted marker
+  leaves those checks visible in `:pending-validations`; explicit `:none` rejects
+  declared floors."
+  ([runtime]
+   (sync-approved-spools runtime nil))
+  ([runtime running-marker]
+   ;; Stale state clears before anything that can throw — a structural spools.edn
+   ;; failure or an atomic-resolution abort both leave {} rather than stale results.
+   (let [public-previous @(approved-spool-sync-state runtime)
+         previous @(:approved-spool-generation-state runtime)
+         previous-fingerprints @(:approved-spool-generation-fingerprints runtime)
+         previous-maven @(:approved-spool-generation-maven runtime)]
+     (reset! (approved-spool-sync-state runtime) {})
+     (let [approved (approved-spools runtime running-marker)
+           materializations (materialize-families (:spools approved))
+           phase1 (mapv (fn [[lib entry]]
+                          (materialize-and-validate-spool
+                           lib entry (get materializations (::family (meta entry)))))
+                        (:spools approved))
+           failed (into {} (keep :failed) phase1)
+           survivors (into [] (keep :survivor) phase1)
+           namespace-status (record-namespace-status!
+                             runtime
+                             (classify-namespace-loads
+                              runtime approved (phase1-namespace-observations phase1)
+                              {:observe-loaded? true}))
+           structural-diff (non-additive-diff previous previous-fingerprints {} approved survivors {}
+                                              namespace-status)
+           _ (when (seq structural-diff)
+               (reset! (approved-spool-sync-state runtime) public-previous)
+               (fail-non-additive-diff! runtime structural-diff approved))
+           universe (merge-maven-universe survivors (:mvn-overrides approved))
+           added (resolve-spool-maven-libs universe)
+           resolved-maven (into {} (map (fn [[lib coord]] [lib (resolved-maven-version lib coord)])) added)
+           diff (non-additive-diff previous previous-fingerprints previous-maven approved survivors resolved-maven
+                                   namespace-status)
+           _ (when (seq diff)
+               (reset! (approved-spool-sync-state runtime) public-previous)
+               (fail-non-additive-diff! runtime diff approved))
+           loader (:spool-classloader runtime)
+           pre-urls (set (map str (.getURLs ^java.net.URLClassLoader loader)))
+           _ (add-delta-jars! loader added pre-urls)
+           survivor-results (into {}
+                                  (map (fn [{:keys [lib entry maven-deps source-paths fetch]}]
+                                         (add-source-paths! loader source-paths)
+                                         [lib (cond-> (assoc (sync-result-base lib entry)
+                                                             :status (spool-load-status maven-deps source-paths added pre-urls))
+                                                fetch (assoc :fetch fetch))]))
+                                  survivors)
+           results (into (sorted-map) (concat failed survivor-results))
+           fingerprints (into {} (map (juxt :lib (comp root-fingerprint :source-paths))) survivors)
+           retained (stale-spool-state-report runtime)]
+       (reset! (approved-spool-sync-state runtime) results)
+       (reset! (:approved-spool-generation-state runtime)
+               (merge (into (sorted-map) previous)
+                      (into (sorted-map) (filter successful-sync?) results)))
+       (reset! (:approved-spool-generation-fingerprints runtime) (merge previous-fingerprints fingerprints))
+       (reset! (:approved-spool-generation-maven runtime) (merge previous-maven resolved-maven))
+       ;; A clean ledger classification, not merely zero per-root failures,
+       ;; proves that every latest loaded namespace still has one exact current
+       ;; provider. Failed/unclassified roots and residual bindings therefore
+       ;; preserve an earlier pending generation (DELTA-OlrDrt-001.CC13/D3).
+       (when (and (empty? failed) (:clean? namespace-status))
+         (reset! (:pending-spool-generation runtime) nil))
+       (let [result (cond-> {:spools results}
+                      (seq (:pending-validations approved))
+                      (assoc :pending-validations (:pending-validations approved))
+                      (seq retained) (assoc :retained-spool-state retained)
+                      @(:pending-spool-generation runtime)
+                      (assoc :pending-generation @(:pending-spool-generation runtime)))]
+         (require-spec! ::sync-result result
+                        "Approved spool sync result has an invalid shape" {})
+         result)))))
 
 (defn approved-spool-syncs
   "Return the most recent approved spool sync results."
   [runtime]
-  (cond-> {:spools (into (sorted-map) @(approved-spool-sync-state runtime))}
-    @(:pending-spool-generation runtime) (assoc :pending-generation @(:pending-spool-generation runtime))))
+  (let [result (cond-> {:spools (into (sorted-map) @(approved-spool-sync-state runtime))}
+                 @(:pending-spool-generation runtime)
+                 (assoc :pending-generation @(:pending-spool-generation runtime)))]
+    (require-spec! ::sync-result result
+                   "Approved spool sync state has an invalid shape" {})
+    result))
 
 (defn module-file
-  "Resolve module-use `path` against `runtime`'s config-dir, failing on escape.
+  "Resolve module `path` against `runtime`'s config-dir, failing on escape.
 
-  Module-use `:file` targets are approved only within the selected config-dir, so
+  Module `:file` targets are approved only within the selected config-dir, so
   a path resolving outside it (via `..` or a symlink) would load code the
   operator never consented to and fails loudly."
   [runtime path]
@@ -808,7 +1545,7 @@
         file-path (.getPath file)]
     (when-not (or (= base-path file-path)
                   (str/starts-with? file-path (str base-path java.io.File/separator)))
-      (throw (ex-info "Module use :file must stay within selected config-dir"
+      (throw (ex-info "Module :file must stay within selected config-dir"
                       {:file path
                        :config-dir base-path
                        :resolved file-path})))
@@ -821,41 +1558,70 @@
        ".clj"))
 
 (defn- synced-root-paths [runtime]
-  (mapcat (fn [[_ {:keys [root status]}]]
+  (mapcat (fn [[root-lib {:keys [root status]}]]
             (when (#{:loaded :already-available} status)
-              (root-paths root)))
+              (map (fn [source-path] {:root-lib root-lib
+                                      :root root
+                                      :source-path source-path})
+                   (root-paths root))))
           @(approved-spool-sync-state runtime)))
 
 (defn- locate-synced-namespace-file [runtime ns-sym]
   (let [relative (ns-relative-path ns-sym)
         roots (vec (synced-root-paths runtime))
-        file (some (fn [root]
-                     (let [candidate (io/file root relative)]
-                       (when (.isFile candidate)
-                         (.getCanonicalPath candidate))))
-                   roots)]
-    {:file file
-     :relative-path relative
-     :searched-roots (mapv #(.getCanonicalPath ^java.io.File %) roots)}))
+        providers (vec (keep (fn [{:keys [source-path] :as source}]
+                               (let [candidate (io/file source-path relative)]
+                                 (when (.isFile candidate)
+                                   (assoc source :file (.getCanonicalPath candidate)))))
+                             roots))]
+    (when (< 1 (count providers))
+      (throw (ex-info "Synced namespace has multiple approved source providers"
+                      {:status :failed
+                       :reason :duplicate-provider
+                       :namespace ns-sym
+                       :providers (mapv #(select-keys % [:root-lib :root :file]) providers)})))
+    (merge {:relative-path relative
+            :searched-roots (mapv #(.getCanonicalPath ^java.io.File (:source-path %)) roots)}
+           (first providers))))
+
+(defn synced-namespace-file
+  "Return the canonical source file for one uniquely provided synced namespace."
+  [runtime ns-sym]
+  (let [{:keys [file relative-path searched-roots]}
+        (locate-synced-namespace-file runtime ns-sym)]
+    (or file
+        (throw (ex-info "Could not locate namespace source in synced spool roots"
+                        {:ns ns-sym
+                         :relative-path relative-path
+                         :searched-roots searched-roots})))))
+
+(defn- latest-namespace-load [runtime ns-sym]
+  (->> (namespace-load-ledger runtime)
+       (filter #(= ns-sym (:namespace %)))
+       (sort-by :order)
+       last))
 
 (defn load-synced-namespace!
   "Load `ns-sym` from `runtime`'s synced spool roots.
 
-  An already-loaded namespace is a no-op. Otherwise the source is located under
-  the synced approved roots and `load-file`d; a namespace whose source is in no
-  root fails loudly with the roots that were searched."
-  [runtime ns-sym]
-  (if (find-ns ns-sym)
-    {:ns ns-sym}
-    (let [{:keys [file relative-path searched-roots]} (locate-synced-namespace-file runtime ns-sym)]
-      (if file
-        (do
-          (load-file file)
-          {:ns ns-sym :file file})
-        (throw (ex-info "Could not locate namespace source in synced spool roots"
-                        {:ns ns-sym
-                         :relative-path relative-path
-                         :searched-roots searched-roots}))))))
+  An already-loaded namespace with no ledger record is left untouched so source
+  classification can report its unledgered provenance. A ledger binding whose
+  attributed root, file, and bytes still match is also a no-op. Otherwise the
+  source is loaded from its single synced approved provider and appended to the
+  generation ledger; a missing or ambiguous source fails loudly. The optional
+  owner is the stable runtime module key responsible for this explicit load."
+  ([runtime ns-sym]
+   (load-synced-namespace! runtime ns-sym nil))
+  ([runtime ns-sym owner]
+   (let [{:keys [root-lib root file relative-path searched-roots]}
+         (locate-synced-namespace-file runtime ns-sym)]
+     (if file
+       (load-synced-target! runtime {:root-lib root-lib :root root :file file}
+                            ns-sym owner)
+       (throw (ex-info "Could not locate namespace source in synced spool roots"
+                       {:ns ns-sym
+                        :relative-path relative-path
+                        :searched-roots searched-roots}))))))
 
 (defn- clojure-source? [^java.io.File file]
   (let [n (.getName file)]
@@ -887,8 +1653,13 @@
   "Discover `{:ns sym :file path}` for every `.clj`/`.cljc` under `root`'s consented
   `root-paths` classpath dirs. The reload file set is exactly that classpath, no wider."
   [root]
+  (namespace-sources-in-paths (root-paths root)))
+
+(defn- namespace-sources-in-paths
+  "Discover namespace source candidates beneath vetted classpath `dirs`."
+  [dirs]
   (vec
-   (for [^java.io.File dir (root-paths root)
+   (for [^java.io.File dir dirs
          ^java.io.File file (file-seq dir)
          :when (clojure-source? file)]
      {:ns (source-file->ns-sym dir file)
@@ -913,17 +1684,17 @@
 (defn- index-sources-by-ns
   "Index parsed `sources` by declared `:ns`, failing loudly on a collision.
 
-  Two files under `coord`'s consented root-paths that declare the same namespace
+  Two files under `root-lib`'s consented root-paths that declare the same namespace
   would let a plain `(into {} …)` silently keep whichever parsed last and drop the
   other from the reload set. That violates the swallow-nothing contract, so a
   collision throws with the colliding namespace and both file paths instead of
   arbitrarily picking one."
-  [coord sources]
+  [root-lib sources]
   (reduce (fn [m source]
             (let [ns-sym (:ns source)]
               (if-let [prior (get m ns-sym)]
                 (throw (ex-info "Two synced spool sources declare the same namespace"
-                                {:status :failed :reason :duplicate-namespace :coord coord
+                                {:status :failed :reason :duplicate-namespace :root-lib root-lib
                                  :namespace ns-sym :files [(:file prior) (:file source)]}))
                 (assoc m ns-sym source))))
           {}
@@ -933,15 +1704,16 @@
   "Build the intra-root dependency graph over `parsed`, restricted to `intra` edges.
 
   A genuine circular intra-root require makes `org.clojure/tools.namespace` throw a
-  raw `::circular-dependency` ex-info carrying no `:status`/`:coord`. Catch it and
-  rethrow under the same fixed `{:status :failed :reason … :coord …}` contract the
-  coordinate-resolution gates use, naming the cycle."
-  [coord intra parsed]
+  raw `::circular-dependency` ex-info carrying no `:status`/`:root-lib`. Catch it
+  and rethrow under the same fixed
+  `{:status :failed :reason … :root-lib …}` contract the root-resolution gates
+  use, naming the cycle."
+  [root-lib intra parsed]
   (try
-    (reduce (fn [g {:keys [ns deps]}]
+    (reduce (fn [g {ns-sym :ns deps :deps}]
               (reduce (fn [g dep]
                         (if (contains? intra dep)
-                          (ns-dep/depend g ns dep)
+                          (ns-dep/depend g ns-sym dep)
                           g))
                       g
                       deps))
@@ -951,13 +1723,13 @@
       (let [{:keys [reason node dependency]} (ex-data e)]
         (if (= ::ns-dep/circular-dependency reason)
           (throw (ex-info "Synced spool sources have a circular intra-root require"
-                          {:status :failed :reason :circular-requires :coord coord
+                          {:status :failed :reason :circular-requires :root-lib root-lib
                            :cycle {:namespace node :requires dependency}}
                           e))
           (throw e))))))
 
 (defn- dependency-ordered-sources
-  "Order `coord`'s `sources` dependencies-first within this root only.
+  "Order `root-lib`'s `sources` dependencies-first within this root only.
 
   Each source is parsed for its `ns` form, then topologically sorted so a
   namespace reloads after every intra-root namespace it requires. External
@@ -965,21 +1737,371 @@
   the set and are neither ordered nor reloaded. Namespaces with no intra-root
   relationship keep their discovery order and follow the sorted set. Two sources
   declaring the same namespace, or a circular intra-root require, fail loudly
-  under the coordinate's `{:status :failed :reason …}` contract."
-  [coord sources]
+  under the root lib's `{:status :failed :reason …}` contract."
+  [root-lib sources]
   (let [parsed (mapv parse-source-ns sources)
-        by-ns (index-sources-by-ns coord parsed)
+        by-ns (index-sources-by-ns root-lib parsed)
         intra (set (keys by-ns))
-        graph (dependency-graph coord intra parsed)
+        graph (dependency-graph root-lib intra parsed)
         sorted (filter intra (ns-dep/topo-sort graph))
         remaining (remove (set sorted) (map :ns parsed))]
     (mapv by-ns (concat sorted remaining))))
 
-(defn reload-synced-spool!
-  "Make coordinate `coord`'s latest synced source live under the spool classloader.
+(defn- intra-root-closure [by-ns target]
+  (loop [pending [target]
+         closure #{}]
+    (if-let [ns-sym (peek pending)]
+      (if (contains? closure ns-sym)
+        (recur (pop pending) closure)
+        (let [deps (filter by-ns (:deps (get by-ns ns-sym)))]
+          (recur (into (pop pending) deps) (conj closure ns-sym))))
+      closure)))
 
-  Resolves `coord`'s synced root from the runtime's approved-spool sync state and
-  approved allowlist (a coordinate can be approved yet unsynced or sync-failed),
+(defn- load-one-synced-source! [runtime root-lib root owner {ns-sym :ns file :file}]
+  (let [latest (latest-namespace-load runtime ns-sym)
+        disk-sha (sha256-file (io/file file))]
+    (when-not (and (find-ns ns-sym)
+                   latest
+                   (= [root-lib file disk-sha]
+                      [(:root-lib latest) (:file latest) (:sha256 latest)]))
+      (let [loaded-sha (load-source-bytes! file)]
+        (record-namespace-load! runtime {:root-lib root-lib
+                                         :owner owner
+                                         :namespace ns-sym
+                                         :file file
+                                         :root root
+                                         :sha256 loaded-sha})
+        true))))
+
+(defn- load-synced-target!
+  "Load one target and its intra-root dependencies from exact source bytes."
+  [runtime {:keys [root-lib root file]} target owner]
+  (let [ordered (dependency-ordered-sources root-lib (spool-namespace-sources root))
+        by-ns (into {} (map (juxt :ns identity)) ordered)
+        target-source (get by-ns target)]
+    (when-not (= file (:file target-source))
+      (throw (ex-info "Synced namespace source declares a different namespace"
+                      {:status :failed
+                       :reason :namespace-mismatch
+                       :namespace target
+                       :declared-namespace (:ns (parse-source-ns {:ns target :file file}))
+                       :file file})))
+    (let [closure (intra-root-closure by-ns target)
+          loaded (with-namespace-load-observation
+                   runtime
+                   (fn []
+                     (with-spool-classloader
+                       runtime
+                       #(into #{}
+                              (keep (fn [source]
+                                      (when (and (contains? closure (:ns source))
+                                                 (load-one-synced-source!
+                                                  runtime root-lib root owner source))
+                                        (:ns source))))
+                              ordered))))]
+      (cond-> {:ns target}
+        (contains? loaded target) (assoc :file file)))))
+
+(s/def ::provider
+  (s/and #(exact-keys? #{:root-lib :root :namespace :file :sha256} %)
+         #(s/valid? ::root-lib (:root-lib %))
+         #(s/valid? ::root (:root %))
+         #(s/valid? ::namespace (:namespace %))
+         #(s/valid? ::file (:file %))
+         #(s/valid? ::sha256 (:sha256 %))))
+(s/def ::providers (s/coll-of ::provider :kind vector?))
+(s/def ::residual map?)
+(s/def ::residuals (s/coll-of ::residual :kind vector?))
+(s/def ::hard-conflict map?)
+(s/def ::hard-conflicts (s/coll-of ::hard-conflict :kind vector?))
+(s/def ::namespace-load-status
+  (s/and #(exact-keys? #{:ledger :current-bindings :prior-bindings
+                         :classpath-bindings :provisions :residuals
+                         :hard-conflicts :complete? :clean?} %)
+         #(s/valid? ::records (:ledger %))
+         #(map? (:current-bindings %))
+         #(map? (:prior-bindings %))
+         #(vector? (:classpath-bindings %))
+         #(map? (:provisions %))
+         #(every? (fn [[_ providers]] (s/valid? ::providers providers))
+                  (:provisions %))
+         #(s/valid? ::residuals (:residuals %))
+         #(s/valid? ::hard-conflicts (:hard-conflicts %))
+         #(boolean? (:complete? %))
+         #(boolean? (:clean? %))
+         #(= (:clean? %)
+             (and (:complete? %)
+                  (empty? (:residuals %))
+                  (empty? (:hard-conflicts %))))))
+
+(defn- namespace-source-resources [ns-sym]
+  (let [stem (-> (name ns-sym)
+                 (str/replace "-" "_")
+                 (str/replace "." "/"))]
+    [(str stem ".clj") (str stem ".cljc")]))
+
+(defn- classpath-owner [runtime ns-sym]
+  (let [base-loader (some-> ^ClassLoader (:spool-classloader runtime) .getParent)]
+    (if-let [source (some #(some-> base-loader (.getResource %) str)
+                          (namespace-source-resources ns-sym))]
+      {:classpath-owner :base-classpath :source source}
+      (when (contains? (:inherited-namespaces runtime) ns-sym)
+        {:classpath-owner :inherited-jvm}))))
+
+(defn- classpath-bindings [runtime]
+  (->> (all-ns)
+       (keep (fn [ns-obj]
+               (let [ns-sym (ns-name ns-obj)]
+                 (when-let [owner (classpath-owner runtime ns-sym)]
+                   (merge {:ownership :classpath
+                           :namespace ns-sym}
+                          owner)))))
+       (sort-by (comp str :namespace))
+       vec))
+
+(defn- latest-bindings [records]
+  (into (sorted-map)
+        (map (fn [[ns-sym loads]] [ns-sym (apply max-key :order loads)]))
+        (group-by :namespace records)))
+
+(defn- prior-bindings [records latest]
+  (into (sorted-map)
+        (keep (fn [[ns-sym loads]]
+                (let [current-order (:order (get latest ns-sym))
+                      prior (filterv #(< (:order %) current-order) loads)]
+                  (when (seq prior) [ns-sym prior]))))
+        (group-by :namespace records)))
+
+(defn- sources->providers [root-lib root source-paths]
+  (->> (namespace-sources-in-paths source-paths)
+       (map parse-source-ns)
+       (map (fn [{ns-sym :ns file :file}]
+              {:root-lib root-lib
+               :root (.getCanonicalPath (io/file root))
+               :namespace ns-sym
+               :file file
+               :sha256 (sha256-file (io/file file))}))
+       distinct
+       vec))
+
+(defn- classified-observation [root-lib root source-paths]
+  (try
+    {:root-lib root-lib
+     :status :classified
+     :providers (sources->providers root-lib root source-paths)}
+    (catch Throwable t
+      {:root-lib root-lib
+       :status :unclassified
+       :reason (or (:reason (ex-data t)) :source-discovery-failed)
+       :message (ex-message t)})))
+
+(defn- current-namespace-observations [runtime approved]
+  (let [syncs (merge @(:approved-spool-generation-state runtime)
+                     @(approved-spool-sync-state runtime))]
+    (mapv (fn [[root-lib entry]]
+            (let [sync-entry (get syncs root-lib)]
+              (if (= :failed (:status sync-entry))
+                {:root-lib root-lib
+                 :status :unclassified
+                 :reason (:reason sync-entry)
+                 :message (:message sync-entry)}
+                (try
+                  (classified-observation root-lib (:root entry) (root-paths (:root entry)))
+                  (catch Throwable t
+                    {:root-lib root-lib
+                     :status :unclassified
+                     :reason (or (:reason (ex-data t)) :source-discovery-failed)
+                     :message (ex-message t)})))))
+          (:spools approved))))
+
+(defn- record-namespace-status! [runtime status]
+  (when-let [status-atom (:namespace-load-status runtime)]
+    (reset! status-atom status))
+  status)
+
+(defn- record-current-namespace-status! [runtime]
+  (let [approved (approved-spools runtime)]
+    (->> (current-namespace-observations runtime approved)
+         (#(classify-namespace-loads runtime approved % {:observe-loaded? true}))
+         (record-namespace-status! runtime))))
+
+(defn with-namespace-load-observation
+  "Call `f`, then record loaded-namespace evidence once for the load boundary.
+
+  A failed boundary still records evidence from successful partial loads. If
+  classification also fails, preserve the load failure and attach the
+  classification failure as suppressed evidence."
+  [runtime f]
+  (try
+    (let [result (f)]
+      (record-current-namespace-status! runtime)
+      result)
+    (catch Throwable load-failure
+      (try
+        (record-current-namespace-status! runtime)
+        (catch Throwable classification-failure
+          (.addSuppressed load-failure classification-failure)))
+      (throw load-failure))))
+
+(defn- phase1-namespace-observations
+  "Return source-classification observations from one sync phase-1 result."
+  [phase1]
+  (mapv (fn [{:keys [failed survivor]}]
+          (if failed
+            (let [[root-lib result] failed]
+              {:root-lib root-lib
+               :status :unclassified
+               :reason (:reason result)
+               :message (:message result)})
+            (classified-observation (:lib survivor)
+                                    (get-in survivor [:entry :root])
+                                    (:source-paths survivor))))
+        phase1))
+
+(defn- residual-reason [load-record same-root providers approved-libs]
+  (cond
+    (not (contains? approved-libs (:root-lib load-record))) :root-unapproved
+    (seq same-root)
+    (if (not= (:root load-record) (:root (first same-root)))
+      :root-repointed
+      :namespace-renamed)
+    (seq providers) :transfer-pending
+    (.isFile (io/file (:file load-record))) :path-shrunk
+    :else :deleted-file))
+
+(defn- retained-unledgered-residuals [runtime latest]
+  (->> (some-> runtime :namespace-load-status deref :residuals)
+       (filter #(= :unledgered-loaded-namespace (:reason %)))
+       (remove #(classpath-owner runtime (:namespace %)))
+       (remove #(contains? latest (:namespace %)))))
+
+(defn- observed-unledgered-residuals [runtime latest provisions]
+  (for [[ns-sym providers] provisions
+        :when (and (nil? (classpath-owner runtime ns-sym))
+                   (find-ns ns-sym)
+                   (not (contains? latest ns-sym)))]
+    {:reason :unledgered-loaded-namespace
+     :namespace ns-sym
+     :providers providers}))
+
+(defn classify-namespace-loads
+  "Classify cumulative load evidence against current approved source observations.
+
+  Only the latest successful load for a namespace is its current binding.
+  Earlier records remain visible as prior retained-code evidence and never drive
+  current-source attribution. Unclassified roots are residual, incomplete
+  observations; they can never prove a pending generation clean."
+  ([runtime approved observations]
+   (classify-namespace-loads runtime approved observations {}))
+  ([runtime approved observations {:keys [observe-loaded?]}]
+   (let [records (namespace-load-ledger runtime)
+         latest (latest-bindings records)
+         prior (prior-bindings records latest)
+         unclassified (into {} (keep (fn [{:keys [root-lib status] :as observation}]
+                                       (when (= :unclassified status)
+                                         [root-lib observation])))
+                            observations)
+         provisions (->> observations
+                         (filter #(= :classified (:status %)))
+                         (mapcat :providers)
+                         (group-by :namespace)
+                         (into (sorted-map)
+                               (map (fn [[ns-sym providers]]
+                                      [ns-sym (vec (sort-by (juxt (comp str :root-lib) :file)
+                                                            providers))]))))
+         hard-conflicts (->> provisions
+                             (keep (fn [[ns-sym providers]]
+                                     (when (< 1 (count (set (map :root-lib providers))))
+                                       {:reason :duplicate-provider
+                                        :namespace ns-sym
+                                        :providers providers})))
+                             vec)
+         conflicted (set (map :namespace hard-conflicts))
+         approved-libs (set (keys (:spools approved)))
+         unledgered-residuals
+         (->> (concat (retained-unledgered-residuals runtime latest)
+                      (when observe-loaded?
+                        (observed-unledgered-residuals runtime latest provisions)))
+              (reduce (fn [by-namespace residual]
+                        (assoc by-namespace (:namespace residual) residual))
+                      (sorted-map))
+              vals
+              vec)
+         classification
+         (reduce-kv
+          (fn [result ns-sym load-record]
+            (let [providers (get provisions ns-sym [])
+                  same-root (filterv #(= (:root-lib load-record) (:root-lib %)) providers)
+                  exact (some #(when (= (:file load-record) (:file %)) %) same-root)
+                  failed-root (get unclassified (:root-lib load-record))]
+              (cond
+                (contains? conflicted ns-sym)
+                result
+
+                failed-root
+                (-> result
+                    (update :residuals conj {:reason :unclassified-root
+                                             :namespace ns-sym
+                                             :binding load-record
+                                             :root-failure (dissoc failed-root :providers)})
+                    (assoc :incomplete? true))
+
+                (and exact (= (:sha256 load-record) (:sha256 exact)))
+                (assoc-in result [:current ns-sym] load-record)
+
+                exact
+                (update result :residuals conj {:reason :changed-bytes
+                                                :namespace ns-sym
+                                                :binding load-record
+                                                :providers [exact]})
+
+                :else
+                (update result :residuals conj
+                        {:reason (residual-reason load-record same-root providers approved-libs)
+                         :namespace ns-sym
+                         :binding load-record
+                         :providers providers}))))
+          {:current (sorted-map) :residuals [] :incomplete? false}
+          latest)
+         residuals (into (:residuals classification) unledgered-residuals)
+         incomplete? (or (:incomplete? classification) (seq unledgered-residuals))
+         result {:ledger records
+                 :current-bindings (:current classification)
+                 :prior-bindings prior
+                 :classpath-bindings (classpath-bindings runtime)
+                 :provisions provisions
+                 :residuals residuals
+                 :hard-conflicts hard-conflicts
+                 :complete? (not incomplete?)
+                 :clean? (and (not incomplete?)
+                              (empty? residuals)
+                              (empty? hard-conflicts))}]
+     (require-spec! ::namespace-load-status result
+                    "Namespace load status has an invalid shape" {})
+     result)))
+
+(defn loaded-namespace-status
+  "Return the last recorded source classification for this runtime generation.
+
+  Sync and source-load boundaries refresh the snapshot. This read consults only
+  runtime memory; it never discovers, reads, or fingerprints source files."
+  [runtime]
+  (or (some-> runtime :namespace-load-status deref)
+      {:ledger (namespace-load-ledger runtime)
+       :current-bindings (sorted-map)
+       :prior-bindings (sorted-map)
+       :classpath-bindings (classpath-bindings runtime)
+       :provisions (sorted-map)
+       :residuals []
+       :hard-conflicts []
+       :complete? true
+       :clean? true}))
+
+(defn reload-synced-spool!
+  "Make `root-lib`'s latest synced source live under the spool classloader.
+
+  Resolves `root-lib` from the runtime's root-lib-keyed approved-spool sync state
+  and approved allowlist (a root can be approved yet unsynced or sync-failed),
   discovers its namespace sources under the consented `root-paths` classpath, sorts
   them dependencies-first with `org.clojure/tools.namespace` (intra-root edges only),
   and `load-file`s each inside `with-spool-classloader`. Unlike `load-synced-namespace!`
@@ -1001,42 +2123,90 @@
   loadable: `:duplicate-namespace` (two sources under the root declare the same
   namespace, which would otherwise silently drop one file) and `:circular-requires`
   (a circular intra-root require, rethrown from `org.clojure/tools.namespace` under
-  this same `{:status :failed :reason … :coord …}` shape rather than escaping raw).
+  this same `{:status :failed :reason … :root-lib …}` shape rather than escaping
+  raw).
 
-  Returns a data-first map naming the coordinate, its resolved canonical root, and
+  Once every namespace loads, the root's fresh fingerprint is recorded in the
+  generation baselines, so the completed hot bump stops classifying as a C44c
+  redefinition and later refresh calls pass. Loaded-namespace entries
+  hash the exact bytes compiled (`load-source-bytes!`), so a file racing the
+  reload can only make the baseline conservative — a later refresh refuses, never
+  silently accepts code that differs from what loaded. Each successful namespace
+  load appends its own record immediately. If a later namespace fails, those
+  earlier records remain truthful partial-load evidence, while the all-root
+  fingerprint stays unchanged so the outstanding refusal is preserved.
+
+  Returns a data-first map naming the root lib, its resolved canonical root, and
   the namespaces reloaded with their source files."
-  [runtime coord]
+  [runtime root-lib]
   (let [approved (approved-spools runtime)
         syncs (merge @(:approved-spool-generation-state runtime)
                      @(approved-spool-sync-state runtime))
-        sync (get syncs coord)]
-    (when-not (contains? (:spools approved) coord)
-      (throw (ex-info "Spool coordinate is not approved"
-                      {:status :failed :reason :not-approved :coord coord})))
-    (when-not (contains? syncs coord)
-      (throw (ex-info "Spool coordinate is not synced"
-                      {:status :failed :reason :not-synced :coord coord})))
-    (when-not (#{:loaded :already-available} (:status sync))
-      (throw (ex-info "Spool coordinate did not sync successfully"
-                      {:status :failed :reason :sync-failed :coord coord :sync sync})))
-    (let [root (:root sync)
+        sync-entry (get syncs root-lib)]
+    (when-not (contains? (:spools approved) root-lib)
+      (throw (ex-info "Spool root lib is not approved"
+                      {:status :failed :reason :not-approved :root-lib root-lib})))
+    (when-not (contains? syncs root-lib)
+      (throw (ex-info "Spool root lib is not synced"
+                      {:status :failed :reason :not-synced :root-lib root-lib})))
+    (when-not (#{:loaded :already-available} (:status sync-entry))
+      (throw (ex-info "Spool root lib did not sync successfully"
+                      {:status :failed :reason :sync-failed :root-lib root-lib :sync sync-entry})))
+    (let [root (:root sync-entry)
           root-file (io/file root)]
       (when-not (.exists root-file)
         (throw (ex-info "Synced spool root is missing on disk"
-                        {:status :failed :reason :missing-root :coord coord :root root})))
+                        {:status :failed :reason :missing-root :root-lib root-lib :root root})))
       (when (or (not (.isDirectory root-file)) (not (.canRead root-file)))
         (throw (ex-info "Synced spool root is not a readable directory"
-                        {:status :failed :reason :unreadable-root :coord coord :root root})))
+                        {:status :failed :reason :unreadable-root :root-lib root-lib :root root})))
       (let [canonical-root (.getCanonicalPath root-file)
             sources (spool-namespace-sources root)]
         (when (empty? sources)
           (throw (ex-info "Synced spool root has no namespace sources"
-                          {:status :failed :reason :no-namespaces :coord coord :root canonical-root})))
-        (let [ordered (dependency-ordered-sources coord sources)]
-          (with-spool-classloader
-            runtime
-            (fn [] (doseq [{:keys [file]} ordered]
-                     (load-file file))))
-          {:coord coord
+                          {:status :failed :reason :no-namespaces :root-lib root-lib :root canonical-root})))
+        (let [ordered (dependency-ordered-sources root-lib sources)
+              ;; The baseline's file set is enumerated once, BEFORE loading:
+              ;; a file created after this point is absent from the baseline
+              ;; (later sync sees an extra file and refuses) and a compiled
+              ;; file deleted afterwards stays in it (later sync sees it
+              ;; missing and refuses) — every race stays conservative.
+              ;; Non-namespace clojure sources (e.g. data_readers.clj) are
+              ;; hashed from disk now; loaded-namespace entries get the hash
+              ;; of the exact bytes compiled (see load-source-bytes!).
+              namespace-files (set (map :file ordered))
+              disk-hashes (->> (root-paths root)
+                               (mapcat file-seq)
+                               (filter clojure-source?)
+                               (keep (fn [^java.io.File file]
+                                       (let [path (.getCanonicalPath file)]
+                                         (when-not (contains? namespace-files path)
+                                           [path (sha256-file file)]))))
+                               (into {}))
+              ;; Recorded only after every namespace loads, so a completed hot
+              ;; bump stops classifying as a C44c redefinition while a partial
+              ;; failure leaves the baseline (and the refusal) in place.
+              loaded-hashes (with-namespace-load-observation
+                              runtime
+                              #(with-spool-classloader
+                                 runtime
+                                 (fn []
+                                   (into {}
+                                         (map (fn [{ns-sym :ns file :file}]
+                                                (let [loaded-sha (load-source-bytes! file)
+                                                      owner (:owner (latest-namespace-load runtime ns-sym))]
+                                                  (record-namespace-load!
+                                                   runtime
+                                                   {:root-lib root-lib
+                                                    :owner owner
+                                                    :namespace ns-sym
+                                                    :file file
+                                                    :root canonical-root
+                                                    :sha256 loaded-sha})
+                                                  [file loaded-sha])))
+                                         ordered))))
+              fingerprint (vec (sort (map vec (concat disk-hashes loaded-hashes))))]
+          (swap! (:approved-spool-generation-fingerprints runtime) assoc root-lib fingerprint)
+          {:root-lib root-lib
            :root canonical-root
            :namespaces (mapv #(select-keys % [:ns :file]) ordered)})))))

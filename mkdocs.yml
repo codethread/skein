@@ -46,10 +46,14 @@ nav:
   # The root landing page is the repository README (.mkdocs/index.md symlinks
   # it), so the site opens on the same pitch and worked example as GitHub.
   - Home: index.md
-  - Skein: docs/skein.md
-  - Getting Started: docs/getting-started.md
-  - Writing Shared Spools: docs/writing-shared-spools.md
-  - Library Authoring: docs/library-authoring.md
+  - Tutorial: docs/tutorial.md
+  - Reference: docs/reference.md
+  # The user-side spools ladder: customise -> test -> share. The bundled
+  # spools Skein ships keep their own section below.
+  - Spools:
+      - Customising your workspace: docs/spools/customisation.md
+      - Testing your config and spools: docs/spools/testing.md
+      - Writing Shared Spools: docs/spools/writing-shared-spools.md
   - Specs:
       - Tenets: devflow/TENETS.md
       - Philosophy: devflow/PHILOSOPHY.md
@@ -64,6 +68,7 @@ nav:
       - Index: docs/api/README.md
       - skein.api.batch.alpha: docs/api/batch.api.md
       - skein.api.cli.alpha: docs/api/cli.api.md
+      - skein.api.clock.alpha: docs/api/clock.api.md
       - skein.api.current.alpha: docs/api/current.api.md
       - skein.api.events.alpha: docs/api/events.api.md
       - skein.api.format.alpha: docs/api/format.api.md
@@ -73,13 +78,15 @@ nav:
       - skein.api.patterns.alpha: docs/api/patterns.api.md
       - skein.api.peers.alpha: docs/api/peers.api.md
       - skein.api.relations.alpha: docs/api/relations.api.md
+      - skein.api.return-shape.alpha: docs/api/return-shape.api.md
       - skein.api.runtime.alpha: docs/api/runtime.api.md
+      - skein.api.runtime.glossary.alpha: docs/api/runtime-glossary.api.md
+      - skein.api.runtime.help-transform.alpha: docs/api/runtime-help-transform.api.md
       - skein.api.scheduler.alpha: docs/api/scheduler.api.md
       - skein.api.spool.alpha: docs/api/spool.api.md
-      - skein.api.views.alpha: docs/api/views.api.md
       - skein.api.vocab.alpha: docs/api/vocab.api.md
       - skein.api.weaver.alpha: docs/api/weaver.api.md
-  - Spools:
+  - Bundled Spools:
       - Index: spools/README.md
       - Batteries:
           - Contract: spools/batteries.md
@@ -90,51 +97,15 @@ nav:
           - Cookbook: spools/workflow.cookbook.md
           - API: spools/workflow.api.md
       - Devflow Lifecycle: spools/devflow.md
-      - Ephemeral Strands:
-          - Contract: spools/ephemeral.md
-          - Cookbook: spools/ephemeral.cookbook.md
-          - API: spools/ephemeral.api.md
       - Weaver Guild:
           - Contract: spools/guild.md
           - Cookbook: spools/guild.cookbook.md
           - API: spools/guild.api.md
-      - Bobbin Context Packs:
-          - Contract: spools/bobbin.md
-          - Cookbook: spools/bobbin.cookbook.md
-          - API: spools/bobbin.api.md
-      - Selvage Attribute Lint:
-          - Contract: spools/selvage.md
-          - Cookbook: spools/selvage.cookbook.md
-          - API: spools/selvage.api.md
-      - Carder Graph Hygiene:
-          - Contract: spools/carder.md
-          - Cookbook: spools/carder.cookbook.md
-          - API: spools/carder.api.md
-      - Roster Active-Work Registry:
-          - Contract: spools/roster.md
-          - Cookbook: spools/roster.cookbook.md
-          - API: spools/roster.api.md
-      - Loom Work-Graph Projections:
-          - Contract: spools/loom.md
-          - Cookbook: spools/loom.cookbook.md
-          - API: spools/loom.api.md
       - Text Search (UNSAFE):
           - Contract: spools/text-search.md
           - Cookbook: spools/text-search.cookbook.md
           - API: spools/text-search.api.md
       - Kanban Board: spools/kanban.md
-      - Agent Runs:
-          - Contract: spools/agent-run/README.md
-          - Cookbook: spools/agent-run.cookbook.md
-          - API: spools/agent-run.api.md
-      - Delegation Spool:
-          - Contract: spools/delegation/README.md
-          - Cookbook: spools/delegation.cookbook.md
-          - API: spools/delegation.api.md
-      - Subagent Gate Executor:
-          - Contract: spools/executors/subagent.md
-          - Cookbook: spools/executors/subagent.cookbook.md
-          - API: spools/executors/subagent.api.md
       - Shell Gate Executor:
           - Contract: spools/executors/shell.md
           - Cookbook: spools/executors/shell.cookbook.md
@@ -147,6 +118,19 @@ nav:
           - Contract: spools/cron/README.md
           - Cookbook: spools/cron.cookbook.md
           - API: spools/cron.api.md
+  - External Spools:
+      - Agent Runs:
+          - Contract: https://github.com/codethread/agent-harness.spool/blob/27c7429c1642d1fdb609af4c37d11d51db202bb4/agent-run/README.md
+          - Cookbook: https://github.com/codethread/agent-harness.spool/blob/27c7429c1642d1fdb609af4c37d11d51db202bb4/agent-run/agent-run.cookbook.md
+          - API: https://github.com/codethread/agent-harness.spool/blob/27c7429c1642d1fdb609af4c37d11d51db202bb4/agent-run/agent-run.api.md
+      - Delegation Spool:
+          - Contract: https://github.com/codethread/agent-harness.spool/blob/27c7429c1642d1fdb609af4c37d11d51db202bb4/delegation/README.md
+          - Cookbook: https://github.com/codethread/agent-harness.spool/blob/27c7429c1642d1fdb609af4c37d11d51db202bb4/delegation/delegation.cookbook.md
+          - API: https://github.com/codethread/agent-harness.spool/blob/27c7429c1642d1fdb609af4c37d11d51db202bb4/delegation/delegation.api.md
+      - Subagent Gate Executor:
+          - Contract: https://github.com/codethread/agent-harness.spool/blob/27c7429c1642d1fdb609af4c37d11d51db202bb4/agent-run/subagent.md
+          - Cookbook: https://github.com/codethread/agent-harness.spool/blob/27c7429c1642d1fdb609af4c37d11d51db202bb4/agent-run/subagent.cookbook.md
+          - API: https://github.com/codethread/agent-harness.spool/blob/27c7429c1642d1fdb609af4c37d11d51db202bb4/agent-run/subagent.api.md
       - Bench Harness Benchmarks:
-          - Contract: spools/bench/README.md
-          - API: spools/bench.api.md
+          - Contract: https://github.com/codethread/agent-harness.spool/blob/27c7429c1642d1fdb609af4c37d11d51db202bb4/bench/README.md
+          - API: https://github.com/codethread/agent-harness.spool/blob/27c7429c1642d1fdb609af4c37d11d51db202bb4/bench/bench.api.md

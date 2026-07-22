@@ -2,127 +2,367 @@
   "Explicit-runtime API for trusted weaver runtime loader/config workflows.
 
   Callers own runtime selection and pass the target weaver runtime as the first
-  argument. Use `skein.api.current.alpha/runtime` only at trusted in-process entry
-  points that need to capture the active runtime."
-  (:refer-clojure :exclude [sync use])
-  (:require [clojure.java.io :as io]
-            [clojure.spec.alpha :as s]
-            [clojure.string :as str]
+  argument. Use `skein.api.current.alpha/runtime` only at trusted in-process
+  entry points that need to capture the active runtime.
+
+  The module reads as the live-image lifecycle: read the approved/declared
+  config (`approved`, `declared`, `release-marker`), edit the primary
+  `spools.edn` (`upsert-spool-entry!`, `remove-spool-entry!`), declare stable
+  modules (`module!`), reconcile the running image against them (`refresh!`,
+  with `plan` its effect-free dry-run), inspect the joined offline picture
+  (`status`), reach for the advanced code-only seam (`reload-code!`), and serve
+  runtime-owned state and time to trusted spools (`spool-state`, `clock`, `now`).
+
+  `module!`/`refresh!`/`plan`/`status`/`reload-code!` are the lifecycle surface:
+  declarations are data, refresh replaces owner-complete contributions and
+  reconciles resources without stopping the live image, and `reload-code!` is
+  the sharp code-only tool. Component sub-specs live in
+  `skein.api.runtime.internal.shapes`; every registered key stays
+  alpha-qualified."
+  (:require [clojure.spec.alpha :as s]
+            [skein.api.clock.alpha :as clock-api]
+            [skein.api.runtime.internal.shapes :as shapes]
+            [skein.api.runtime.internal.spools-edn :as spools-edn]
             [skein.api.spool.alpha :refer [require-valid!]]
-            [skein.core.weaver.access :refer [approved-spool-sync-state module-use-state
-                                              with-spool-classloader]]
+            [skein.core.specs :as specs]
+            [skein.core.weaver.access :as access]
             [skein.core.weaver.runtime :as weaver-runtime]
             [skein.core.weaver.spool-sync :as spool-sync]))
 
-(s/def ::coord symbol?)
-(s/def ::status keyword?)
-(s/def ::lib symbol?)
-(s/def ::kind keyword?)
-(s/def ::root any?)
-(s/def ::source any?)
-(s/def ::previous-root any?)
-(s/def ::new-root any?)
-(s/def ::loaded-namespaces (s/coll-of symbol? :kind vector?))
-(s/def ::coordinate symbol?)
-(s/def ::previous-version string?)
-(s/def ::new-version string?)
-(s/def ::removed-root (s/keys :req-un [::lib ::kind ::root]
-                              :opt-un [::source]))
-(s/def ::changed-root (s/keys :req-un [::lib ::previous-root ::new-root]))
-(s/def ::redefinition (s/keys :req-un [::lib ::root ::loaded-namespaces]))
-(s/def ::maven-version-bump (s/keys :req-un [::coordinate ::previous-version ::new-version]))
-(s/def ::removed-roots (s/coll-of ::removed-root :kind vector?))
-(s/def ::changed-roots (s/coll-of ::changed-root :kind vector?))
-(s/def ::redefinitions (s/coll-of ::redefinition :kind vector?))
-(s/def ::maven-version-bumps (s/coll-of ::maven-version-bump :kind vector?))
-(s/def ::diff (s/keys :opt-un [::removed-roots ::changed-roots ::redefinitions ::maven-version-bumps]))
-(s/def ::generation (s/or :id string? :unknown #{:unknown}))
-(s/def ::approved-spools set?)
-(s/def ::remedy string?)
-(s/def ::pending-generation (s/keys :req-un [::status ::generation ::diff ::approved-spools ::remedy]))
-(s/def ::key any?)
-(s/def ::current-generation string?)
-(s/def ::reason keyword?)
-(s/def ::retained-spool-state-entry (s/keys :req-un [::key ::generation ::current-generation]
-                                            :opt-un [::reason]))
-(s/def ::retained-spool-state (s/coll-of ::retained-spool-state-entry :kind vector?))
-(s/def ::spools map?)
-(s/def ::sync-result (s/keys :req-un [::spools]
-                             :opt-un [::pending-generation ::retained-spool-state]))
-(s/def ::non-additive-sync-diff-ex-data
-  (s/keys :req-un [::status ::reason ::diff ::pending-generation ::remedy]))
+(declare running-release-marker spools-file
+         validate-approved-result! validate-declared-result!
+         validate-refresh-opts! validate-refresh-result! validate-plan-result!
+         validate-status-result! validate-module-result! validate-reload-code-result!
+         families-requiring
+         validate-spool-state-opts! versioned-value reinit-mismatched-state)
 
-(defn- validate-sync-result! [result]
-  (require-valid! ::sync-result result "runtime sync result has an invalid shape")
-  result)
+;; --- reading spool config ---------------------------------------------------
 
-(defn- validate-sync-ex-data! [data]
-  (when (= :non-additive-sync-diff (:reason data))
-    (require-valid! ::non-additive-sync-diff-ex-data data "runtime sync exception data has an invalid shape")))
+(s/def ::approved-result :skein.core.weaver.spool-sync/approved-result)
+(s/def ::declared-result :skein.core.weaver.spool-sync/declared-result)
+(s/def ::running-marker (s/or :marker string?
+                              :unavailable #{:none}
+                              :deferred nil?))
 
 (defn approved
-  "Return the normalized approved spool roots for `runtime`'s config dir."
+  "Return the normalized approved spool roots for `runtime`'s config dir.
+
+  Each root entry includes `:provenance :spools-edn|:local-overlay`; overlay
+  entries also include their explicit `:claims` marker. `:families` maps family
+  symbols to the declared `spools.edn` entry, effective post-overlay coordinate,
+  provenance, and overlay claim or nil. The result conforms to
+  `::approved-result`."
   [runtime]
-  (spool-sync/approved-spools runtime))
+  (validate-approved-result!
+   (spool-sync/approved-spools runtime (running-release-marker runtime))))
 
-(defn sync!
-  "Load approved spool roots and Maven jars into `runtime`.
+(s/fdef approved
+  :args (s/cat :runtime map?)
+  :ret ::approved-result)
 
-  Returns `{:spools ...}` plus `:retained-spool-state` when preserved spool-state
-  entries are from an older or unknown generation. Refuses non-additive diffs,
-  including Maven version changes for already-loaded coordinates, by throwing
-  ExceptionInfo with `:reason :non-additive-sync-diff`, `:diff`,
-  `:pending-generation`, and `:remedy`; later successful calls include the
-  pending generation until the weaver process is replaced."
+(defn declared
+  "Return declared spool families with release-floor validation as data.
+
+  `:families` has the same declared/effective projection as `approved`.
+  `:requirements` is valid with pending validations, or invalid with findings
+  and bump suggestions. Stage-1 structural errors still throw. The explicit
+  `running-marker` arity accepts nil to leave Skein floor checks pending. The
+  result conforms to `::declared-result`."
+  ([runtime]
+   (declared runtime (running-release-marker runtime)))
+  ([runtime running-marker]
+   (validate-declared-result!
+    (spool-sync/declared-spools runtime running-marker))))
+
+(s/fdef declared
+  :args (s/or :runtime (s/cat :runtime map?)
+              :with-marker (s/cat :runtime map?
+                                  :running-marker ::running-marker))
+  :ret ::declared-result)
+
+(defn release-marker
+  "Return the running Skein release marker and its provenance.
+
+  The result has marker `vN` and provenance `:claimed` for an explicit startup
+  claim, marker `vN` and provenance `:tag` for an annotated tag on the source
+  checkout's HEAD, or `{:marker nil :provenance :none}` when the checkout
+  resource is absent or non-filesystem, or successful inspection finds no
+  matching annotated tag. Git startup, checkout-root resolution, and nonzero
+  Git command failures throw. Consumers that require marker arithmetic must
+  reject `:none` explicitly. The result conforms to
+  `:skein.core.specs/release-marker-result`; marker claims conform to
+  `:skein.core.specs/release-marker-claim`."
   [runtime]
-  (try
-    (validate-sync-result! (spool-sync/sync-approved-spools runtime))
-    (catch clojure.lang.ExceptionInfo ex
-      (validate-sync-ex-data! (ex-data ex))
-      (throw ex))))
+  (let [result (access/release-marker runtime)]
+    (require-valid! ::specs/release-marker-result result
+                    "runtime release marker has an invalid shape")
+    result))
 
-(defn syncs
-  "Return `runtime`'s most recent approved-root sync state.
+(s/fdef release-marker
+  :args (s/cat :runtime map?)
+  :ret :skein.core.specs/release-marker-result)
 
-  The result is `{:spools ...}` and may include the latest recorded
-  `:pending-generation` from a refused non-additive sync diff."
+;; --- the spools.edn write seam ----------------------------------------------
+
+(s/def ::spool-family symbol?)
+(s/def ::spool-entry :skein.core.weaver.spool-sync/family-entry)
+(s/def ::spool-write-result
+  (s/and #(shapes/exact-keys? #{:status :lib :entry :file} %)
+         #(s/valid? ::spool-write-status (:status %))
+         #(s/valid? ::spool-family (:lib %))
+         #(s/valid? ::spool-entry (:entry %))
+         #(s/valid? ::specs/spools-file-result (:file %))))
+
+(defn upsert-spool-entry!
+  "Insert or replace `lib` in `runtime`'s primary `spools.edn`.
+
+  `lib` and `entry` conform to `::spool-family` and `::spool-entry`. The full
+  post-edit config is validated through sync's stage-1 contract before an atomic
+  write. Only the `:spools` map is rewritten, so comments outside it are kept.
+  The result conforms to `::spool-write-result`."
+  [runtime lib entry]
+  (require-valid! ::spool-family lib "upsert-spool-entry! lib must be a symbol")
+  (let [^java.io.File file (spools-file runtime)
+        original (spools-edn/read-primary file)
+        config (spools-edn/parse-primary original file)
+        _ (spool-sync/validate-shared-spools-config! file config)
+        existed? (contains? (:spools config) lib)
+        updated (assoc-in config [:spools lib] entry)]
+    (spools-edn/write-primary! file original updated)
+    {:status (if existed? :updated :inserted)
+     :lib lib
+     :entry entry
+     :file file}))
+
+(s/fdef upsert-spool-entry!
+  :args (s/cat :runtime map? :lib ::spool-family :entry ::spool-entry)
+  :ret ::spool-write-result)
+
+(defn remove-spool-entry!
+  "Remove `lib` from `runtime`'s primary `spools.edn`.
+
+  Refuses a missing family or a family whose root libs appear in another
+  family's `:requires`, naming all requirers. Inputs and result conform to
+  `::spool-family` and `::spool-write-result`. Only the primary file is changed."
+  [runtime lib]
+  (require-valid! ::spool-family lib "remove-spool-entry! lib must be a symbol")
+  (let [^java.io.File file (spools-file runtime)
+        original (spools-edn/read-primary file)
+        config (spools-edn/parse-primary original file)
+        _ (spool-sync/validate-shared-spools-config! file config)
+        entry (get-in config [:spools lib])]
+    (when-not entry
+      (throw (ex-info "Spool family is not present in spools.edn"
+                      {:reason :spool-family-not-found :lib lib :file (.getPath file)})))
+    (let [normalized (:families (spool-sync/validate-shared-spools-config! file config))
+          target (some #(when (= lib (:family %)) %) normalized)
+          roots (set (keys (:roots-map target)))
+          requirers (families-requiring normalized lib roots)]
+      (when (seq requirers)
+        (throw (ex-info "Spool family is required by other families"
+                        {:reason :spool-family-required
+                         :lib lib
+                         :roots roots
+                         :requirers requirers})))
+      (spools-edn/write-primary! file original (update config :spools dissoc lib))
+      {:status :removed :lib lib :entry entry :file file})))
+
+(s/fdef remove-spool-entry!
+  :args (s/cat :runtime map? :lib ::spool-family)
+  :ret ::spool-write-result)
+
+;; --- the live module lifecycle ----------------------------------------------
+;;
+;; module! declares stable modules as data; refresh! reconciles the running
+;; image against them, plan is its effect-free dry-run, status reads the joined
+;; offline picture, and reload-code! is the advanced code-only seam. The deep
+;; multi-kind publication and reconcile is the shared coordinator in
+;; skein.core.weaver.module-refresh (startup drives the same entry point), so
+;; these bodies own the public surface: request classification, the arities, and
+;; result-shape validation over named specs (DELTA-OlrRepl-001.CC3-CC9, CC14).
+
+(s/def ::module-key keyword?)
+(s/def ::root-lib symbol?)
+
+;; The declaration grammar's authority is `module!`'s docstring and the
+;; coordinator's `normalize-declaration`; this result shape only asserts the
+;; normalized declaration carries exactly one source target and policy vectors.
+(s/def ::module-declaration
+  (s/and map?
+         #(not= (contains? % :ns) (contains? % :file))
+         #(or (not (contains? % :ns)) (symbol? (:ns %)))
+         #(or (not (contains? % :file)) (string? (:file %)))
+         #(vector? (:spools %))
+         #(vector? (:after %))
+         #(boolean? (:required? %))))
+
+(s/def ::refresh-status #{:applied :partial :unchanged :refused})
+(s/def ::refresh-mode #{:full :targeted})
+(s/def ::refresh-result
+  (s/and map?
+         #(s/valid? ::refresh-status (:status %))
+         #(s/valid? ::refresh-mode (:mode %))
+         #(map? (:modules %))
+         #(map? (:roots %))
+         #(vector? (:residuals %))
+         #(vector? (:conflicts %))
+         #(vector? (:remedies %))))
+
+(s/def ::caveat (s/and string? seq))
+(s/def ::plan-result
+  (s/and ::refresh-result
+         #(true? (:dry-run? %))
+         #(s/valid? ::caveat (:caveat %))))
+
+(s/def ::status-result
+  (s/and map?
+         #(map? (:modules %))
+         #(map? (:contributions %))
+         #(map? (:loaded %))
+         #(contains? % :last-refresh)))
+
+(s/def ::reload-code-result
+  (s/and #(shapes/exact-keys? #{:root-lib :root :namespaces :residuals :hard-conflicts} %)
+         #(s/valid? ::root-lib (:root-lib %))
+         #(s/valid? ::canonical-root (:root %))
+         #(s/valid? ::namespaces (:namespaces %))
+         #(vector? (:residuals %))
+         #(vector? (:hard-conflicts %))))
+
+(s/def ::staged-module-result
+  (s/and #(shapes/exact-keys? #{:module/key :module/declaration :staged?} %)
+         #(true? (:staged? %))
+         #(s/valid? ::module-key (:module/key %))
+         #(s/valid? ::module-declaration (:module/declaration %))))
+(s/def ::module-result
+  (s/or :staged ::staged-module-result
+        :refreshed ::refresh-result))
+
+(defn module!
+  "Declare one stable runtime module under keyword `key` for `runtime`.
+
+  `opts` is closed to a source target (`:ns` synced namespace symbol, or
+  workspace-relative `:file` string — exactly one is required), optional
+  approved `:spools` root prerequisites, optional module-key `:after`
+  dependencies, an optional fully qualified `:contribute` symbol, an optional
+  fully qualified `:reconcile` symbol, and an optional boolean `:required?`.
+  When `:contribute` is omitted the module's contribution is the declaration
+  data collected from the authoring forms evaluated in its source, so a plain
+  file of authoring forms is a complete module (DELTA-OlrRepl-001.CC3).
+
+  During startup-file collection this only stages the declaration and performs
+  no source load, publication, or reconcile. Outside collection it replaces the
+  desired declaration for `key` and refreshes that module plus affected
+  dependents (CC4). Whole-module removal is expressed by omitting the module
+  from a successfully collected full graph, not here. Malformed declarations
+  fail loudly. The staged or refreshed result conforms to `::module-result`."
+  [runtime key opts]
+  (require-valid! ::module-key key "module! key must be a keyword")
+  (validate-module-result! (weaver-runtime/declare-module! runtime key opts)))
+
+(s/fdef module!
+  :args (s/cat :runtime map? :key ::module-key :opts map?)
+  :ret ::module-result)
+
+(defn refresh!
+  "Reconcile `runtime`'s live image against its declared module graph.
+
+  The no-opts arity re-reads `init.clj`/`init.local.clj`, collects the complete
+  layered graph, and applies the Weaver Runtime refresh contract: it composes
+  approved-root synchronization, changed-source reload, contribution collection
+  and classification, owner-complete registry publication, and resource
+  reconciliation, leaving queued events, recent failures, and unrelated
+  spool-state live. `(refresh! runtime {:only keys})` refreshes a non-empty set
+  of known module keys and affected dependents against the active declaration
+  graph without re-reading startup files. Unknown option keys, an empty or
+  malformed `:only`, and unknown module keys fail loudly. Content-identical
+  staged contributions skip publication and reconcile. The atomic multi-phase
+  reconcile is the coordinator that startup also drives; this surface owns the
+  arities, request classification, and result validation. The joined result
+  conforms to `::refresh-result` (DELTA-OlrRepl-001.CC7)."
+  ([runtime] (refresh! runtime {}))
+  ([runtime opts]
+   (validate-refresh-opts! opts)
+   (validate-refresh-result! (weaver-runtime/refresh-modules! runtime opts))))
+
+(s/fdef refresh!
+  :args (s/or :full (s/cat :runtime map?)
+              :targeted (s/cat :runtime map? :opts map?))
+  :ret ::refresh-result)
+
+(defn plan
+  "Return the dry-run intentions of `refresh!` without publishing or reconciling.
+
+  `plan` and `(plan runtime {:only keys})` collect and diff against the current
+  synchronized roots without fetching, synchronizing, publishing, reconciling,
+  or recording coordinator state. They return a `::refresh-result`-shaped map
+  flagged `:dry-run? true` with a `:caveat`. The one honest caveat, stated in
+  the result and here: collection may load module source code and record that
+  load in the namespace ledger. Malformed options fail loudly. The result
+  conforms to `::plan-result` (DELTA-OlrRepl-001.CC14)."
+  ([runtime] (plan runtime {}))
+  ([runtime opts]
+   (validate-refresh-opts! opts)
+   (validate-plan-result!
+    (weaver-runtime/refresh-modules! runtime (assoc opts :dry-run? true)))))
+
+(s/fdef plan
+  :args (s/or :full (s/cat :runtime map?)
+              :targeted (s/cat :runtime map? :opts map?))
+  :ret ::plan-result)
+
+(defn status
+  "Return `runtime`'s offline, read-only joined module status.
+
+  Reports desired modules and their declaration layers/shadows, active
+  contributions, module and resource outcomes, root outcomes, and the joined
+  loaded-code picture (current bindings, prior bindings, residuals, hard
+  conflicts) with the last refresh result. It performs no network access, file
+  write, source load, registration, or reconcile. The result conforms to
+  `::status-result` (DELTA-OlrRepl-001.CC8, DELTA-OlrDrt-001.CC15)."
   [runtime]
-  (validate-sync-result! (spool-sync/approved-spool-syncs runtime)))
+  (validate-status-result! (weaver-runtime/module-status runtime)))
 
-(defn reload!
-  "Reload startup files from `runtime`'s config dir after clearing registries."
+(s/fdef status
+  :args (s/cat :runtime map?)
+  :ret ::status-result)
+
+(defn reload-code!
+  "Make `root-lib`'s current synced source live in dependency order (code only).
+
+  The advanced code-only seam: it loads the selected synced root's namespaces in
+  dependency order and records exact load-ledger entries, then classifies the
+  generation's loaded code against current source. It performs no module
+  contribution publication or resource reconciliation — use `refresh!` for the
+  normal path. `root-lib` is a root-lib symbol from a family's effective `:roots`
+  map (e.g. `skein.spools/kanban`); an unresolvable root fails loudly with a
+  `:reason` in ex-data. The result names the reloaded root, its canonical path,
+  the namespaces reloaded with their sources, and the residual and hard-conflict
+  outcomes from the post-reload classification, conforming to
+  `::reload-code-result` (DELTA-OlrRepl-001.CC9)."
+  [runtime root-lib]
+  (require-valid! ::root-lib root-lib "reload-code! root-lib must be a symbol")
+  (let [reload (spool-sync/reload-synced-spool! runtime root-lib)
+        loaded (spool-sync/loaded-namespace-status runtime)
+        result (assoc (select-keys reload [:root-lib :root :namespaces])
+                      :residuals (:residuals loaded)
+                      :hard-conflicts (:hard-conflicts loaded))]
+    (validate-reload-code-result! result)))
+
+(s/fdef reload-code!
+  :args (s/cat :runtime map? :root-lib ::root-lib)
+  :ret ::reload-code-result)
+
+;; --- runtime-owned services for trusted spools ------------------------------
+
+(defn clock
+  "Return `runtime`'s installed `skein.api.clock.alpha/Clock`."
   [runtime]
-  (weaver-runtime/reload-config! runtime))
+  (weaver-runtime/clock runtime))
 
-(defn reload-spool!
-  "Make `coord`'s latest synced source live in `runtime`.
-
-  `coord` is a `spools.edn` coordinate symbol (e.g. `skein.spools/kanban`) — a
-  spool is many namespaces and sync state is keyed by coordinate, not namespace.
-  Returns a data-first map naming the coordinate, its resolved canonical root, and
-  the namespaces reloaded in reload order with their source files.
-
-  Fills the gap neither existing reload path covers: `reload!` re-runs startup
-  files but does not unload already-loaded namespaces or vars, and a bare `(require
-  ns :reload)` is classloader-blind to per-spool synced roots — so neither picks up
-  updated synced spool code. `reload-spool!` does. It reloads code only and leaves
-  re-registration to the caller (a targeted re-`use!` of the spool's activation, or
-  a full `reload!` when the bump changes registrations across the config).
-
-  Redefinition semantics — this re-`load-file`s sources, rebinding vars in place;
-  it unloads nothing, so definitions minted before the reload are not migrated.
-  Concretely: a `defmulti` dispatch table survives (re-evaluating `defmulti` is a
-  no-op, so methods registered against the prior table stay and a changed dispatch
-  signature is not picked up), a re-evaluated `defprotocol` mints a fresh interface
-  so instances built before the reload no longer satisfy the new protocol
-  (`satisfies?`/`instance?` go false), and any instance or captured var from before
-  the reload keeps its old definition. A revision that deletes or renames a
-  namespace also leaves the old one loaded until restart.
-
-  Fails loudly on an unresolvable `coord`, carrying a `:reason` keyword in ex-data."
-  [runtime coord]
-  (require-valid! ::coord coord "reload-spool! coord must be a spool coordinate symbol")
-  (spool-sync/reload-synced-spool! runtime coord))
+(s/fdef clock
+  :args (s/cat :runtime map?)
+  :ret ::clock-api/clock)
 
 (defn now
   "Return the current java.time.Instant from `runtime`'s clock seam.
@@ -132,182 +372,189 @@
   [runtime]
   (weaver-runtime/now runtime))
 
-(def ^:private allowed-use-keys #{:ns :file :spools :after :call :required?})
+(s/fdef now
+  :args (s/cat :runtime map?)
+  :ret inst?)
 
-(defn- validate-use-opts! [key opts]
-  (when-not (keyword? key)
-    (throw (ex-info "Module use key must be a keyword" {:key key})))
-  (when-not (map? opts)
-    (throw (ex-info "Module use opts must be a map" {:key key :opts opts})))
-  (when-let [unknown (seq (remove allowed-use-keys (keys opts)))]
-    (throw (ex-info "Module use opts contain unknown keys" {:key key :keys (vec unknown)})))
-  (when (= (contains? opts :ns) (contains? opts :file))
-    (throw (ex-info "Module use opts require exactly one of :ns or :file" {:key key :opts opts})))
-  (when (and (contains? opts :ns) (not (symbol? (:ns opts))))
-    (throw (ex-info "Module use :ns must be a symbol" {:key key :ns (:ns opts)})))
-  (when (and (contains? opts :file) (not (and (string? (:file opts)) (not (str/blank? (:file opts))))))
-    (throw (ex-info "Module use :file must be a non-blank string" {:key key :file (:file opts)})))
-  (when (and (contains? opts :file) (.isAbsolute (io/file (:file opts))))
-    (throw (ex-info "Module use :file must be relative to selected config-dir" {:key key :file (:file opts)})))
-  (when (and (contains? opts :spools)
-             (not (or (vector? (:spools opts)) (set? (:spools opts)))))
-    (throw (ex-info "Module use :spools must be a vector or set of symbols" {:key key :spools (:spools opts)})))
-  (doseq [lib (:spools opts)]
-    (when-not (symbol? lib)
-      (throw (ex-info "Module use :spools entries must be symbols" {:key key :lib lib}))))
-  (when (and (contains? opts :after) (not (vector? (:after opts))))
-    (throw (ex-info "Module use :after must be a vector" {:key key :after (:after opts)})))
-  (doseq [after (:after opts)]
-    (when-not (keyword? after)
-      (throw (ex-info "Module use :after entries must be keywords" {:key key :after after}))))
-  (when (and (contains? opts :call) (not (symbol? (:call opts))))
-    (throw (ex-info "Module use :call must be a fully qualified symbol" {:key key :call (:call opts)})))
-  (when (and (symbol? (:call opts)) (nil? (namespace (:call opts))))
-    (throw (ex-info "Module use :call must be a fully qualified symbol" {:key key :call (:call opts)})))
-  (when (and (contains? opts :required?) (not (boolean? (:required? opts))))
-    (throw (ex-info "Module use :required? must be boolean" {:key key :required? (:required? opts)}))))
+(def ^:private spool-state-opt-keys #{:version :migrate-fn})
 
-(defn- record-use! [runtime key result]
-  (swap! (module-use-state runtime) assoc key result)
-  result)
+;; ::version is also the metadata key stamped on versioned spool-state values;
+;; renaming it would make every preserved versioned state look mismatched on
+;; the next upgrade and force a spurious reinit.
+(s/def ::version (s/or :integer integer? :keyword keyword? :string string?))
+(s/def ::spool-state-opts
+  (s/nilable
+   (s/and (s/keys :opt-un [::version ::migrate-fn])
+          #(every? spool-state-opt-keys (keys %))
+          #(or (not (contains? % :migrate-fn))
+               (contains? % :version)))))
 
-(defn- skip-use [runtime key opts reason data]
-  (let [result (record-use! runtime key (merge {:key key :opts opts :status :skipped :reason reason} data))]
-    (when (and (:required? opts) (#{:not-approved :not-synced :sync-failed} reason))
-      (throw (ex-info "Required module use was skipped" result)))
+(defn spool-state
+  "Return runtime-owned state for a spool key, creating it with `init-fn` once.
+
+  The runtime stores spool state under arbitrary keys in its `:spool-state`
+  atom. `init-fn` is called only when `key` has not been installed for this
+  runtime; the returned value is then reused for the rest of the runtime
+  lifetime. Spools should use this accessor instead of reaching into runtime
+  internals.
+
+  Spool state survives `refresh!` by design, so a spool whose state shape changed
+  between refreshes would otherwise silently reuse a preserved value that is
+  missing the new keys. The four-arg arity guards against that: pass opts
+  `{:version v :migrate-fn f}` and, when a preserved value's stored version does
+  not `=` `version`, the runtime deliberately reinits (or, with `:migrate-fn`,
+  hands the old value to `f` to produce the new one) instead of reusing a
+  shape-mismatched map. Silent reuse of shape-mismatched state is impossible
+  once a version is declared. Opts conform to
+  `:skein.api.runtime.alpha/spool-state-opts`; a malformed map fails loudly at
+  the call site rather than degrading to the unversioned path."
+  ([runtime key init-fn] (spool-state runtime key nil init-fn))
+  ([runtime key opts init-fn]
+   (validate-spool-state-opts! opts)
+   (when-not (and runtime (:spool-state runtime))
+     (throw (ex-info "Runtime does not support spool state" {:key key})))
+   (let [{:keys [version migrate-fn]} opts
+         state (:spool-state runtime)
+         reuse? (fn [existing] (= version (::version (meta existing))))
+         m @state]
+     ;; Lock-free fast path: a present, version-matching value is reused as-is.
+     (if (and (contains? m key) (reuse? (get m key)))
+       (get m key)
+       ;; Build path (first init OR version-mismatch reinit). Serialize it per
+       ;; runtime so init-fn/migrate-fn — and the executors/schedulers they
+       ;; allocate — run at most once. A lock-free CAS loser would discard its
+       ;; freshly-built state and leak that value's live daemon threads for the
+       ;; JVM lifetime (nothing else references it to shut it down). Reinit is
+       ;; rare (a version bump on reload), so a coarse per-runtime lock is cheap;
+       ;; only builders take it, readers on the fast path never do.
+       (locking state
+         (let [m* @state
+               existing (get m* key)]
+           (cond
+             (not (contains? m* key))
+             (let [value (versioned-value runtime (init-fn) version)]
+               (swap! state assoc key value)
+               value)
+
+             (reuse? existing)
+             existing
+
+             :else
+             (let [replacement (reinit-mismatched-state
+                                runtime existing version migrate-fn init-fn)]
+               (swap! state assoc key replacement)
+               replacement))))))))
+
+(s/fdef spool-state
+  :args (s/or :unversioned (s/cat :runtime map? :key any? :init-fn ifn?)
+              :versioned (s/cat :runtime map? :key any?
+                                :opts ::spool-state-opts :init-fn ifn?))
+  :ret any?)
+
+;; --- release marker and spools.edn access -----------------------------------
+
+(defn- running-release-marker [runtime]
+  (let [result (access/release-marker runtime)
+        _ (require-valid! ::specs/release-marker-result result
+                          "runtime release marker has an invalid shape")
+        {:keys [marker provenance]} result]
+    (if (= :none provenance) :none marker)))
+
+(defn- spools-file
+  "Return the `java.io.File` for `runtime`'s shared `spools.edn`.
+
+  The result conforms to `:skein.core.specs/spools-file-result`."
+  [runtime]
+  (let [result (access/spools-file runtime "spools.edn")]
+    (require-valid! ::specs/spools-file-result result
+                    "runtime spools file has an invalid shape")
     result))
 
-(defn- use-spool-skip [runtime opts]
-  (let [approved (spool-sync/approved-spools runtime)
-        syncs @(approved-spool-sync-state runtime)]
-    (some (fn [lib]
-            (let [sync (get syncs lib)]
-              (cond
-                (not (contains? (:spools approved) lib))
-                [:not-approved {:lib lib}]
+(defn- families-requiring
+  "Return `{:family :roots}` rows for the families other than `lib` whose
+  `:requires` name any root in `roots`."
+  [normalized lib roots]
+  (->> normalized
+       (remove #(= lib (:family %)))
+       (keep (fn [{:keys [family requires]}]
+               (let [required (set (filter roots (keys requires)))]
+                 (when (seq required)
+                   {:family family :roots required}))))
+       vec))
 
-                (not (contains? syncs lib))
-                [:not-synced {:lib lib}]
+;; --- result-shape validators ------------------------------------------------
 
-                (= :failed (:status sync))
-                [:sync-failed {:lib lib :sync sync}]
+(defn- validate-approved-result! [result]
+  (require-valid! ::approved-result result "runtime approved spool config has an invalid shape")
+  result)
 
-                :else
-                nil)))
-          (:spools opts))))
+(defn- validate-declared-result! [result]
+  (require-valid! ::declared-result result "runtime declared spool config has an invalid shape")
+  result)
 
-(defn- use-after-skip [runtime opts]
-  (let [uses @(module-use-state runtime)]
-    (some (fn [after]
-            (when-not (= :loaded (:status (get uses after)))
-              [:missing-after {:after after :use (get uses after)}]))
-          (:after opts))))
+(def ^:private allowed-refresh-keys #{:only})
 
-(defn- exception-data [t]
-  {:message (ex-message t)
-   :class (str (class t))
-   :data (ex-data t)})
+(defn- validate-refresh-opts!
+  "Validate the public refresh/plan options before touching the coordinator.
 
-(defn use!
-  "Load a runtime module and record its module-use state under keyword key.
+  Options must be a map naming only `:only`; a present `:only` must be a
+  non-empty collection of module keywords. The coordinator separately rejects
+  unknown module keys against the active graph."
+  [opts]
+  (when-not (map? opts)
+    (throw (ex-info "Refresh options must be a map" {:opts opts})))
+  (when-let [unknown (seq (remove allowed-refresh-keys (keys opts)))]
+    (throw (ex-info "Refresh options contain unknown keys"
+                    {:unknown (vec (sort-by pr-str unknown))})))
+  (when (contains? opts :only)
+    (let [only (:only opts)]
+      (when-not (and (coll? only) (seq only) (every? keyword? only))
+        (throw (ex-info "Refresh :only must be a non-empty collection of module keys"
+                        {:only only})))))
+  opts)
 
-  Opts load either a synced namespace via `:ns` or a file via `:file`, and may
-  include `:call` to invoke a no-arg function after load. Returns a registry
-  entry with status `:loaded`, `:skipped`, or `:failed`; failed required uses
-  rethrow after recording failure metadata."
-  [runtime key opts]
-  (validate-use-opts! key opts)
-  (when-let [file (:file opts)]
-    (spool-sync/module-file runtime file))
-  (if-let [[reason data] (use-spool-skip runtime opts)]
-    (skip-use runtime key opts reason data)
-    (if-let [[reason data] (use-after-skip runtime opts)]
-      (skip-use runtime key opts reason data)
-      (try
-        (let [load-result (with-spool-classloader
-                            runtime
-                            #(if-let [ns-sym (:ns opts)]
-                               (spool-sync/load-synced-namespace! runtime ns-sym)
-                               (let [file (spool-sync/module-file runtime (:file opts))]
-                                 (load-file file)
-                                 {:file file})))
-              call-result (when-let [call-sym (:call opts)]
-                            (with-spool-classloader
-                              runtime
-                              #((requiring-resolve call-sym))))]
-          (record-use! runtime key (cond-> {:key key
-                                            :opts opts
-                                            :status :loaded
-                                            :loaded load-result}
-                                     (contains? opts :call) (assoc :call {:fn (:call opts)
-                                                                          :return call-result}))))
-        (catch Exception t
-          (let [result (record-use! runtime key {:key key
-                                                 :opts opts
-                                                 :status :failed
-                                                 :error (exception-data t)})]
-            (when (:required? opts)
-              (throw t))
-            result))))))
+(defn- validate-refresh-result! [result]
+  (require-valid! ::refresh-result result "runtime refresh result has an invalid shape")
+  result)
 
-(defn uses
-  "Return `runtime`'s module-use registry as data-first maps."
-  [runtime]
-  (into (sorted-map) @(module-use-state runtime)))
+(defn- validate-plan-result! [result]
+  (require-valid! ::plan-result result "runtime plan result has an invalid shape")
+  result)
 
-(defn use
-  "Return one module-use registry entry from `runtime` by key."
-  [runtime key]
-  (get @(module-use-state runtime) key))
+(defn- validate-status-result! [result]
+  (require-valid! ::status-result result "runtime status result has an invalid shape")
+  result)
+
+(defn- validate-module-result! [result]
+  (require-valid! ::module-result result "runtime module result has an invalid shape")
+  result)
+
+(defn- validate-reload-code-result! [result]
+  (require-valid! ::reload-code-result result "runtime reload-code result has an invalid shape")
+  result)
+
+;; --- spool-state versioning -------------------------------------------------
 
 (defn- warn!
   "Emit a loud-but-non-fatal runtime warning to the weaver's stderr log.
 
   Used where discarding a signal entirely would be worse than continuing but a
-  hard failure is not warranted (a best-effort resource cleanup that fails during
-  a version-mismatch reinit): the reinit still proceeds and the divergence stays
-  visible in the weaver log instead of vanishing."
+  hard failure is not warranted (a best-effort resource cleanup that fails
+  during a version-mismatch reinit): the reinit still proceeds and the
+  divergence stays visible in the weaver log instead of vanishing."
   [message data]
   (binding [*out* *err*]
     (println (str "[runtime] WARN " message " " (pr-str data)))))
 
-(def ^:private spool-state-opt-keys #{:version :migrate-fn})
-
 (defn- validate-spool-state-opts!
-  "Reject a malformed spool-state opts map before it can silently degrade.
-
-  A misspelled or unknown key (e.g. `{:versoin 2}`) would otherwise leave
-  `version` nil and the accessor would reuse a shape-mismatched preserved value —
-  exactly the silent state-reuse bug class the version guard exists to close,
-  just moved one level up to the opts map. So the map is closed to
-  `:version`/`:migrate-fn`, `:version` must be a non-nil comparable tag, and
-  `:migrate-fn` (which only fires on a version mismatch) requires a `:version`.
-  Mirrors the closed-key discipline `skein.spools.agent-run/defharness!` already
-  applies to its own def map."
+  "Validate spool-state opts against their owning public spec."
   [opts]
-  (when (some? opts)
-    (when-not (map? opts)
-      (throw (ex-info "spool-state opts must be a map or nil" {:opts opts})))
-    (let [unknown (remove spool-state-opt-keys (keys opts))]
-      (when (seq unknown)
-        (throw (ex-info "spool-state opts has unknown keys"
-                        {:unknown (vec unknown) :allowed spool-state-opt-keys :opts opts}))))
-    (when (contains? opts :version)
-      (let [v (:version opts)]
-        (when-not (or (integer? v) (keyword? v) (string? v))
-          (throw (ex-info "spool-state :version must be a non-nil integer, keyword, or string"
-                          {:version v :class (some-> v class)})))))
-    (when (contains? opts :migrate-fn)
-      (when-not (ifn? (:migrate-fn opts))
-        (throw (ex-info "spool-state :migrate-fn must be a function"
-                        {:migrate-fn (:migrate-fn opts)})))
-      (when-not (contains? opts :version)
-        (throw (ex-info "spool-state :migrate-fn requires a :version to compare against"
-                        {:opts opts})))))
-  opts)
+  (require-valid! ::spool-state-opts opts
+                  "spool-state opts have an invalid shape"))
 
 (defn- tag-spool-state-generation
-  "Tag `value` with the runtime generation that created it, when metadata permits it."
+  "Tag `value` with the runtime generation that created it, when metadata
+  permits it."
   [runtime value]
   (if (instance? clojure.lang.IObj value)
     (vary-meta value assoc :skein.runtime/generation (:generation-id runtime))
@@ -349,58 +596,3 @@
                          {:version version :exception/message (ex-message t)}))))
          (init-fn)))
    version))
-
-(defn spool-state
-  "Return runtime-owned state for a spool key, creating it with `init-fn` once.
-
-  The runtime stores spool state under arbitrary keys in its `:spool-state`
-  atom. `init-fn` is called only when `key` has not been installed for this
-  runtime; the returned value is then reused for the rest of the runtime
-  lifetime. Spools should use this accessor instead of reaching into runtime
-  internals.
-
-  Spool state survives `reload!` by design, so a spool whose state shape changed
-  between deploys would otherwise silently reuse a preserved value that is
-  missing the new keys. The four-arg arity guards against that: pass opts
-  `{:version v :migrate-fn f}` and, when a preserved value's stored version does
-  not `=` `version`, the runtime deliberately reinits (or, with `:migrate-fn`,
-  hands the old value to `f` to produce the new one) instead of reusing a
-  shape-mismatched map. Silent reuse of shape-mismatched state is impossible
-  once a version is declared. A malformed opts map fails loudly at the call site
-  (see `validate-spool-state-opts!`) rather than degrading to the unversioned
-  path."
-  ([runtime key init-fn] (spool-state runtime key nil init-fn))
-  ([runtime key opts init-fn]
-   (validate-spool-state-opts! opts)
-   (when-not (and runtime (:spool-state runtime))
-     (throw (ex-info "Runtime does not support spool state" {:key key})))
-   (let [{:keys [version migrate-fn]} opts
-         state (:spool-state runtime)
-         reuse? (fn [existing] (= version (::version (meta existing))))
-         m @state]
-     ;; Lock-free fast path: a present, version-matching value is reused as-is.
-     (if (and (contains? m key) (reuse? (get m key)))
-       (get m key)
-       ;; Build path (first init OR version-mismatch reinit). Serialize it per
-       ;; runtime so init-fn/migrate-fn — and the executors/schedulers they
-       ;; allocate — run at most once. A lock-free CAS loser would discard its
-       ;; freshly-built state and leak that value's live daemon threads for the
-       ;; JVM lifetime (nothing else references it to shut it down). Reinit is
-       ;; rare (a version bump on reload), so a coarse per-runtime lock is cheap;
-       ;; only builders take it, readers on the fast path never do.
-       (locking state
-         (let [m* @state
-               existing (get m* key)]
-           (cond
-             (not (contains? m* key))
-             (let [value (versioned-value runtime (init-fn) version)]
-               (swap! state assoc key value)
-               value)
-
-             (reuse? existing)
-             existing
-
-             :else
-             (let [replacement (reinit-mismatched-state runtime existing version migrate-fn init-fn)]
-               (swap! state assoc key replacement)
-               replacement))))))))

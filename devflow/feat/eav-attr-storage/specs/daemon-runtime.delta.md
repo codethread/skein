@@ -9,7 +9,7 @@ This delta moves strand attribute storage from a document column to an `attribut
 ## EAS-DELTA-003.P2 Contract changes — SPEC-004.P3a Weaver storage model
 
 - **EAS-DELTA-003.CC1:** Storage initialization creates the `attributes` EAV table (`EAS-DELTA-001.CC6`) in place of the `strands.attributes` document column, with the `(key, value) WHERE archived = 0` partial index (`EAS-DELTA-001.CC7`). The single-storage-handle contract (SPEC-004.C91), scheduler-table initialization (SPEC-004.C91a), and the WAL/mmap/cache open pragmas are unchanged; `sqlite-memory` test storage runs the same schema and open path.
-- **EAS-DELTA-003.CC2:** `ensure-current-schema!` fails loudly on the old document schema (a dropped `strands.attributes` column is an incompatible core layout) exactly as SPEC-004.C91b requires; there is no implicit migration (TEN-000). Unlike the additively-created `indexed_attr_keys` table this feature removes, the `attributes` table is part of the validated core schema, not an `IF NOT EXISTS` auxiliary table — an existing document-schema world does not silently gain it.
+- **EAS-DELTA-003.CC2:** `ensure-current-schema!` fails loudly on the old document schema (a dropped `strands.attributes` column is an incompatible core layout) exactly as SPEC-004.C91b requires; there is no implicit migration (TEN-000@1). Unlike the additively-created `indexed_attr_keys` table this feature removes, the `attributes` table is part of the validated core schema, not an `IF NOT EXISTS` auxiliary table — an existing document-schema world does not silently gain it.
 - **EAS-DELTA-003.CC3:** The `indexed_attr_keys` registry table and its per-key expression indexes are removed from storage initialization (`EAS-DELTA-001.CC9`). No auxiliary attribute-index table remains; the `acyclic_relations` and scheduler auxiliary tables are unaffected.
 
 ## EAS-DELTA-003.P3 Contract changes — SPEC-004.P4 API boundary
@@ -34,13 +34,13 @@ This delta moves strand attribute storage from a document column to an `attribut
 ### EAS-DELTA-003.D2 Shipped-then-struck migrate op, no silent cutover
 
 - **Decision:** Ship exactly one trusted migrate op, `migrate-attribute-storage!`, for the document→rows cutover, then strike it once the recorded real-world worlds are migrated; `ensure-current-schema!` fails loud on the old schema and never migrates implicitly.
-- **Rationale:** TEN-000/TEN-003: an incompatible schema is a loud failure, not a silent rewrite of a world carrying real coordination data. The one-shot op was useful for the cutover window; after that window, keeping it would preserve dead surface.
+- **Rationale:** TEN-000@1/TEN-003: an incompatible schema is a loud failure, not a silent rewrite of a world carrying real coordination data. The one-shot op was useful for the cutover window; after that window, keeping it would preserve dead surface.
 - **Rejected:** Auto-migration on open; re-init-only cutover with no data-preserving path for the canonical world.
 
 ### EAS-DELTA-003.D3 Removing L0b is honest cleanup, not a compatibility break to preserve
 
 - **Decision:** Remove the indexed-attr-key table, spec, ops, and literal-path compilation rather than leave them as inert surface.
-- **Rationale:** They guard a JSON-document-only problem that EAV dissolves; leaving them would be dead surface claiming a capability the storage no longer needs (TEN-004). Their coverage folds into the uniform-capability gates (`EAS-DELTA-001.D5`). TEN-000 lets us drop the just-shipped machinery without a migration plan when a better representation lands.
+- **Rationale:** They guard a JSON-document-only problem that EAV dissolves; leaving them would be dead surface claiming a capability the storage no longer needs (TEN-004). Their coverage folds into the uniform-capability gates (`EAS-DELTA-001.D5`). TEN-000@1 lets us drop the just-shipped machinery without a migration plan when a better representation lands.
 - **Rejected:** Keeping the declared-key ops and literal-path fast path alongside EAV.
 
 ## EAS-DELTA-003.P5 Open questions

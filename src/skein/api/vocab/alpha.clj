@@ -8,7 +8,7 @@
   declaration is a small map (`:kind`, `:name`, `:owner`, `:doc`, plus `:keys`
   for an attribute namespace or `:family`/`:direction`/`:declared-acyclic?` for
   an edge). The registry is runtime-owned per-spool state that survives
-  `reload!`, versioned so a shape change cannot silently reuse a stale map, and
+  module refresh, versioned so a shape change cannot silently reuse a stale map, and
   seeded at init with the reflected `relations.alpha` edge catalog plus the
   core-owned `note/*` attribute namespace.
 
@@ -17,17 +17,79 @@
   published ambient runtime."
   (:require [clojure.spec.alpha :as s]
             [clojure.string :as str]
+            [skein.api.format.alpha :as format-alpha]
+            [skein.api.registry.alpha :as registry]
             [skein.api.relations.alpha :as relations]
             [skein.api.runtime.alpha :as runtime]
             [skein.api.spool.alpha :refer [fail! reject-unknown-keys! require-valid!]]))
 
-;; --- C1 declaration shape ------------------------------------------------
+(declare validate-declaration! register-declaration registry)
 
 (def declaration-kinds
   "The two vocabulary kinds a declaration may describe: an attribute namespace
   segment or an edge (relation) type. This set is the `::kind` spec enum and the
   single source of the `vocab --kind` allow-list reused by the batteries op."
   #{:attr-namespace :edge})
+
+(def ^:private vocab-kind :vocab)
+(def ^:private defaults-owner :skein.owner/system)
+(def ^:private repl-owner :skein.owner/repl)
+
+(defn declare!
+  "Record C1 `declaration` in `runtime`'s vocabulary registry and return it.
+
+  Validates the shape (fails loudly on an unknown kind, unknown keys, or missing
+  required keys). Recording is keyed by `[:kind :name]`: a re-declaration by the
+  *same* `:owner` is an idempotent replace, while a *different* owner throws
+  `ex-info` carrying `:name`/`:kind`/`:existing-owner`/`:declaring-owner`, so
+  ownership of a namespace or edge type is a hard, single-owner edge. The
+  complete direct partition is replaced under the runtime-owned registry handle,
+  so concurrent public declarations cannot race past the owner check."
+  [runtime declaration]
+  (let [declaration (validate-declaration! declaration)
+        {kind :kind decl-name :name} declaration
+        k [kind decl-name]
+        handle (registry runtime)
+        _ (locking handle
+            (let [effective (registry/effective handle vocab-kind)]
+              (when-let [existing (get effective k)]
+                (when (not= (:owner existing) (:owner declaration))
+                  (throw (ex-info "Vocabulary declaration owner conflict"
+                                  {:name decl-name
+                                   :kind kind
+                                   :existing-owner (:owner existing)
+                                   :declaring-owner (:owner declaration)}))))
+              (let [entries (assoc (get-in (registry/snapshot handle)
+                                           [:partitions vocab-kind repl-owner :entries]
+                                           {})
+                                   k declaration)]
+                (registry/replace-owner! handle vocab-kind repl-owner
+                                         {:layer :direct
+                                          :entries entries
+                                          :overrides (set (keys entries))}))))]
+    declaration))
+
+(defn declarations
+  "Return `runtime`'s declarations as full C1 maps, sorted by `[:kind :name]`.
+
+  With `{:kind k}` opts, narrows to that kind. Present opts are validated
+  against the `::declarations-opts` spec, so a `:kind` outside
+  `declaration-kinds` fails loudly rather than silently matching nothing.
+  Reads the runtime store explicitly — never the published ambient
+  singleton."
+  ([runtime] (declarations runtime nil))
+  ([runtime opts]
+   (when (some? opts)
+     (reject-unknown-keys! "vocab/declarations" #{:kind} opts)
+     (require-valid! ::declarations-opts opts
+                     "vocab/declarations :kind must be :attr-namespace or :edge"))
+   (let [kind (:kind opts)]
+     (->> (vals (registry/effective (registry runtime) vocab-kind))
+          (filter (fn [d] (or (nil? kind) (= kind (:kind d)))))
+          (sort-by (juxt :kind :name))
+          vec))))
+
+;; --- C1 declaration shape ------------------------------------------------
 
 (def ^:private common-declaration-keys
   "Keys every declaration carries regardless of kind."
@@ -63,6 +125,10 @@
   (s/keys :req-un [::kind ::name ::owner ::doc ::family ::direction ::declared-acyclic?]))
 (s/def ::declaration (s/multi-spec declaration-shape :kind))
 
+(s/def ::declarations-opts
+  ;; the closed key set is reject-unknown-keys!'s job — s/keys cannot express it
+  (s/keys :opt-un [::kind]))
+
 (defn- validate-declaration!
   "Return `declaration` after validating the C1 shape, or fail loudly.
 
@@ -79,6 +145,8 @@
              {:kind kind :allowed (vec (sort declaration-kinds)) :declaration declaration}))
     (reject-unknown-keys! "vocab/declare!" (allowed-keys-by-kind kind) declaration))
   (require-valid! ::declaration declaration "Vocabulary declaration has an invalid shape"))
+
+;; --- Owner-guarded recording ---------------------------------------------
 
 ;; --- Core seed -----------------------------------------------------------
 
@@ -103,7 +171,9 @@
    ;; note/kind is an open, guidance-only advisory set (activity/decision/
    ;; review-dump/summary; absent reads as activity), declared but never enforced.
    :keys ["note/text" "note/at" "note/by" "note/round" "note/kind"]
-   :doc "Immutable note-strand memory attributes written by skein.api.notes.alpha/note!."})
+   :doc (format-alpha/reflow
+         "|Note-strand memory attributes written by skein.api.notes.alpha/note!;
+          |note/text and note/at are storage-enforced write-once.")})
 
 (defn- seed-declarations
   "Return the core seed as a vector of valid C1 declarations: one `:edge` per
@@ -119,79 +189,23 @@
 
 ;; --- Versioned runtime-owned store ---------------------------------------
 
-(def ^:private state-version
-  "Shape version for vocab's runtime spool-state map. Bump whenever `new-state`'s
-  key set changes: spool-state survives `reload!`, so a post-upgrade reload would
-  otherwise reuse a preserved map missing the new key. The
-  `state-shape-matches-declared-version` test fails loudly if `new-state` and
-  this version drift apart."
-  1)
-
-(defn- new-state
-  "Build the initial registry state, already carrying the core seed. This
-  init-fn is the seed site (there is no `install!` hook): a fresh runtime reads
-  the reflected edges and `note/*` back before any spool activation runs."
+(defn- new-registry
+  "Build the runtime-owned `:vocab` kind with the core seed in its defaults
+  partition. The direct handle lets module publication discover this open core
+  kind with the other domain handles."
   []
-  {:registry (atom (index-by-key (seed-declarations)))})
+  (let [handle (doto (registry/registry)
+                 (registry/declare-kind! {:id vocab-kind
+                                          :entry-spec ::declaration
+                                          :binding-moment :vocabulary-read}))]
+    (registry/replace-owner! handle vocab-kind defaults-owner
+                             {:layer :defaults
+                              :entries (index-by-key (seed-declarations))
+                              :overrides #{}})
+    handle))
 
 (defn- state [runtime]
-  (runtime/spool-state runtime ::state {:version state-version} new-state))
+  (runtime/spool-state runtime ::registry {:version 2} new-registry))
 
 (defn- registry [runtime]
-  (:registry (state runtime)))
-
-;; --- Public surface ------------------------------------------------------
-
-(defn- register-declaration
-  "Registry `swap!` update fn: record `declaration` under key `k`, unless a
-  *different* `:owner` already holds that `[:kind :name]` — then throw the
-  owner-conflict `ex-info`. Living inside the `swap!` keeps the conflict check
-  and the write atomic, so two racing cross-owner declarations cannot both clear
-  a stale read and let the later write silently win."
-  [reg-map k declaration]
-  (when-let [existing (get reg-map k)]
-    (when (not= (:owner existing) (:owner declaration))
-      (throw (ex-info "Vocabulary declaration owner conflict"
-                      {:name (:name declaration)
-                       :kind (:kind declaration)
-                       :existing-owner (:owner existing)
-                       :declaring-owner (:owner declaration)}))))
-  (assoc reg-map k declaration))
-
-(defn declare!
-  "Record C1 `declaration` in `runtime`'s vocabulary registry and return it.
-
-  Validates the shape (fails loudly on an unknown kind, unknown keys, or missing
-  required keys). Recording is keyed by `[:kind :name]`: a re-declaration by the
-  *same* `:owner` is an idempotent replace, while a *different* owner throws
-  `ex-info` carrying `:name`/`:kind`/`:existing-owner`/`:declaring-owner`, so
-  ownership of a namespace or edge type is a hard, single-owner edge. The
-  conflict check runs inside the `swap!`, so concurrent cross-owner declarations
-  cannot race past it."
-  [runtime declaration]
-  (let [declaration (validate-declaration! declaration)
-        {kind :kind decl-name :name} declaration
-        k [kind decl-name]]
-    (swap! (registry runtime) register-declaration k declaration)
-    declaration))
-
-(defn declarations
-  "Return `runtime`'s declarations as full C1 maps, sorted by `[:kind :name]`.
-
-  With `{:kind k}` opts, narrows to that kind. Reads the runtime store
-  explicitly — never the published ambient singleton."
-  ([runtime] (declarations runtime nil))
-  ([runtime opts]
-   (when (some? opts)
-     (reject-unknown-keys! "vocab/declarations" #{:kind} opts))
-   (let [kind (:kind opts)]
-     (->> (vals @(registry runtime))
-          (filter (fn [d] (or (nil? kind) (= kind (:kind d)))))
-          (sort-by (juxt :kind :name))
-          vec))))
-
-(defn declaration
-  "Return the one declaration in `runtime` under `[kind name]`, or `nil` when
-  that namespace or edge type is undeclared."
-  [runtime kind name]
-  (get @(registry runtime) [kind name]))
+  (state runtime))

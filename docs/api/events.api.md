@@ -3,44 +3,39 @@
 # <a name="skein.api.events.alpha">skein.api.events.alpha</a>
 
 
-Explicit-runtime API for registering, inspecting, and submitting weaver events.
+Explicit-runtime API for managing and inspecting weaver event handlers.
 
-  Callers own runtime selection and pass the target weaver runtime as the first
-  argument. This namespace owns event handler validation, function resolution,
-  registry state, asynchronous failure capture, and event submission; the queue
-  submission and worker dispatch live in `skein.core.weaver.dispatch` and
-  `skein.core.weaver.runtime`.
+  Registration and unregistration mutate the runtime's weaver-lifetime
+  handler registry; `handlers` and `recent-failures` are the data-first
+  reads over registry and failure state. Every registration is validated
+  loudly at the seam — stable key, non-empty keyword type set, fully
+  qualified function symbol resolvable under the runtime spool
+  classloader, data-first metadata — and entries replace by key for
+  reload workflows. Event submission is not public surface: internal
+  mutation APIs submit events through `skein.core.weaver.dispatch`
+  (SPEC-004.C73), and the event-lane quiescence await ships in
+  `skein.test.alpha` (SPEC-004.C74b).
+
+  Callers own runtime selection and pass the target weaver runtime as
+  the first argument.
 
 
 
 
-## <a name="skein.api.events.alpha/await-quiescent!">`await-quiescent!`</a>
+## <a name="skein.api.events.alpha/handler-provenance">`handler-provenance`</a>
 ``` clojure
-(await-quiescent! runtime)
-(await-quiescent! runtime {:keys [timeout-ms]})
+(handler-provenance runtime)
 ```
 Function.
 
-Block until `runtime`'s event lane settles, then return `runtime`.
+Return owner/provenance diagnostics for `runtime`'s event handler registry.
 
-  Settled means the bounded event queue is empty *and* no handler dispatch is in
-  flight; the worker raises its dispatch-in-progress flag before it claims an
-  event, so this never reports settled while a just-claimed dispatch is still
-  running. Throws an `ex-info` on timeout. The default budget comes from
-  `skein.spools.test-support/await-budget-ms`; override it with `:timeout-ms`.
-
-  This is a lane-only primitive: it says nothing about off-lane completion
-  signals a handler may have kicked off (poll-until loops, agent-run awaits).
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/events/alpha.clj#L86-L115">Source</a></sub></p>
-
-## <a name="skein.api.events.alpha/enqueue!">`enqueue!`</a>
-``` clojure
-(enqueue! runtime event)
-```
-Function.
-
-Submit an event map to `runtime`'s event system for asynchronous dispatch.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/events/alpha.clj#L81-L84">Source</a></sub></p>
+  Maps each handler key to `{:effective :shadowed :contenders}` (see
+  `skein.core.weaver.core-registry/explain`); each contender names its `:owner`,
+  `:layer`, and `:override?`/`:effective?` flags, and its `:value` handler entry
+  has the resolved `:fn-value` stripped, so no function value or internal handle
+  leaves the registry (SPEC-004.C66, DELTA-OlrDrt-001.CC9).
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/events/alpha.clj#L73-L82">Source</a></sub></p>
 
 ## <a name="skein.api.events.alpha/handlers">`handlers`</a>
 ``` clojure
@@ -48,8 +43,12 @@ Submit an event map to `runtime`'s event system for asynchronous dispatch.
 ```
 Function.
 
-Return data-first event handler registry entries from `runtime`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/events/alpha.clj#L70-L74">Source</a></sub></p>
+Return `runtime`'s event handler registry as data-first entries.
+
+  Each entry is `{:key :types :fn :metadata}` — never the resolved function
+  value (SPEC-004.C66) — sorted by printed key so ordering is deterministic
+  across mixed key types.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/events/alpha.clj#L63-L71">Source</a></sub></p>
 
 ## <a name="skein.api.events.alpha/recent-failures">`recent-failures`</a>
 ``` clojure
@@ -57,24 +56,43 @@ Return data-first event handler registry entries from `runtime`.
 ```
 Function.
 
-Return recent asynchronous event handler failures from `runtime`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/events/alpha.clj#L76-L79">Source</a></sub></p>
+Return `runtime`'s recent asynchronous handler failures, oldest first.
 
-## <a name="skein.api.events.alpha/register!">`register!`</a>
+  Failures are bounded weaver-lifetime introspection state (SPEC-004.C67):
+  each record carries `:handler/key`, `:handler/fn`, `:event/id`,
+  `:event/type`, `:exception/message`, and `:failed/at`. Handler exceptions
+  never fail the already-committed mutation that emitted the event.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/events/alpha.clj#L84-L92">Source</a></sub></p>
+
+## <a name="skein.api.events.alpha/register-handler!">`register-handler!`</a>
 ``` clojure
-(register! runtime key types fn-sym)
-(register! runtime key types fn-sym metadata)
+(register-handler! runtime key types fn-sym)
+(register-handler! runtime key types fn-sym metadata)
+(register-handler! runtime owner key types fn-sym metadata)
 ```
 Function.
 
 Register or replace an event handler in `runtime` for selected event types.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/events/alpha.clj#L50-L61">Source</a></sub></p>
 
-## <a name="skein.api.events.alpha/unregister!">`unregister!`</a>
+  Builds the registry entry from loudly validated pieces — `key` a keyword,
+  symbol, or non-blank string; `types` a non-empty set of event type
+  keywords; `fn-sym` a fully qualified symbol resolving to a callable under
+  the runtime spool classloader (resolution happens here, so a bad symbol
+  fails registration, not dispatch); `metadata` a data-first map — swaps it
+  into the registry, replacing any prior entry with the same key, and
+  returns the entry as data (the resolved function value stays internal).
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/events/alpha.clj#L27-L48">Source</a></sub></p>
+
+## <a name="skein.api.events.alpha/unregister-handler!">`unregister-handler!`</a>
 ``` clojure
-(unregister! runtime key)
+(unregister-handler! runtime key)
+(unregister-handler! runtime owner key)
 ```
 Function.
 
-Unregister an event handler by stable key from `runtime`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/events/alpha.clj#L63-L68">Source</a></sub></p>
+Unregister the event handler stored under `key` in `runtime`.
+
+  Validates `key` like registration, removes any entry stored under it (a
+  key with no entry is a quiet no-op, so unregistration is idempotent), and
+  returns `{:unregistered key}`.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/events/alpha.clj#L50-L61">Source</a></sub></p>

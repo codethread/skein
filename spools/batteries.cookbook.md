@@ -109,6 +109,32 @@ Honest source: the payload-reference rules in [`batteries.md`](./batteries.md) �
 
 ---
 
+## Recipe: Remove an attribute key with a typed JSON null
+
+**Situation.** A strand carries an attribute that no longer applies — a transient `gate/error`, a stale claim marker — and you want the key *gone*, not set to blank. `--attr key=` stores an empty string, which is data, not absence. Whether removal is even the right model — versus an enum value or a recorded outcome — is the [attribute-value modeling guidance](../docs/spools/writing-shared-spools.md#modeling-attribute-values-enums-absence-empty-history); this recipe is the mechanics once you've decided a key should go absent.
+
+**Composition.** `update` treats `--attributes` as a JSON Merge Patch. A JSON `null` value deletes the addressed key; other keys are left untouched. Keep raw `--attr` for the string writes you want on top.
+
+```sh
+# delete gate/error; owner is rewritten in the same call
+printf '{"gate/error":null}' \
+  | strand --stdin update "$id" --attr owner=next --attributes :stdin
+# => the gate/error key is absent; owner is "next"
+
+# blank is NOT removal: this stores the empty string ""
+strand update "$id" --attr gate/error=
+```
+
+**Why this shape.**
+
+- **Absence is a typed null, never a blank string.** JSON `null` lowers to the Clojure nil merge-patch the trusted path uses (`skein.api.weaver.alpha/update!` with `{:attributes {"key" nil}}`); an empty string stays stored as `""`. Modeling an attribute's disappearance as blank text conflates "no value" with "the value is empty", so the CLI keeps them distinct.
+- **`--attr` wins on collision, so a raw `key=` beats a typed null.** If you pass both, the string write lands — reach for a JSON `null` in the `--attributes` object when you mean removal.
+- **Omitting all attribute flags leaves the map untouched.** `update --title …` with no `--attr`/`--attributes` never rewrites attributes.
+
+Honest source: the `update`/BAT-C6/BAT-C20 contract in [`batteries.md`](./batteries.md), the `update-typed-attributes-merge-patch` test in `test/skein/spools/batteries_test.clj`, and the core merge-patch nil deletion in `skein.core.db/update-strand!`.
+
+---
+
 ## Recipe: Preview a mutation with `--dry-run` before it touches anything
 
 **Situation.** You've assembled a gnarly `add` or `weave` invocation — payload refs, several flags — and you want to see exactly what the dispatcher will send before a single strand is created.
@@ -215,6 +241,48 @@ printf '%s' '{
   deliberately not part of this surface; `weave` only *applies* one.
 
 Honest source: the `weave`/`pattern` ops and their strict input parsing in `spools/src/skein/spools/batteries.clj`, the `weave-happy-path-and-json-value`, `weave-loud-input-paths`, and `pattern-list-and-explain-shapes` tests in `test/skein/spools/batteries_test.clj`, and this repo's `agent-plan` usage in [`CLAUDE.md`](../CLAUDE.md). Verified end to end against a demo pattern registered in a disposable workspace (stdin and inline JSON both returned `{:created :refs}`).
+
+---
+
+## Recipe: Burn temporary strands owned by one parent
+
+**Situation.** A task needs scratch strands while it runs, but those strands
+should disappear when the task finishes.
+
+**Composition.** Mark each scratch strand at creation with a userland owner
+attribute such as `tmp/owner=<parent-id>`. Register a parameterized query for
+that attribute, then list and burn the matching ids when the parent finishes.
+
+```clojure
+;; Register once in trusted config or the live weaver REPL.
+(require '[skein.api.current.alpha :as current]
+         '[skein.api.graph.alpha :as graph])
+(graph/register-query! (current/runtime) 'temporary-by-owner
+                       {:params [:owner]
+                        :where [:and
+                                [:= :state "active"]
+                                [:= [:attr "tmp/owner"] [:param :owner]]]})
+```
+
+```sh
+parent_id=$(strand add "Investigate parser failure" | id)
+strand add "Scratch: malformed input" --attr tmp/owner="$parent_id"
+strand add "Scratch: upstream response" --attr tmp/owner="$parent_id"
+
+# Run this cleanup when the parent finishes.
+strand list --query temporary-by-owner --param owner="$parent_id" \
+  | python3 -c 'import json,sys; print("\n".join(x["id"] for x in json.load(sys.stdin)))' \
+  | while IFS= read -r tmp_id; do strand burn "$tmp_id"; done
+```
+
+**Why this shape.** The attribute records ownership without adding a lifecycle
+rule to the engine. The query scopes cleanup to one parent, and `burn` removes
+only the disposable strands selected by that query. Keep decisions, results,
+and other durable work as ordinary strands or notes instead.
+
+Honest source: the `add`, parameterized `list --query`, and `burn` ops in
+`spools/src/skein/spools/batteries.clj`, with their behavior covered by
+`test/skein/spools/batteries_test.clj`.
 
 ---
 

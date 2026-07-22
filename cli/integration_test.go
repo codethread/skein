@@ -113,7 +113,7 @@ func TestInitBootstrapsConfigDirWorkspaceThroughMill(t *testing.T) {
 	}
 	initPath := filepath.Join(cfg, "init.clj")
 	got := string(mustReadFile(t, initPath))
-	for _, want := range []string{"(runtime/sync! runtime)", "(require 'skein.spools.batteries)", ":skein/spools-batteries", "skein.spools.batteries/activate!"} {
+	for _, want := range []string{"(require 'skein.spools.batteries)", "(runtime/module! runtime :skein/spools-batteries", ":ns 'skein.spools.batteries", "skein.spools.batteries/contribute", "skein.spools.batteries/reconcile"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("init.clj missing %q, got:\n%s", want, got)
 		}
@@ -181,7 +181,7 @@ func TestWeaverReplStdinAttachesThroughMillMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("repl stdin failed: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, ":metadata") || !strings.Contains(out, ":query-registry") {
+	if !strings.Contains(out, ":metadata") || !strings.Contains(out, ":query-store") {
 		t.Fatalf("unexpected repl output: %q", out)
 	}
 	out, err = h.millCmd(dir, runDir, "(throw (ex-info \"boom from weaver\" {}))\n", "weaver", "repl", "--stdin")
@@ -212,6 +212,65 @@ func TestRepoLocalDiscoveryAndInitLocalOverlay(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(subdir, ".skein")); !os.IsNotExist(err) {
 		t.Fatalf("did not expect nested .skein, stat err=%v", err)
+	}
+}
+
+func TestStealthInitIsIdempotentAndLeavesNoTrackedChanges(t *testing.T) {
+	repo := shortTempDir(t)
+	if err := exec.Command("git", "init", "-q", repo).Run(); err != nil {
+		t.Fatalf("git init repo: %v", err)
+	}
+	h := newHarness(t)
+	realRepo, err := filepath.EvalSymlinks(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantConfig := filepath.Join(realRepo, ".skein")
+	var first map[string]any
+	for attempt := 0; attempt < 2; attempt++ {
+		out, err := h.millCmd("", repo, "", "init", "--stealth")
+		if err != nil {
+			t.Fatalf("stealth init attempt %d failed: %v\n%s", attempt+1, err, out)
+		}
+		var result map[string]any
+		if err := json.Unmarshal([]byte(out), &result); err != nil {
+			t.Fatalf("stealth result is not JSON: %v\n%s", err, out)
+		}
+		if len(result) != 3 || result["config_dir"] != wantConfig || result["config_file"] != filepath.Join(wantConfig, "config.json") {
+			t.Fatalf("unexpected result keys/paths: %#v", result)
+		}
+		stealth, ok := result["stealth"].(map[string]any)
+		if !ok || len(stealth) != 3 {
+			t.Fatalf("unexpected stealth shape: %#v", result["stealth"])
+		}
+		gitExclude := stealth["git_exclude"].(map[string]any)
+		claude := stealth["claude_guidance"].(map[string]any)
+		codex := stealth["codex_guidance"].(map[string]any)
+		if len(gitExclude) != 2 || len(claude) != 2 || len(codex) != 2 || codex["status"] != "manual-required" || codex["suggested_text"] == "" {
+			t.Fatalf("unexpected action shapes: %#v", stealth)
+		}
+		if attempt == 0 {
+			first = stealth
+		} else if gitExclude["status"] != "unchanged" || claude["status"] != "unchanged" {
+			t.Fatalf("second init not unchanged: first=%#v second=%#v", first, stealth)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(repo, "AGENTS.md")); !os.IsNotExist(err) {
+		t.Fatalf("stealth init created AGENTS.md: %v", err)
+	}
+	status := exec.Command("git", "status", "--short", "--untracked-files=all")
+	status.Dir = repo
+	if out, err := status.CombinedOutput(); err != nil || len(out) != 0 {
+		t.Fatalf("stealth init left visible changes: err=%v out=%q", err, out)
+	}
+}
+
+func TestStealthInitRejectsExplicitWorkspaceBeforeContactingMill(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", filepath.Join(shortTempDir(t), "state"))
+	mill := buildMill(t)
+	out, err := runBin(mill, sourceRoot(t), "", "init", "--stealth", "--workspace", shortTempDir(t))
+	if err == nil || !strings.Contains(out, "--stealth cannot be combined with --workspace") || strings.Contains(out, "mill start") {
+		t.Fatalf("unexpected flag conflict: err=%v out=%q", err, out)
 	}
 }
 

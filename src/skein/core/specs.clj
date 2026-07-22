@@ -7,7 +7,8 @@
   attributes."
   (:require [clojure.spec.alpha :as s]
             [clojure.string :as str])
-  (:import [java.time Instant]))
+  (:import [java.io File]
+           [java.time Instant]))
 
 (defn- non-blank-string? [x]
   (and (string? x) (not (str/blank? x))))
@@ -73,6 +74,51 @@
 (s/def ::format #{"human" "edn" "json"})
 (s/def ::db non-blank-string?)
 (s/def ::opts (s/keys :req-un [::db ::format]))
+
+(def ^:private release-marker-syntax-pattern #"v(?:0|[1-9][0-9]*)")
+
+;; Public runtime boundary contracts. Public API docstrings name these specs and
+;; the runtime API tests exercise each one directly.
+(s/def ::release-marker-syntax
+  #(and (string? %) (boolean (re-matches release-marker-syntax-pattern %))))
+(s/def ::release-marker-claim
+  #(and (s/valid? ::release-marker-syntax %) (not= "v0" %)))
+(s/def :skein.release-marker/marker (s/nilable ::release-marker-claim))
+(s/def :skein.release-marker/provenance #{:claimed :tag :none})
+(s/def ::release-marker-result
+  (s/and (s/keys :req-un [:skein.release-marker/marker
+                          :skein.release-marker/provenance])
+         #(case (:provenance %)
+            :none (nil? (:marker %))
+            (:claimed :tag) (some? (:marker %))
+            false)))
+(s/def ::config-dir-result non-blank-string?)
+(s/def ::spools-file-result #(instance? File %))
+
+;; Implementation-only field specs used to compose ::weaver-start-options. The
+;; owning public contract is ::weaver-start-options, not these field keywords.
+(s/def :skein.weaver-start/config-dir non-blank-string?)
+(s/def :skein.weaver-start/state-dir non-blank-string?)
+(s/def :skein.weaver-start/data-dir non-blank-string?)
+(s/def :skein.weaver-start/config-file non-blank-string?)
+(s/def :skein.weaver-start/db-path non-blank-string?)
+(s/def :skein.weaver-start/world
+  (s/keys :req-un [:skein.weaver-start/config-dir
+                   :skein.weaver-start/state-dir
+                   :skein.weaver-start/data-dir
+                   :skein.weaver-start/db-path]
+          :opt-un [:skein.weaver-start/config-file]))
+(s/def :skein.weaver-start/name (s/nilable non-blank-string?))
+(s/def :skein.weaver-start/publish? boolean?)
+(s/def :skein.weaver-start/storage keyword?)
+(s/def :skein.weaver-start/release-marker ::release-marker-syntax)
+(s/def ::weaver-start-options
+  (s/and (s/keys :opt-un [:skein.weaver-start/world
+                          :skein.weaver-start/name
+                          :skein.weaver-start/publish?
+                          :skein.weaver-start/storage
+                          :skein.weaver-start/release-marker])
+         #(every? #{:world :name :publish? :storage :release-marker} (keys %))))
 
 (s/def ::add-command (s/cat :title ::title :opts (s/* string?)))
 (s/def ::update-command (s/cat :id ::id :opts (s/* string?)))

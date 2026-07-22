@@ -17,7 +17,7 @@ RFC-015 is accepted: the agent-facing delegation surface must move out of the sh
 ## PROP-AgentsSpool-001.P3 Non-goals
 
 - **PROP-AgentsSpool-001.NG1:** RFC-015.NG1–NG4 apply unchanged (no scheduler, no native-subagent ban, no worktree management, no delegation mandate).
-- **PROP-AgentsSpool-001.NG2:** No compatibility shim for the moved op registration (RFC-015.C2, TEN-000).
+- **PROP-AgentsSpool-001.NG2:** No compatibility shim for the moved op registration (RFC-015.C2, TEN-000@1).
 
 ## PROP-AgentsSpool-001.P4 Proposed scope
 

@@ -4,12 +4,66 @@
   poll-deadline knob, and the poll-until predicate poller that every
   wait-until/await-eventually/await-* helper across the suite wraps instead
   of reinventing its own deadline/sleep/recur loop."
-  (:require [clojure.java.io :as io]
+  (:require [clojure.edn :as edn]
+            [clojure.java.io :as io]
+            [clojure.spec.alpha :as s]
+            [clojure.string :as str]
             [clojure.test :as t]
             [skein.api.weaver.alpha :as weaver]
             [skein.core.db-test :as db-test]
             [skein.core.weaver.config :as weaver-config]
-            [skein.core.weaver.runtime :as weaver-runtime]))
+            [skein.core.weaver.runtime :as weaver-runtime]
+            [skein.core.weaver.spool-sync :as spool-sync]))
+
+(defn- invalid-embedded-spools! [source-path family received expected-shape]
+  (throw (ex-info "Invalid embedded spools.edn shape"
+                  {:source-path source-path
+                   :family family
+                   :received received
+                   :received-type (if (nil? received) "nil" (.getName (class received)))
+                   :expected-shape expected-shape})))
+
+(defn embedded-spools-edn
+  "Read spool approvals from `source-path`, making local roots absolute.
+
+  Entries validate against :skein.core.weaver.spool-sync/family-entry — the
+  same owning spec sync consults — before rewriting; IO and reader failures
+  rethrow with the source path and expected shape."
+  [source-path]
+  (let [config (try
+                 (edn/read-string (slurp source-path))
+                 (catch Exception cause
+                   (throw (ex-info "Unreadable embedded spools.edn"
+                                   {:source-path source-path
+                                    :expected-shape "an EDN map carrying a :spools map"}
+                                   cause))))
+        spools (:spools config)
+        config-dir (.getParentFile (.getCanonicalFile (io/file source-path)))]
+    (when-not (map? spools)
+      (invalid-embedded-spools! source-path nil spools "a :spools map"))
+    (assoc config
+           :spools
+           (into {}
+                 (map (fn [[family entry]]
+                        (when-not (symbol? family)
+                          (invalid-embedded-spools! source-path family family "a symbol family key"))
+                        (when-not (map? entry)
+                          (invalid-embedded-spools! source-path family entry "a map family entry"))
+                        (let [root (:local/root entry)]
+                          (when (and (contains? entry :local/root)
+                                     (or (not (string? root)) (str/blank? root)))
+                            (invalid-embedded-spools! source-path family root
+                                                      "a non-blank string :local/root"))
+                          (when-not (s/valid? ::spool-sync/family-entry entry)
+                            (invalid-embedded-spools!
+                             source-path family
+                             (s/explain-data ::spool-sync/family-entry entry)
+                             "a :skein.core.weaver.spool-sync/family-entry"))
+                          [family (if root
+                                    (assoc entry :local/root
+                                           (.getCanonicalPath (io/file config-dir root)))
+                                    entry)])))
+                 spools))))
 
 (defn test-world [config-dir]
   (weaver-config/world config-dir
@@ -62,10 +116,10 @@
   `expected-keys`.
 
   The drift alarm for the versioned spool-state convention
-  (docs/writing-shared-spools.md 'Versioned spool state'): a spool declares a
+  (docs/spools/writing-shared-spools.md 'Versioned spool state'): a spool declares a
   `state-version` alongside `new-state`, and spool-state reuses a preserved map
-  across `reload!` until that version changes. If `new-state` gains or loses a
-  key without a matching version bump, a post-upgrade reload would silently reuse
+  across module refresh until that version changes. If `new-state` gains or loses a
+  key without a matching version bump, a post-upgrade refresh would silently reuse
   a shape-mismatched map, so each versioned spool pins its key set here and bumps
   both together. Call from a deftest with the spool's private `new-state` var,
   e.g. `(assert-state-shape #'chime/new-state #{:notifier-binding ...})`."
@@ -79,19 +133,20 @@
 
   opts: `:publish?` (default false — the runtime is thread-bound for `f` via
   `with-runtime-binding` rather than published as the process ambient
-  runtime), and `:prefix`/`:nest-skein?`, threaded straight to
-  `temp-config-dir`. Set `:publish? true` when `f` (or code it calls, e.g.
+  runtime), `:release-marker`, and `:prefix`/`:nest-skein?`, threaded straight
+  to `temp-config-dir`. Set `:publish? true` when `f` (or code it calls, e.g.
   spawned worker threads that resolve the runtime via `current/runtime`
   rather than a per-call binding) needs the ambient singleton to actually
   exist."
   ([f] (with-runtime {} f))
   ([opts f]
-   (let [{:keys [publish?] :or {publish? false}} opts
+   (let [{:keys [publish? release-marker] :or {publish? false}} opts
          db-file (db-test/temp-db-file)
          config-dir (temp-config-dir (select-keys opts [:prefix :nest-skein?]))]
      (try
-       (let [rt (weaver-runtime/start! db-file {:world (test-world (.getCanonicalPath config-dir))
-                                                :publish? publish?})]
+       (let [rt (weaver-runtime/start! db-file (cond-> {:world (test-world (.getCanonicalPath config-dir))
+                                                        :publish? publish?}
+                                                 release-marker (assoc :release-marker release-marker)))]
          (try
            (weaver-runtime/with-runtime-binding rt #(f rt config-dir))
            (finally

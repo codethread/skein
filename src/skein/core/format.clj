@@ -17,10 +17,14 @@
     (subs line (inc i))))
 
 (defn- barred-lines
-  "Return the bar contents of `block`, failing loudly when no line carries a
-  bar: a bar-less block is authoring error (a dropped `|`), and returning
-  empty output would silently delete the prose it was meant to carry."
+  "Return the bar contents of `block`, failing loudly when `block` is not a
+  string or no line carries a bar: a bar-less block is authoring error (a
+  dropped `|`), and returning empty output would silently delete the prose
+  it was meant to carry."
   [block]
+  (when-not (string? block)
+    (throw (ex-info "|-margin block must be a string with at least one barred line"
+                    {:block block :type (type block)})))
   (let [lines (keep bar-content (str/split-lines block))]
     (when (empty? lines)
       (throw (ex-info "|-margin block has no barred lines; every content line must start with |"

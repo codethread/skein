@@ -14,7 +14,9 @@
             [skein.api.graph.alpha :as graph]
             [skein.api.patterns.alpha :as patterns]
             [skein.api.weaver.alpha :as weaver]
+            [skein.core.db :as db]
             [skein.core.terse :as terse]
+            [skein.core.weaver.access :as access]
             [skein.core.weaver.config :as weaver-config]
             [skein.api.current.alpha :as current]
             [skein.core.query :as query]))
@@ -95,25 +97,22 @@
 (defn- in-process-call [rt op args]
   (case op
     :init (weaver/init rt)
-    :add (apply weaver/add rt args)
-    :update (apply weaver/update rt args)
-    :supersede (apply weaver/supersede rt args)
+    :add (apply weaver/add! rt args)
+    :update (apply weaver/update! rt args)
+    :supersede (apply weaver/supersede! rt args)
     :show (apply weaver/show rt args)
     :declare-acyclic-relation! (apply weaver/declare-acyclic-relation! rt args)
     :acyclic-relations (weaver/acyclic-relations rt)
-    :burn-by-id (apply graph/burn-by-id! rt args)
     :burn-by-ids (apply graph/burn-by-ids! rt args)
     :register-query (apply graph/register-query! rt args)
-    :load-queries (apply graph/load-queries! rt args)
     :queries (graph/queries rt)
     :query-explain (apply graph/query-explain rt args)
     :list (if (seq args) (apply weaver/list rt args) (weaver/list rt))
     :list-query (apply weaver/list-query rt args)
     :ready (if (seq args) (apply weaver/ready rt args) (weaver/ready rt))
-    :ready-query (apply weaver/ready-query rt args)
     :register-pattern! (apply patterns/register-pattern! rt args)
     :patterns (patterns/patterns rt)
-    :resolve-pattern (apply patterns/pattern rt args)
+    :resolve-pattern (apply patterns/resolve-pattern rt args)
     :pattern-explain (apply patterns/explain rt args)
     :weave! (apply patterns/weave! rt args)))
 
@@ -183,7 +182,7 @@
 
   Missing ids fail loudly. Returns the weaver burn summary."
   ([id]
-   (daemon :burn-by-id id))
+   (daemon :burn-by-ids [id]))
   ([id & ids]
    (daemon :burn-by-ids (vec (cons id ids)))))
 
@@ -193,6 +192,44 @@
   Missing ids fail loudly. Returns the weaver burn summary."
   [ids]
   (daemon :burn-by-ids (vec ids)))
+
+(defn- recovery-datasource
+  "Return the in-process weaver datasource for burn-tombstone recovery reads.
+
+  Tombstone reads are an in-process weaver REPL activity: they read directly
+  from the live datasource rather than riding the `daemon` client dispatch.
+  Throws with remediation pointing at `mill weaver repl` when no in-process
+  runtime is bound (a connected-client REPL or none)."
+  []
+  (if-let [rt (current/runtime-or-nil)]
+    (access/ds rt)
+    (throw (ex-info (format-alpha/reflow
+                     "|Burn-tombstone recovery reads run inside the live weaver JVM. No
+                       |in-process runtime is bound here (a connected-client REPL has none).
+                       |Start an in-process weaver REPL with `mill weaver repl` and rerun.")
+                    {:helper 'burn-history :code :skein.repl/no-in-process-runtime}))))
+
+(defn burn-history
+  "Return every burn tombstone recorded for burned strand `id`, newest first.
+
+  Disaster-recovery read: each tombstone carries the burned strand's core
+  fields, its full attribute map (values tagged `{:value ... :archived ...}`
+  so archived keys stay distinguishable), its incident edges, and
+  `recorded_at`, shaped to feed a batch graph mutation payload by hand.
+  In-process only — throws with remediation when no live weaver runtime is
+  bound; run it from `mill weaver repl`."
+  [id]
+  (db/burn-history-for-strand (recovery-datasource) id))
+
+(defn recent-burns
+  "Return the latest `limit` burn tombstones across all strands, newest first.
+
+  Disaster-recovery read for scanning recent deletions; `limit` is required
+  and must be positive. Each tombstone has the shape documented on
+  `burn-history`. In-process only — throws with remediation when no live
+  weaver runtime is bound; run it from `mill weaver repl`."
+  [limit]
+  (db/recent-burn-history (recovery-datasource) limit))
 
 (defn- call-daemon [f]
   (try
@@ -222,7 +259,10 @@
   (let [registry (query/read-edn-file path)]
     (when-not (map? registry)
       (throw (ex-info "Query file must contain one EDN map of query names to query definitions" {:path path})))
-    (daemon :load-queries registry)))
+    (reduce-kv (fn [loaded query-name query-def]
+                 (merge loaded (daemon :register-query query-name query-def)))
+               {}
+               registry)))
 
 (defn queries
   "Return the active weaver's in-memory named query registry."
@@ -274,7 +314,9 @@
   ([query-or-def]
    (ready query-or-def {}))
   ([query-or-def params]
-   (run-query query-or-def params :ready :ready-query)))
+   (if (terse/named-query? query-or-def)
+     (daemon :ready (daemon :resolve-query query-or-def) params)
+     (daemon :ready query-or-def params))))
 
 (defn defpattern!
   "Register a runtime pattern in the active weaver pattern registry.

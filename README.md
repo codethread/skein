@@ -1,6 +1,55 @@
-# Skein 🧶 Give your agents a lisp
+# Skein 🧶 Give your agents a Lisp
 
-Skein is a local graph for the work coding agents generate: tasks, notes, dependencies, review state — whatever your workflow needs to remember. Everything lives in a SQLite file on your machine, and the everyday `strand` commands print JSON for scripts and agents.
+Skein (pronounced skayne) is a runtime for programming the constraints and loops around your coding agents. Instruction files such as AGENTS.md and Skills still provide context, but load-bearing behavior can be Clojure code that you read, diff, **test**, and **compose**.
+
+## Why Skein
+
+Here is a small workflow:
+
+```clojure
+(workflow/workflow "Land a feature branch"
+  (workflow/step :push-draft-pr "Push the branch and open a draft PR" :self)
+  (workflow/step :ci-green "Watch CI to green at HEAD" :self
+                 :depends-on [:push-draft-pr])
+  (workflow/gate :review "Roster code review" :subagent
+                 :depends-on [:ci-green])
+  (workflow/step :address-review "Address review findings and restore green CI" :self
+                 :depends-on [:review])
+  (workflow/checkpoint :signoff "Sign off the landing"
+                       :depends-on [:address-review]
+                       :kind :agent
+                       :choices [{:key :approved :label "Approve"}
+                                 {:key :abort :label "Abort"}])
+  (workflow/step :merge-verify "Squash-merge to main and verify" :self
+                 :depends-on [:signoff]))
+```
+
+This is Skein code, modelled on this repository's [landing workflow](./.skein/workflows.clj). It compiles to a graph that any agent can consume one ready step at a time, regardless of whether the agent runs through Codex, Claude, or another harness.
+
+A `workflow/gate` marks a hand-off point; the gate itself does not perform the work. An executor plugin supplies that behavior and registers its liveness checks with the workflow engine. With the reference subagent executor enabled, the ready `:subagent` gate above is handed to a dedicated agent, which may use a different harness from the coordinator driving the workflow.
+
+You could describe the same process in an instruction file:
+
+```md
+- After opening the PR, wait for CI to go green (see the `gh` Skill).
+- Request review from another agent.
+  - Use the `claude-code-cli` Skill for Claude or `codex-code-cli` for GPT models.
+  - If you are Claude, ask Codex; if you are Codex, ask Claude.
+  - IMPORTANT: do not skip this step.
+- Address all feedback.
+  - If the required changes are too significant, abort and discuss them with the user.
+- Squash-merge, then run verification (see the `verification` Skill).
+```
+
+That can work, but the prose quickly accumulates caveats. Does every agent read the Skill? Does every teammate have Codex? What happens when someone renames `verification` to `checks`? Put the rules in the main instruction file and every agent must read them, even when the rules are irrelevant to its task.
+
+The workflow engine is not part of Skein's core. Skein provides the graph primitives; the reference workflow engine and subagent executor are userland plugins built on them. Use the shipped versions, change them, or replace them. The workflow does not know what `:subagent` means. The executor plugin gives that value its behavior.
+
+These are composable pieces with full introspection, built on a small core you can keep or reinvent. That is Skein.
+
+## A live, shared image
+
+Those workflow steps compile to strands in a graph: a delegated agent can complete the review gate, and the merge step cannot become ready until CI is green and sign-off is decided.
 
 The tagline is literal. Skein is written in Clojure, a Lisp that runs on the JVM, and the process that owns your data is a live image. You and your agents can attach REPLs to it at the same time, and every session shares that one image: define a var in one and the others see it. Redefine a function or reload your config while it keeps running, without losing a strand. The workflow is not fixed by a schema someone else chose; you build the parts you want.
 
@@ -21,6 +70,12 @@ A few terms up front, since the rest of this page uses them:
 
 Full documentation lives at **[codethread.github.io/skein](https://codethread.github.io/skein/)**.
 
+> [!NOTE]
+> **Why a live image?**
+> Agents can attach to a running weaver and alter it in flight. During one large feature run, a Codex subscription hit its limit midway through a DAG of delegated tasks. A Claude agent connected to the running process and switched the remaining delegates to Claude without pausing the run or restarting the weaver. Only the active Codex task needed to be replaced.
+>
+> Not every agent needs that power. Giving coordinator agents runtime inspection and control lets them adapt without requiring every recovery path to be declared up front.
+
 ## Is Skein for you?
 
 The short version: Skein wants to be Emacs for agents — a small core held stable, a live programmable runtime, and everything else built in userland.
@@ -34,7 +89,7 @@ It was built against a few specific problems. If you recognize them, Skein is pr
 
 The bill: a local background JVM process, Go and a JVM on the machine, and Clojure for any behavior beyond the built-in commands. There is no hosted service, web UI, or accounts — if you want a shared team tracker, Skein is not that.
 
-A low-risk way in: one repo, one maintainer, the plain CLI. Reach for the programmable parts once they pay for themselves.
+A low-risk way in: one repo, one maintainer, the plain CLI. Follow the setup and keep the `.skein/` dir under `.gitignore` while you experiment.
 
 ## Quick start
 
@@ -67,7 +122,7 @@ strand add "Announce the release" \
 ```
 
 > [!NOTE]
-> `type` is not a Skein concept. Attributes are arbitrary key/values — this example invented `type=docs|code` on the spot, and inventing your own conventions is the point. See [attributes are the extension point](./docs/skein.md#attributes-are-the-extension-point).
+> `type` is not a Skein concept. Attributes are arbitrary key/values — this example invented `type=docs|code` on the spot, and inventing your own conventions is the point. See [attributes are the extension point](./docs/reference.md#attributes-are-the-extension-point).
 
 Four commands, and you have a graph — each strand is a node carrying its attributes, and each edge points at the work it waits on:
 
@@ -136,6 +191,18 @@ From the REPL you can register a named query and see it immediately from the pla
 (defquery! 'code '[:= [:attr :type] "code"])
 ```
 
+<details markdown>
+<summary>New notation? That vector is EDN</summary>
+
+EDN is Clojure's data format — roughly what JSON is to JavaScript. `[:= [:attr :type] "code"]` is
+plain data: a vector that reads "the `type` attribute equals `"code"`". Queries stay in this small
+DSL rather than raw SQL; the weaver compiles them to reads over indexed attribute rows. The
+[queries section of the reference](./docs/reference.md#queries) covers registering, discovering,
+and keeping queries across restarts, and ends with the
+[expression grammar](./docs/reference.md#query-expression-grammar).
+
+</details>
+
 ```sh
 strand list --query code    # just "Build the CLI"
 mill weaver stop
@@ -143,7 +210,7 @@ mill weaver stop
 
 The everyday commands are defined the same way: `add`, `list`, `ready`, and the rest come from the [batteries spool](./spools/batteries.md), activated by one line `mill init` writes into `.skein/init.clj`. Remove that line and `strand` keeps only `help`; register your own ops in its place and the CLI becomes whatever surface your workflow needs.
 
-With no `--workspace`, `strand` finds the canonical Git repository root and uses that repo as its workspace. Outside a Git repo, commands fail loudly rather than guess. The [getting started guide](./docs/getting-started.md) walks through all of this slowly, including throwaway `--workspace` worlds for experiments.
+With no `--workspace`, `strand` finds the canonical Git repository root and uses that repo as its workspace. Outside a Git repo, commands fail loudly rather than guess. The [getting started guide](./docs/tutorial.md) walks through all of this slowly, including throwaway `--workspace` worlds for experiments.
 
 ## Learn it from an agent
 
@@ -152,15 +219,16 @@ Skein is built for agents, and its own repository is written for them to read. P
 ## Where to go next
 
 - [Docs site](https://codethread.github.io/skein/) — everything below, rendered.
-- [Getting started](./docs/getting-started.md) — install to your first custom command.
-- [Skein user reference](./docs/skein.md) — the data model, CLI, weaver, REPL,
+- [Tutorial](./docs/tutorial.md) — install to your first named query, top to bottom.
+- [Skein user reference](./docs/reference.md) — the data model, CLI, weaver, REPL,
   and workspace conventions.
 - [Reference spools](./spools/README.md) — the shipped workflow extensions:
   a workflow engine, a feature lifecycle, a kanban board, and more, each one
   working code you can read, run, or copy.
-- [Writing shared spools](./docs/writing-shared-spools.md) and
-  [library authoring](./docs/library-authoring.md) — building extensions others
-  can run.
+- [Customising your workspace](./docs/spools/customisation.md),
+  [testing your config and spools](./docs/spools/testing.md), and
+  [writing shared spools](./docs/spools/writing-shared-spools.md) — the ladder
+  from a two-line `init.clj` to extensions others can run.
 - [Clojure crash course](./docs/clojure-crash-course.md) — enough Clojure to
   read the REPL examples.
 
@@ -168,25 +236,59 @@ Skein is built for agents, and its own repository is written for them to read. P
 
 Everything on this page is a few small primitives — `add`, `weave`, `pattern` — over one graph. Around them Skein ships shared libraries called [spools](./spools/README.md), the durable workspace config you saw `mill init` create, an event and hooks system inside the weaver, and a testing library (`skein.test.alpha`) that spins up disposable weaver worlds. They go a long way: this repository coordinates its own development (a kanban board, a feature lifecycle, delegated agent runs, and a landing workflow) entirely in userland code built from those parts.
 
-<details markdown>
-<summary>A landing workflow, condensed</summary>
+Workflows are plain data, so they compose. A `workflow/call` inlines a reusable procedure into its parent's graph; a dependency on the call waits for the whole procedure to finish.
 
-A sketch of the landing discipline in this repo's [`.skein/workflows.clj`](./.skein/workflows.clj). Steps compile to strands in the same graph you have been querying: the review gate is completed by a delegated subagent run, and the merge step cannot become ready until CI is green and sign-off is decided.
+<details markdown>
+<summary>One workflow calling another</summary>
 
 ```clojure
-(workflow/workflow "Land a feature branch"
-  (workflow/step :push-draft-pr "Push the branch and open a draft PR" :self)
-  (workflow/step :ci-green "Watch CI to green at HEAD" :self
-                 :depends-on [:push-draft-pr])
-  (workflow/gate :review "Roster code review" :subagent
+(defn review [_]
+  (workflow/workflow "Review"
+    (workflow/step :inspect "Inspect the artifact" :self)
+    (workflow/step :verdict "Write the verdict" :self :depends-on [:inspect])))
+
+(workflow/workflow "Ship a proposal"
+  (workflow/step :draft "Draft the proposal" :self)
+  (workflow/call :review review {} :depends-on [:draft])
+  (workflow/step :publish "Publish" :self :depends-on [:review]))
+```
+
+</details>
+
+<details markdown>
+<summary>This repository's landing workflow, condensed</summary>
+
+The example at the top of this page shows the shape. Here is the workflow from this repo's [`.skein/workflows.clj`](./.skein/workflows.clj), condensed but with its executor kinds, enforcement text, and routing intact.
+
+```clojure
+(workflow/workflow (fn [{:keys [branch]}] (str "Land: " branch))
+  {:params {:feature   (workflow/param :required true)
+            :branch    (workflow/param :required true)
+            :worktree  (workflow/param :required true)}}
+
+  ;; A :self step carries its enforcement as plain instruction text — shipped as
+  ;; data on the strand, not prose in a file an agent might skip.
+  (workflow/step :push-draft-pr "Push the branch and open a draft PR" :self
+                 :attributes {"workflow/instruction"
+                              "Push to origin, open a draft PR against main, record its url…"})
+
+  ;; A :shell gate the shell executor fulfils mechanically: it runs the recorded
+  ;; `gh pr checks --watch`, and only its green exit opens the next step. A red
+  ;; watch stamps gate/error for a fix-push-clear retry — no agent judgement.
+  (workflow/gate :ci-green "Watch CI to green at HEAD" :shell
+                 :depends-on [:push-draft-pr]
+                 :attributes {"shell/argv" ["sh" "-c" feature-ci-watch-script branch …]})
+
+  (workflow/step :signoff-review "Run the roster review, drive every fix round" :self
                  :depends-on [:ci-green])
+
+  ;; The checkpoint doesn't merge — it routes. Each choice hands off to a separate
+  ;; registered workflow (:land-merge / :land-abort), composed in, not hard-coded.
   (workflow/checkpoint :signoff "Sign off the landing"
-                       :depends-on [:review]
+                       :depends-on [:signoff-review]
                        :kind :agent
-                       :choices [{:key :approved :label "Approve"}
-                                 {:key :abort :label "Abort"}])
-  (workflow/step :merge-verify "Squash-merge to main and verify" :self
-                 :depends-on [:signoff]))
+                       :choices [{:key :approved :label "Approve" :next :land-merge}
+                                 {:key :abort    :label "Abort"   :next :land-abort}]))
 ```
 
 </details>

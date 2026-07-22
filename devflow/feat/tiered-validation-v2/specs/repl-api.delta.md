@@ -60,7 +60,7 @@ the test classpath beside `skein.test-runner`.
   (TEN-004). The agent-facing entry an author actually calls is the only durable
   surface.
 - **Rejected:** Promoting the warm server, its files, or the `:test-repl` alias
-  into contract — dev tooling whose shape may change freely under TEN-000
+  into contract — dev tooling whose shape may change freely under TEN-000@1
   (parallel to SPEC-005.C8 tooling internals).
 
 ## DELTA-Ttv-001.P4 Open questions

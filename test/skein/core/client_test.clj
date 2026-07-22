@@ -24,9 +24,6 @@
                       (make-array java.nio.file.attribute.FileAttribute 0)))]
     (test-world (.getCanonicalPath dir))))
 
-(defn client-test-view [{:keys [params]}]
-  {:client-view params})
-
 ;; Namespace-level on purpose: hooks are registered by symbol and resolved
 ;; to top-level vars, so capture state cannot be a per-test local. Reset by
 ;; the :each fixture below; the runner never splits a namespace across threads.
@@ -127,7 +124,7 @@
         (is (= query-def (call-world world :resolve-query 'mine)))
         (is (= {"mine" query-def} (call-world world :queries)))
         (is (= {"done" [:= :state "closed"]}
-               (call-world world :load-queries {'done [:= :state "closed"]})))
+               (call-world world :register-query 'done [:= :state "closed"])))
         (is (= {"done" [:= :state "closed"]
                 "mine" query-def}
                (call-world world :queries)))))))
@@ -137,9 +134,9 @@
     (fn [rt world _db-file]
       (call-world world :init)
       (reset! client-hook-contexts [])
-      (hooks/register! rt :client-normalize #{:attributes/normalize} 'skein.core.client-test/client-normalize-hook {})
-      (hooks/register! rt :client-add #{:strand/add-before-commit} 'skein.core.client-test/client-capture-hook {})
-      (hooks/register! rt :client-update #{:strand/update-before-commit} 'skein.core.client-test/client-capture-hook {})
+      (hooks/register-hook! rt :client-normalize #{:attributes/normalize} 'skein.core.client-test/client-normalize-hook {})
+      (hooks/register-hook! rt :client-add #{:strand/add-before-commit} 'skein.core.client-test/client-capture-hook {})
+      (hooks/register-hook! rt :client-update #{:strand/update-before-commit} 'skein.core.client-test/client-capture-hook {})
       (let [created (call-world world :add {:title "Hooked client" :attributes {:owner "agent"}})]
         (call-world world :update (:id created) {:attributes {:owner "agent" :phase "updated"}}))
       (is (= [:client-normalize :client-add :client-normalize :client-update]
@@ -159,13 +156,7 @@
         (is (= [agent] (call-world world :strands-by-ids [(:id agent)])))
         (is (= [] (call-world world :ancestor-root-ids [(:id agent)] {:where [:= [:attr :kind] "feature"]})))
         (is (= {:root-ids [(:id agent)] :strands [agent] :edges []}
-               (call-world world :subgraph [(:id agent)])))
-        (is (= {:name "client" :fn 'skein.core.client-test/client-test-view}
-               (call-world world :register-view! 'client 'skein.core.client-test/client-test-view)))
-        (is (= [{:name "client" :fn 'skein.core.client-test/client-test-view}]
-               (call-world world :views)))
-        (is (= {:client-view {:ok true}}
-               (call-world world :view! 'client {:ok true})))))))
+               (call-world world :subgraph [(:id agent)])))))))
 
 (deftest client-query-registry-preserves-domain-errors
   (with-runtime
@@ -178,7 +169,7 @@
           (is (= "Query not found" (:weaver-message (ex-data e))))
           (is (= :missing (get-in (ex-data e) [:weaver-data :query])))))
       (try
-        (call-world world :load-queries {"mine" [:= :state "active"]})
+        (call-world world :register-query "mine" [:= :state "active"])
         (is false "expected invalid query name error")
         (catch clojure.lang.ExceptionInfo e
           (is (= "Weaver API call failed" (ex-message e)))

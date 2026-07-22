@@ -37,7 +37,7 @@ run every so often for the lifetime of the weaver. You also want spread so many
 weavers or many jobs do not fire on the same tick.
 
 **Composition.** Call `register!` with `:interval-ms`, optional `:jitter-ms`, and
-a `:run!` symbol resolving to `(fn [runtime] ..)`. Register from trusted startup
+a `:handler` symbol resolving to `(fn [runtime] ..)`. Register from trusted startup
 config after cron's `install!` has created the execution executor.
 
 ```clojure
@@ -46,8 +46,9 @@ config after cron's `install!` has created the execution executor.
             [skein.api.current.alpha :as current]))
 
 (defn emit-report
-  "cron :run! — one tick of the periodic work. Its return value is recorded as
-  the job's :last-outcome; a throw lands in failures and never stops the cadence."
+  "cron :handler — one tick of the periodic work. Its return value is recorded as
+  the job's :last-result; a throw lands in recent-failures and never stops the
+  cadence."
   [runtime]
   (current/with-runtime runtime
     ;; ... do the periodic work ...
@@ -58,23 +59,23 @@ config after cron's `install!` has created the execution executor.
   {:id          :nightly-report
    :interval-ms (* 24 60 60 1000)   ; base period between fires
    :jitter-ms   (* 60 60 1000)      ; each fire offset uniformly in [-1h, +1h]
-   :run!        'my.jobs/emit-report})
+   :handler     'my.jobs/emit-report})
 ```
 
 **Why this shape.**
 
-- **`:run!` is a symbol, not a function value.** Cron resolves it at fire time,
+- **`:handler` is a symbol, not a function value.** Cron resolves it at fire time,
   so a reload can update the namespace and the next fire sees the current var.
 - **Jitter spreads load.** Many weavers firing the same expensive job on the same
   tick can stampede. `:jitter-ms` spreads each fire uniformly across ±jitter.
 - **Re-registering unchanged config preserves the pending wake.** Startup config
   can run again on reload without resetting the countdown. If interval, jitter,
-  or `:run!` changes, cron replaces the wake so the new cadence takes effect from
+  or `:handler` changes, cron replaces the wake so the new cadence takes effect from
   now.
 
 Honest source: the job shape in [`cron/README.md`](./cron/README.md) and
-`register-persists-wake-lists-and-deregisters` /
-`fires-records-outcome-and-continues-cadence` in
+`register-persists-wake-lists-and-unregisters` /
+`fires-records-result-and-continues-cadence` in
 [`test/skein/cron_test.clj`](../test/skein/cron_test.clj).
 
 ---
@@ -87,31 +88,29 @@ not want that test to touch the real world.
 
 **Composition.** Give the job a dedicated startup-file module. Cron's own
 `install!` only creates the execution executor and registers no jobs. The job
-file holds `run!` plus an `install!` that performs the `register!` call.
+file holds the `:handler` plus an `install!` that performs the `register!` call.
 `init.clj` wires it as its own module.
 
 ```clojure
-;; report_job.clj (ns report-job) — the job's run! and registration live together.
+;; report_job.clj (ns report-job) — the job's handler and registration live together.
 (defn report-tick [runtime]
   ;; ... do the work ...
   {:outcome :reported})
 
-(defn- register-report-job! []
-  (cron/register! (current/runtime)
-    {:id :nightly-report
-     :interval-ms (* 24 60 60 1000)
-     :jitter-ms   (* 60 60 1000)
-     :run!        'report-job/report-tick}))
+(cron/defjob :nightly-report
+  {:interval-ms (* 24 60 60 1000)
+   :jitter-ms   (* 60 60 1000)
+   :handler     'report-job/report-tick})
 
-(defn install! [] {:jobs (register-report-job!)})
-
-;; init.clj — cron is synced and activated before the job module registers.
-(runtime/use! runtime :skein/spools-cron
+;; init.clj — cron owns the registry kind before the job contributes.
+(runtime/module! runtime :skein/spools-cron
   {:ns 'skein.spools.cron :spools ['skein.spools/cron]
-   :call 'skein.spools.cron/install! :required? true})
-(runtime/use! runtime :report-job
+   :contribute 'skein.spools.cron/contribute
+   :reconcile 'skein.spools.cron/reconcile
+   :required? true})
+(runtime/module! runtime :report-job
   {:file "report_job.clj" :after [:skein/spools-cron]
-   :call 'report-job/install! :required? true})
+   :required? true})
 ```
 
 **Why this shape.**
@@ -165,7 +164,7 @@ any later external call.
     {:run-cmd run-command
      :raise-card! (fn [card]
                     (current/with-runtime runtime
-                      ((requiring-resolve 'skein.spools.kanban/add!)
+                      ((requiring-resolve 'ct.spools.kanban/add!)
                        (:title card) {"--body" (:body card) "--priority" "p1"})))}))
 ```
 
@@ -178,7 +177,7 @@ any later external call.
 - **The card is the alert of record.** Filing the card before comments or cleanup
   means a later `gh` failure cannot swallow the finding.
 - **A real error still fails loudly.** Missing credentials or command failures
-  throw; cron records them in `failures` and keeps the cadence.
+  throw; cron records them in `recent-failures` and keeps the cadence.
 
 Honest source: this repo's `:nvd-scan` job in
 [`.skein/nvd_scan.clj`](../.skein/nvd_scan.clj) and its lock/finding tests in
@@ -190,19 +189,18 @@ Honest source: this repo's `:nvd-scan` job in
 
 **Situation.** A test advances a manual clock and expects a cron job's side
 effect. The scheduler event lane can quiesce before the offloaded job body
-finishes, so `events/await-quiescent!` alone is not enough.
+finishes, so `test-alpha/await-quiescent!` alone is not enough.
 
 **Composition.** Use the deterministic join sequence: advance the manual clock,
 wait for the event lane, then wait for cron's execution executor to go idle.
 
 ```clojure
-(require '[skein.api.events.alpha :as events]
-         '[skein.spools.cron :as cron]
+(require '[skein.spools.cron :as cron]
          '[skein.test.alpha :as test-alpha])
 
 (test-alpha/advance! runtime java.time.Duration/ofMinutes 10)
-(events/await-quiescent! runtime)
-(cron/await-idle! runtime)
+(test-alpha/await-quiescent! runtime)
+(cron/await-quiescent! runtime)
 
 ;; Now assert the job's side effect or cron status.
 ```
@@ -212,12 +210,12 @@ wait for the event lane, then wait for cron's execution executor to go idle.
 - **Wake delivery and job completion are separate.** `fire-wake` persists the
   next wake and offloads the job body, then returns. The event lane can be idle
   while the job is still running.
-- **`await-idle!` counts jobs before offload.** Once the event lane has quiesced,
-  any job submitted by a delivered wake is already in cron's in-flight latch.
-- **No sleeps or wall waits.** Manual clock advancement releases the scheduler
-  wake; the two awaits join the two execution stages.
+- **`await-quiescent!` counts jobs before offload.** Once the event lane has
+  quiesced, any job submitted by a delivered wake is already in cron's in-flight
+  latch.
+- **No sleeps or wall waits.** Manual clock advancement releases the scheduler wake, and cron's await uses that same runtime clock for its timeout and polling.
 
-Honest source: `fires-records-outcome-and-continues-cadence`, failure cases in
+Honest source: `fires-records-result-and-continues-cadence`, failure cases in
 [`test/skein/cron_test.clj`](../test/skein/cron_test.clj), and the restart/lane
 checks in [`test/skein/cron_e2e_test.clj`](../test/skein/cron_e2e_test.clj).
 
@@ -234,23 +232,23 @@ wakes for next-fire timing.
 ```clojure
 (cron/jobs runtime)
 ;; => [{:id :nvd-scan :interval-ms 518400000 :jitter-ms 3600000
-;;      :run! nvd-scan/nvd-scan-tick :last-outcome {...}}]
+;;      :handler nvd-scan/nvd-scan-tick :last-result {...}}]
 
 (skein.api.scheduler.alpha/pending runtime)
 ;; => includes {:key "cron/nvd-scan" :wake-at "..." ...}
 
-(cron/failures runtime)
+(cron/recent-failures runtime)
 ;; => [{:kind :run :job :nvd-scan :message "..." :at "..."}]
 
-(cron/deregister! runtime :nvd-scan)
+(cron/unregister! runtime :nvd-scan)
 ```
 
 **Why this shape.**
 
 - **Scheduler is the timing surface.** Cron's listing is a job-status projection,
   not a second source of next-fire truth.
-- **A throw is recorded, never fatal.** A job whose `:run!` throws stays scheduled
-  and records the error in `failures` and on its status.
+- **A throw is recorded, never fatal.** A job whose `:handler` throws stays
+  scheduled and records the error in `recent-failures` and on its status.
 - **State is runtime-owned.** Two runtimes in one JVM keep independent executors,
   job tables, and failure logs.
 

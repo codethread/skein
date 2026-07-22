@@ -70,7 +70,7 @@ an exception, in which case the exception is explicit and documented with its ra
 - No spool registry, versioning scheme, or unload support — `sync!` semantics stay as they are.
 - No change to the `dev` path on the classpath (smoke tooling) beyond what the move forces; it is a
   separate concern.
-- No migration shims: TEN-000 (alpha software) applies — old layouts drop without compatibility
+- No migration shims: TEN-000@1 (alpha software) applies — old layouts drop without compatibility
   plumbing, but every in-repo consumer is updated in the same change.
 
 ## Acceptance

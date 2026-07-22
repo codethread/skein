@@ -4,9 +4,9 @@
 > <op>` surface. Its two companions are
 > [`batteries.cookbook.md`](./batteries.cookbook.md) — worked scripting recipes (how you
 > compose the ops in a shell or pipeline) — and [`batteries.api.md`](./batteries.api.md)
-> — the generated op/arg-spec reference. Reach for the cookbook when you want a runnable
-> pipeline, the API doc when you want an exact flag list, and this doc for what each op
-> promises.
+> — the generated handler and arg-spec reference. Reach for the cookbook when you want a runnable
+> pipeline, the API doc when you want an exact flag list, `strand help <op>` when you want the live
+> declared output shape, and this doc for what each op promises.
 
 ## 1. Overview
 
@@ -29,19 +29,18 @@ This doc is the standing contract. It is written against the old public-CLI clau
 deliberate differences are explicit; §5 is the clause-by-clause map. Stable ids here use the `BAT-`
 prefix.
 
-Because batteries ships on the weaver classpath (under `spools/src`), it needs no `spools.edn`
-approval — `require` it and call `activate!`:
+Because batteries ships on the weaver classpath, it needs no `spools.edn` approval. Require it and
+declare its module:
 
 ```clojure
-(require '[skein.spools.batteries :as batteries])
-(batteries/activate!)          ; into the active runtime (use!-style)
-(batteries/activate! runtime)  ; explicit runtime, for tests/trusted callers
+(require '[skein.spools.batteries])
+(runtime/module! runtime :skein/spools-batteries
+  {:ns 'skein.spools.batteries
+   :contribute 'skein.spools.batteries/contribute
+   :reconcile 'skein.spools.batteries/reconcile})
 ```
 
-`activate!` registers every op below and returns `{:installed true :namespace
-'skein.spools.batteries :ops [<register-op! result> ...]}`. Each op carries `{:doc … :arg-spec …
-:hook-class …}` metadata; re-running `activate!` against a live runtime collides loudly under the
-accretion registry (use `reload!`, which clears registries first).
+The contribution owns every op below plus its glossary outcomes. Each op carries `{:doc … :arg-spec … :returns …}` metadata; its invocable `:arg-spec` leaves carry `:hook-class` and `:deadline-class`. Owner-complete refresh replaces the whole batteries partition atomically.
 
 ## 2. Invocation and payloads
 
@@ -63,16 +62,15 @@ accretion registry (use `reload!`, which clears registries first).
   - `weave --input :stdin` replaces reading raw stdin for `weave`.
 Loud rules (SPEC-003-D003.C2): a reference naming no attached payload fails `:missing-payload`; an
 attached payload that no reference consumed fails `:unused-payloads`.
-- **BAT-C3 (hook classes):** Each op declares a `:hook-class` used for
-  metadata-driven gating (SPEC-004-D003): `:mutating` for `add`, `update`,
-  `supersede`, `burn`, `note`, `weave`; `:read` for `show`, `list`, `ready`,
-  `notes`, `subgraph`, `query`, `pattern`. Mutating ops pass a request context
+- **BAT-C3 (hook classes):** Each invocable arg-spec leaf declares `:hook-class` and `:deadline-class` for metadata-driven gating (SPEC-004-D003). The mutating leaves are `add`, `update`, `supersede`, `burn`, `note`, `weave`, and `spool add`/`spool bump`; the read leaves are `show`, `list`, `ready`, `notes`, `subgraph`, every `query` and `pattern` verb, `vocab`, and `spool about`/`spool status`. All batteries leaves use `:deadline-class :standard`.
+  Mutating ops pass a request context
   `{:request/source :json-socket :request/operation <op-kw>}` so hooks and
   events observe the same data the old socket dispatch supplied.
 - **BAT-C4 (result shapes):** Handlers return JSON-safe data (strings,
   numbers, booleans, nil, vectors, string/keyword-keyed maps). `attributes`
   and `state` are normalized; the old lifecycle fields `active` / `inactive_at`
-  are never emitted (old C9).
+  are never emitted (old C9). Every batteries op declares `:returns`; use
+  `strand help <op>` for the live flat, subcommand, or stream-channel shape.
 
 ## 3. Op reference
 
@@ -97,19 +95,28 @@ keys **within** `--attr` fail loudly (old C6e); a blank `--attributes` key fails
 
 ```
 strand update <id> [--title t] [--state active|closed] [--attr key=value]… \
-  [--edge edge-type:to-id]…
+  [--attributes <json-object-ref>] [--edge edge-type:to-id]…
 ```
 
-Patches title, lifecycle state, attributes, and outgoing edges of one existing strand. `--attr`
-**merges** into the existing attribute map — it does not replace it. The weaver applies the patch
-with SQLite `json_patch` (`skein.core.db/update-strand!`), so keys you pass are added or overwritten
-and keys you omit are left untouched. Because `--attr` values are always strings, `update` has no
-way to *remove* an attribute key: `--attr key=null` stores the literal string `"null"`, and `update`
-accepts no `--attributes` flag to carry a typed JSON `null` (the merge-patch value that would delete
-a key). Removing a key is a trusted-path operation — `skein.api.weaver.alpha/update` with
-`{:attributes {"key" nil}}`. Duplicate keys within one `--attr` set fail loudly, as on `add`.
-`--attributes` is not accepted here (it is `add`-only, old C7). Accepts `active|closed`; cannot set
-`replaced`. Returns the normalized strand.
+Patches title, lifecycle state, attributes, and outgoing edges of one
+existing strand. Attributes **merge** into the existing map — they never
+replace it. The weaver applies the patch with SQLite `json_patch`
+(`skein.core.db/update-strand!`), so keys you pass are added or overwritten
+and keys you omit are left untouched. Precedence matches `add`: `--attr`
+(highest, repeatable string map) over `--attributes` (lowest, a JSON object
+of typed values). Passing no attribute flag leaves the attribute map
+untouched.
+
+The JSON Merge Patch surface is how you *remove* a key: a JSON `null` in
+`--attributes` deletes that attribute. A JSON empty string stores `""`, and
+`--attr key=` likewise stores `""` — blank is data, never a clearing
+convention. `--attr` values are always strings, so `--attr key=null` stores
+the literal `"null"`; a JSON `null` in the `--attributes` object deletes
+instead. The trusted-path equivalent is `skein.api.weaver.alpha/update!`
+with `{:attributes {"key" nil}}`.
+
+Duplicate keys within one `--attr` set fail loudly, as on `add`; a blank `--attributes` key fails
+loudly. Accepts `active|closed`; cannot set `replaced`. Returns the normalized strand.
 
 #### `supersede` — BAT-C7
 
@@ -280,6 +287,72 @@ name. Each entry is a C1 declaration map, string-keyed at the wire boundary. Att
 rows carry `kind`, `name`, `owner`, `doc`, and an advisory `keys` list. Edge rows carry `kind`, `name`,
 `owner`, `doc` plus the catalog-reflected `family`, `direction`, and `declared-acyclic?`.
 
+### 3.3 Spool release coordinates — BAT-C24
+
+```
+strand spool about
+strand spool add <git-url> [--tag vN] [--lib family]
+strand spool bump <family> [--to vN]
+strand spool status
+```
+
+`spool about` returns the command forms and conventions as data. `spool add` and `spool bump` are mutating leaves, while the offline `spool status` projection is a read leaf. Per-leaf hook classes keep status free of mutation gating.
+
+The public boundary specs are `::spool-op-context`, `::spool-about-result`, `::spool-add-result`, `::spool-bump-result`, `::spool-status-result`, and `::advisory-manifest` in `skein.spools.batteries`. Closed result and manifest maps also use the named `exact-keys?` predicate because `clojure.spec.alpha/keys` accepts extra keys.
+
+Add lists the remote tags and accepts annotated `vN` tags only, where `N` is a positive integer.
+It resolves the peeled `refs/tags/vN^{}` commit and records that 40-character commit sha, never the
+tag-object sha. `--tag` chooses one release; without it, add chooses the highest numbered release.
+Lightweight tags, `v0`, missing releases, and untagged repositories fail loudly.
+
+At the peeled commit, add reads the optional producer `spool.edn` as an advisory manifest. A present
+manifest supplies the roots, Skein floor, and root requirements written into the consumer family
+entry. When `--lib` is also present, it must match one of the manifest's root symbols; a conflict
+fails before any write and names the requested and declared symbols. Without a manifest, add creates
+one root at `.`. Its symbol defaults to the Git URL basename, while `--lib` confirms or overrides
+that implicit symbol. The completed entry goes through the validated, comment-preserving atomic
+`spools.edn` write path.
+
+Bump lists the same annotated, peeled releases and updates `:git/tag` and `:git/sha` together. An
+explicit `--to vN` chooses the target. Without `--to`, a failing declared floor chooses its computed
+suggestion for that family; when current requirements pass, bump chooses the highest release. The
+result always includes `compare-url`. GitHub HTTPS, SSH, and SCP remotes become an HTTPS web URL
+before the compare path is added. Other HTTP(S) remotes keep their transport URL without a trailing
+`.git`. An unrecognized non-HTTP(S) remote produces a nil `compare-url`, because batteries cannot
+infer a usable web URL. The hint does not claim that the compared releases are compatible.
+
+`spool status` performs no Git call, file write, refresh, or adoption action. It joins the declared family projection with local-overlay provenance and claims, root outcomes, module declarations, pending generation, requirement outcome, and release marker. The result reports current truth; it does not try to repair or adopt anything.
+
+### 3.4 Discovery — help, about, prime — BAT-C25
+
+Every batteries op is discoverable through the three built-in meta-verbs (see
+[cli.md](../devflow/specs/cli.md) SPEC-002.C39 and the discovery-tier deltas). The behavior batteries
+opts into:
+
+- **`strand help <op>`** projects the op's declared arg-spec into the canonical help envelope. Where
+  it adds value, an op's arg-spec also declares a closed `:annotations` sub-map — `use-when` (when to
+  reach for the op), `notes` (a subtlety the flag docs do not cover), and `failure-modes` (the named
+  outcomes the op can produce). For a subcommand op, annotations sit on the routed child, so
+  `strand help spool add` shows only that verb's failure modes. `--help` after an op (`strand add
+  --help`) is sugar for the same projection.
+- **`strand about <op>`** returns the op's cross-verb narrative — how it relates to its sibling verbs
+  — for the ops that declare `:about` prose (today `add` and `weave`). It is prose, not a flag list;
+  reach for `help` for the invocation shape.
+- **`strand prime <op>`** returns the op's orientation prose for the ops that declare `:prime` (today
+  `add` and `weave`): what to run first, what to prefer.
+
+`failure-modes` carry glossary outcome **names** only; the envelope resolves each to its definition
+once, in its `glossary` map. Batteries owns and registers these outcomes (e.g.
+`batteries/state-invalid`, `batteries/query-unknown`, `batteries/spool-release-unresolved`) from
+`install!` before the ops that reference them, so the definitions travel with the spool.
+
+Batteries also **exports** `default-help-transform`, a reference renderer that turns the raw help
+envelope into readable text. It is a single recursive function over the uniform node — the op root, a
+subcommand verb, and any deeper level render through the same body with no per-level special-casing.
+It is exported for trusted config to elect (`register-default-help-transform!`), never registered
+from `install!`: absent that election, `strand help` stays raw-JSON, and `strand help --json <op>`
+always bypasses any elected transform.
+
 ## 4. Attribute and edge flag semantics
 
 Reproducing old SPEC-002.C6–C8 (see SPEC-002-D004.R2):
@@ -289,8 +362,10 @@ Reproducing old SPEC-002.C6–C8 (see SPEC-002-D004.R2):
   set fail loudly (old C6e), enforced in the handler by recovering flag keys
   from the raw argv (the parser's `:map` type silently collapses duplicates).
 - **BAT-C20:** `--attributes <ref>` — a payload reference to one JSON object of
-  typed bulk attributes, lowest precedence, `add`-only. Cross-priority duplicate
-  keys resolve by precedence (`--attr` wins); JSON value types are preserved.
+  typed bulk attributes, lowest precedence, on `add` and `update`. Cross-priority
+  duplicate keys resolve by precedence (`--attr` wins); JSON value types are
+  preserved. On `update` it is a JSON Merge Patch: a JSON `null` value removes
+  that key, while a JSON empty string stores `""`.
 - **BAT-C21:** `--edge edge-type:to-id` — repeatable outgoing edge on `add` /
   `update`; malformed specs fail loudly.
 - **BAT-C22:** The `notes` edge is the note primitive's storage link: note
@@ -311,7 +386,7 @@ Reproducing old SPEC-002.C6–C8 (see SPEC-002-D004.R2):
 | SPEC-002.C6c `--attr-stdin` | BAT-C2/C19 | Replaced by `--attr key=:stdin`. |
 | SPEC-002.C6d `--attributes-stdin` | BAT-C2/C20 | Replaced by `--attributes :stdin` (JSON-object parse). |
 | SPEC-002.C6e precedence + dup loudness | BAT-C19/C20 | Equivalent; the mutual-exclusion of two stdin sources dissolves — payloads are named, not a single stdin. |
-| SPEC-002.C7 `update` | BAT-C6 | Equivalent; `--attributes` stays add-only. |
+| SPEC-002.C7 `update` | BAT-C6 | `update` now accepts `--attributes` as a typed JSON Merge Patch (JSON `null` removes a key), matching `add` precedence. |
 | SPEC-002.C8 `--edge` | BAT-C21 | Equivalent. |
 | SPEC-002.C9 normalized JSON | BAT-C4 | Equivalent. |
 | SPEC-002.C9a `supersede` | BAT-C7 | Equivalent. |

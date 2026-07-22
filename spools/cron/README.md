@@ -9,10 +9,10 @@ with optional uniform jitter. Each job owns one durable scheduler wake keyed
 
 Cron owns no timing loop and no clock pump. The scheduler decides when a job is
 due and is the single timing view. Cron's job listing is a status projection: it
-shows registered jobs, their config, and recent outcomes. To inspect when a job
+shows registered jobs, their config, and recent results. To inspect when a job
 will next fire, read the scheduler's pending wakes.
 
-A caller registers a job by fully-qualified `:run!` symbol resolving to
+A caller registers a job by fully-qualified `:handler` symbol resolving to
 `(fn [runtime] ..)`. Cron resolves that symbol when the wake fires, so reloads
 can update job code without replacing the pending wake.
 
@@ -48,21 +48,20 @@ Activate it from trusted startup config after syncing approved roots:
          '[skein.api.runtime.alpha :as runtime])
 
 (def runtime (current/runtime))
-(runtime/sync! runtime)
-(runtime/use! runtime :cron
+(runtime/module! runtime :cron
   {:ns 'skein.spools.cron
    :spools ['skein.spools/cron]
-   :call 'skein.spools.cron/install!
+   :contribute 'skein.spools.cron/contribute
+   :reconcile 'skein.spools.cron/reconcile
    :required? true})
 ```
 
-`install!` creates the execution executor and registers no jobs. Trusted config
-registers jobs afterwards with `register!`, so the repo decides what runs on a
-cadence.
+The module reconciler registers no jobs. Trusted config contributes jobs from
+dependent modules, so the repo decides what runs on a cadence.
 
 ## Registering jobs
 
-A job is registered by fully-qualified `:run!` symbol:
+A job is registered by fully-qualified `:handler` symbol:
 
 ```clojure
 (require '[skein.spools.cron :as cron])
@@ -71,7 +70,7 @@ A job is registered by fully-qualified `:run!` symbol:
   {:id :nightly-report
    :interval-ms (* 24 60 60 1000)     ; base period between fires
    :jitter-ms (* 60 60 1000)          ; each fire offset uniformly in [-1h, +1h]
-   :run! 'my.jobs/emit-report})       ; (fn [runtime] ..) run on each fire
+   :handler 'my.jobs/emit-report})    ; (fn [runtime] ..) run on each fire
 ```
 
 - `:id` is the durable job identity. Cron stores the cadence in scheduler key
@@ -79,15 +78,15 @@ A job is registered by fully-qualified `:run!` symbol:
 - `:interval-ms` is the base period between fires.
 - `:jitter-ms` is optional and defaults to `0`. Each fire is offset uniformly in
   `[-jitter, +jitter]`.
-- `:run!` runs for every delivered wake. Its return value is recorded as
-  `:last-outcome`; a thrown exception is recorded in `failures` and does not stop
-  the cadence.
+- `:handler` runs for every delivered wake. Its return value is recorded as
+  `:last-result`; a thrown exception is recorded in `recent-failures` and does
+  not stop the cadence.
 
 Re-registering the same `:id` preserves the pending wake when the
-cadence-defining tuple `[interval-ms jitter-ms run!]` is unchanged. This is the
+cadence-defining tuple `[interval-ms jitter-ms handler]` is unchanged. This is the
 normal reload path: config re-runs, the in-memory job table is repopulated, and
 the existing durable countdown remains in place. A changed interval, jitter, or
-`:run!` symbol replaces the wake and starts the next countdown from now.
+`:handler` symbol replaces the wake and starts the next countdown from now.
 
 Cron no longer has a first-fire seed hook. The first fire, and every later fire,
 is represented by the durable scheduler wake. If code needs a different
@@ -97,7 +96,7 @@ scheduler primitive directly in userland.
 ## Delivery contract
 
 Cron delivery is at-least-once. A due scheduler wake may be delivered more than
-once, so job authors must make `:run!` idempotent or otherwise
+once, so job authors must make `:handler` idempotent or otherwise
 duplicate-tolerant.
 
 When a `cron/<id>` wake is delivered, scheduler invokes
@@ -105,7 +104,7 @@ When a `cron/<id>` wake is delivered, scheduler invokes
 does only the cadence work:
 
 1. Decode the job id from the wake payload.
-2. Look up the in-memory job config. If the job was deregistered, return without
+2. Look up the in-memory job config. If the job was unregistered, return without
    rescheduling.
 3. Persist the next `cron/<id>` wake before running the job body.
 4. Hand the job body to cron's execution executor.
@@ -121,12 +120,16 @@ A duplicate delivery follows the same path. It replaces the next pending
 body again. This is expected under the at-least-once contract; write handlers so
 the second run is harmless.
 
+## Awaiting offloaded jobs
+
+`cron/await-quiescent!` waits for cron's offloaded jobs after the event lane has settled. Its timeout and five-millisecond polling interval use the runtime Clock. A manual clock therefore advances the await without a wall-clock sleep, and a timeout is deterministic in tests.
+
 ## Inspecting and removing
 
 ```clojure
-(cron/jobs runtime)        ; registered job status: id, interval, jitter, run!, last outcome/error
-(cron/failures runtime)    ; recorded :run and :offload failures
-(cron/deregister! runtime :nightly-report)
+(cron/jobs runtime)             ; job status: id, interval, jitter, handler, last result/error
+(cron/recent-failures runtime)  ; recorded :run and :offload failures
+(cron/unregister! runtime :nightly-report)
 ```
 
 `jobs` does not expose the next fire time. Read
@@ -134,8 +137,8 @@ the second run is harmless.
 need timing. That keeps the scheduler as the single timing surface.
 
 Job execution failures are recorded, not swallowed (TEN-003): a job whose
-`:run!` throws stays registered, keeps its cadence, and records the error in
-`failures` and on the job status.
+`:handler` throws stays registered, keeps its cadence, and records the error in
+`recent-failures` and on the job status.
 
 ## See also
 
@@ -143,6 +146,6 @@ Job execution failures are recorded, not swallowed (TEN-003): a job whose
 - [`../chime/README.md`](../chime/README.md) — the sibling notification engine
   this spool mirrors for local-root layout, runtime-owned state, and loud failure
   recording.
-- [`../../docs/writing-shared-spools.md`](../../docs/writing-shared-spools.md) —
+- [`../../docs/spools/writing-shared-spools.md`](../../docs/spools/writing-shared-spools.md) —
   runtime-owned state, versioned spool-state, and injectable side-effect
   boundaries.

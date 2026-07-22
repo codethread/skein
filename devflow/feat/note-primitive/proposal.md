@@ -60,7 +60,7 @@ the db with `./bin/mill weaver status --workspace <canonical>` → `database_pat
 
 ## PROP-Np-001.P3 Non-goals
 
-- **PROP-Np-001.NG1:** No dual-read or compatibility shim on the live path (TEN-000: alpha, change without migration).
+- **PROP-Np-001.NG1:** No dual-read or compatibility shim on the live path (TEN-000@1: alpha, change without migration).
   The unified reader walks one encoding; historical notes are made readable by the rewrite (PROP-Np-001.C10), not by a
   reader that understands the old shapes.
 - **PROP-Np-001.NG2:** No structured review findings. Tags-in-text (53% of notes) stays as-is; if it graduates, the

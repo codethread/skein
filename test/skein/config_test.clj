@@ -2,10 +2,11 @@
   "Tests for the repo-local .skein config modules (config.clj plus the
   harnesses.clj, workflows.clj, and analytics.clj siblings): registration
   surface, the delegate-pipeline weave pattern, the land workflow, the
-  devflow op wrappers over skein.spools.devflow, and the feature-costs
+  devflow op wrappers over ct.spools.devflow, and the feature-costs
   usage rollup."
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
+            [clojure.java.shell :as sh]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [skein.core.db-test :as db-test]
@@ -16,9 +17,11 @@
             [skein.api.patterns.alpha :as patterns]
             [skein.api.weaver.alpha :as weaver]
             [skein.core.weaver.config :as weaver-config]
+            [skein.core.weaver.module-graph :as module-graph]
+            [skein.core.weaver.module-publication :as publication]
             [skein.core.weaver.runtime :as weaver-runtime]
-            [skein.spools.workflow :as workflow]
-            [skein.test.alpha :as test-alpha]))
+            [skein.core.weaver.spool-sync :as spool-sync]
+            [skein.spools.test-support :as test-support]))
 
 (defn- delete-directory!
   "Delete a directory tree rooted at `path` if it exists."
@@ -35,6 +38,50 @@
                        (str config-dir "/state")
                        (str config-dir "/data")))
 
+(defn- write-embedded-spools!
+  "Write repo spool approvals into target for an embedded runtime."
+  [target]
+  (spit (io/file target "spools.edn")
+        (pr-str (test-support/embedded-spools-edn ".skein/spools.edn"))))
+
+(defn- with-runtime-loader
+  "Run f with runtime's ambient binding and synced spool classloader."
+  [rt f]
+  (weaver-runtime/with-runtime-and-spool-classloader
+    rt
+    (fn []
+      (spool-sync/sync-approved-spools rt)
+      (f))))
+
+(defn- load-module-source!
+  "Load one workspace authoring file and publish its complete contribution."
+  [rt module-key file]
+  (let [path (.getCanonicalPath (io/file file))
+        ns-sym (symbol (str/replace (str/replace file #"^\.skein/" "") #"\.clj$" ""))
+        contribution (:contribution
+                      (module-graph/with-contribution-collection
+                        {:module/key module-key :source/file path :source/namespace ns-sym}
+                        #(load-file file)))
+        backends (publication/backends rt)
+        candidates (publication/stage-owner backends (publication/candidates backends)
+                                            module-key contribution)]
+    (publication/publish! backends candidates)))
+
+(defn- publish-module-contribution!
+  "Replace one fixture module owner from its data-first contribution function."
+  [rt module-key contribute]
+  (let [contribution (update-vals
+                      (contribute {:runtime rt :module/key module-key})
+                      (fn [partition]
+                        (if (contains? partition :entries)
+                          partition
+                          {:entries partition :overrides #{}})))
+        backends (publication/backends rt)
+        candidates (publication/stage-owner
+                    backends (publication/candidates backends) module-key
+                    contribution)]
+    (publication/publish! backends candidates)))
+
 (defn- with-config-runtime
   "Run f with an isolated runtime and the repo-local .skein config loaded.
 
@@ -47,21 +94,37 @@
   (let [db-file (db-test/temp-db-file)
         config-dir (str "/tmp/skein-config-test-" (java.util.UUID/randomUUID))]
     (.mkdirs (java.io.File. config-dir))
-    (let [rt (weaver-runtime/start! db-file {:world (test-world config-dir)})]
+    (write-embedded-spools! config-dir)
+    (let [rt (weaver-runtime/start! db-file {:world (test-world config-dir)
+                                             :publish? false})]
       (try
-        ;; harnesses.clj's worker alias layers over the shipped :pi harness,
-        ;; which shuttle/install! registers in real startups; this fixture
-        ;; loads the config files alone, so register the defaults here.
-        ((requiring-resolve 'skein.spools.agent-run/register-default-harnesses!))
-        (load-file ".skein/config.clj")
-        (load-file ".skein/harnesses.clj")
-        (load-file ".skein/workflows.clj")
-        (load-file ".skein/analytics.clj")
-        ((requiring-resolve 'config/install!))
-        ((requiring-resolve 'harnesses/install!))
-        ((requiring-resolve 'workflows/install!))
-        ((requiring-resolve 'analytics/install!))
-        (f rt)
+        (with-runtime-loader
+          rt
+          (fn []
+            (spool-sync/load-synced-namespace!
+             rt 'ct.spools.agent-run :skein/spools-shuttle)
+            (publish-module-contribution!
+             rt :skein/spools-shuttle
+             (requiring-resolve 'ct.spools.agent-run/contribute))
+            ((requiring-resolve 'skein.spools.workflow/contribute)
+             {:runtime rt :module/key :skein/spools-workflow})
+            ((requiring-resolve 'skein.spools.workflow/reconcile)
+             {:runtime rt :module/key :skein/spools-workflow})
+            (spool-sync/load-synced-namespace!
+             rt 'ct.spools.devflow :skein/spools-devflow)
+            (publish-module-contribution!
+             rt :skein/spools-devflow
+             (requiring-resolve 'ct.spools.devflow/contribute))
+            (load-module-source! rt :config ".skein/config.clj")
+            (load-file ".skein/harnesses.clj")
+            (publish-module-contribution!
+             rt :harnesses (requiring-resolve 'harnesses/contribute))
+            ((requiring-resolve 'harnesses/reconcile) {:runtime rt})
+            (load-file ".skein/workflows.clj")
+            (publish-module-contribution!
+             rt :workflows (requiring-resolve 'workflows/contribute))
+            (load-module-source! rt :analytics ".skein/analytics.clj")
+            (f rt)))
         (finally
           (weaver-runtime/stop! rt)
           (db-test/delete-sqlite-family! db-file)
@@ -73,46 +136,11 @@
   (.mkdirs (io/file target))
   (doseq [name ["init.clj" "config.clj" "workflows.clj" "harnesses.clj"
                 "attention.clj" "nvd_scan.clj" "reviewers.clj" "analytics.clj"
-                "spools.edn"]]
+                "kanban_tracker.clj" "module_adapters.clj" "spools.edn"]]
     (io/copy (io/file ".skein" name) (io/file target name)))
-  ;; The shipped spools.edn approves local roots relative to the config dir,
-  ;; which does not resolve from a copy. Rewrite it to the repo's canonical
-  ;; spool roots so the whole test JVM syncs one root per lib
-  ;; (tools.deps add-libs state is JVM-global; see skein.test-runner's
-  ;; ordering note).
-  (spit (io/file target "spools.edn")
-        (pr-str {:spools {'skein.spools/agent-run
-                          {:local/root (.getCanonicalPath (io/file "spools/agent-run"))}
-                          'skein.spools/workflow
-                          {:local/root (.getCanonicalPath (io/file "spools/workflow"))}
-                          'skein.spools/ephemeral
-                          {:local/root (.getCanonicalPath (io/file "spools/ephemeral"))}
-                          'skein.spools/roster
-                          {:local/root (.getCanonicalPath (io/file "spools/roster"))}
-                          'skein.spools/loom
-                          {:local/root (.getCanonicalPath (io/file "spools/loom"))}
-                          'skein.spools/carder
-                          {:local/root (.getCanonicalPath (io/file "spools/carder"))}
-                          'skein.spools/text-search
-                          {:local/root (.getCanonicalPath (io/file "spools/text-search"))}
-                          'skein.spools/delegation
-                          {:local/root (.getCanonicalPath (io/file "spools/delegation"))}
-                          'skein.spools/chime
-                          {:local/root (.getCanonicalPath (io/file "spools/chime"))}
-                          'skein.spools/cron
-                          {:local/root (.getCanonicalPath (io/file "spools/cron"))}
-                          'skein.spools/bench
-                          {:local/root (.getCanonicalPath (io/file "spools/bench"))}
-                          ;; init.clj requires this spool; the omission used to be
-                          ;; masked by fail-quiet required use!, which now throws.
-                          ;; Its root lives inside the workspace (.skein/spools/macros),
-                          ;; unlike the repo-root spools above.
-                          'skein.macros/macros
-                          {:local/root (.getCanonicalPath (io/file ".skein/spools/macros"))}
-                          'codethread/devflow
-                          {:local/root (.getCanonicalPath (test-alpha/spool-checkout-root "skein/spools/devflow.clj"))}
-                          'codethread/kanban
-                          {:local/root (.getCanonicalPath (test-alpha/spool-checkout-root "skein/spools/kanban.clj"))}}}))
+  ;; The copied config dir would reinterpret repo-relative local roots. Git
+  ;; families remain byte-for-byte sourced from the checked-in approvals.
+  (write-embedded-spools! target)
   ;; The shipped config leaves chime's notifier to each developer's personal
   ;; init.local.clj. Bind an inert command through that same overlay hook
   ;; (loaded after init.clj on startup and on every reload) so the test also
@@ -128,9 +156,76 @@
   (let [db-file (db-test/temp-db-file)
         config-dir (str "/tmp/skein-config-startup-" (java.util.UUID/randomUUID))]
     (copy-config-dir! config-dir)
-    (let [rt (weaver-runtime/start! db-file {:world (test-world config-dir)})]
+    (let [rt (weaver-runtime/start! db-file {:world (test-world config-dir)
+                                             :publish? false})]
       (try
-        (f rt)
+        (with-runtime-loader rt #(f rt))
+        (finally
+          (weaver-runtime/stop! rt)
+          (db-test/delete-sqlite-family! db-file)
+          (delete-directory! config-dir))))))
+
+(defn- write-f16-probe!
+  "Write the F16 regression probe file into config-dir.
+
+  When present? is true it contributes one harness seat and one workflow
+  constructor; otherwise it contributes empty partitions — the file-edit a
+  developer makes to remove an entry."
+  [config-dir present?]
+  (spit (io/file config-dir "f16_probe.clj")
+        (str "(ns f16-probe\n"
+             "  \"F16 regression probe: contributes an alias and a workflow constructor.\"\n"
+             "  (:require [ct.spools.agent-run :as shuttle]\n"
+             "            [skein.spools.workflow :as workflow]))\n"
+             "(defn contribute [_]\n"
+             "  {shuttle/alias-kind "
+             (if present? "{:f16-probe-seat {:alias-of :codex}}" "{}") "\n"
+             "   workflow/constructor-kind "
+             (if present? "{:f16-probe-flow 'workflows/story-workflow}" "{}") "})\n")))
+
+(deftest f16-workspace-partition-refresh-deletes-omitted-seats-and-constructors
+  ;; F16 regression: the .skein policy files publish their harness seats, reviewer
+  ;; rosters, and workflow constructors as :workspace-layer partitions, so removing
+  ;; an entry from the file and refreshing must DELETE it from the live registry.
+  ;; The reconcile->install! path this replaced upserted into a shared REPL owner,
+  ;; where a deleted entry stayed silently effective. A probe module contributes an
+  ;; alias-kind seat and a constructor-kind entry, then drops both and refreshes.
+  (let [db-file (db-test/temp-db-file)
+        config-dir (str "/tmp/skein-f16-probe-" (java.util.UUID/randomUUID))]
+    (copy-config-dir! config-dir)
+    ;; Layer the probe module onto the same overlay hook as the chime notifier,
+    ;; so init.clj stays untouched and refresh re-reads the probe every cycle.
+    (spit (io/file config-dir "init.local.clj")
+          (pr-str '(do (require '[skein.api.current.alpha :as current]
+                                '[skein.api.runtime.alpha :as runtime]
+                                '[skein.spools.chime :as chime])
+                       (chime/set-notifier! {:argv ["true"]})
+                       (runtime/module! (current/runtime) :f16-probe
+                                        {:file "f16_probe.clj"
+                                         :spools ['ct.spools/agent-run 'skein.spools/workflow]
+                                         :after [:skein/spools-shuttle :skein/spools-workflow]
+                                         :contribute 'f16-probe/contribute}))))
+    (write-f16-probe! config-dir true)
+    (let [rt (weaver-runtime/start! db-file {:world (test-world config-dir)
+                                             :publish? false})]
+      (try
+        (with-runtime-loader
+          rt
+          (fn []
+            (let [resolve-harness (requiring-resolve 'ct.spools.agent-run/resolve-harness)
+                  workflow-definition (requiring-resolve 'skein.spools.workflow/workflow-definition)]
+              (is (= :codex (:name (resolve-harness :f16-probe-seat)))
+                  "the probe seat resolves through its :alias-of tool after startup")
+              (is (= 'workflows/story-workflow (workflow-definition :f16-probe-flow))
+                  "the probe workflow constructor is registered after startup")
+              (write-f16-probe! config-dir false)
+              (is (contains? #{:applied :unchanged} (:status (runtime/refresh! rt))))
+              (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Harness not found"
+                                    (resolve-harness :f16-probe-seat))
+                  "omitting the seat and refreshing deletes it from the alias registry")
+              (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unknown registered workflow"
+                                    (workflow-definition :f16-probe-flow))
+                  "omitting the constructor and refreshing deletes it from the registry"))))
         (finally
           (weaver-runtime/stop! rt)
           (db-test/delete-sqlite-family! db-file)
@@ -147,16 +242,34 @@
   Every op authored as a `defop` in .skein/config.clj; the surrounding spool ops
   (kanban/agent/bench) and workflow ops (land) are untouched by the refactor and
   are covered by their own tests, so this holistic guard scopes to config.clj."
-  ["current-dags" "branches" "carder-report" "devflow-start" "devflow-next"
-   "devflow-choices" "devflow-choose" "devflow-complete" "devflow-advance"
-   "devflow-describe" "devflow-history" "devflow-archive" "devflow-status"
-   "workflow-runs" "devflow-conventions" "flow-await" "flow-status" "hitl"])
+  ["devflow-start" "devflow-ready" "devflow-choices" "devflow-choose"
+   "devflow-complete" "devflow-advance"
+   "devflow-describe" "devflow-run-history" "devflow-squash-run" "devflow-status"
+   "workflow-runs" "devflow-conventions" "flow-await" "hitl"])
 
 (def ^:private named-query-names
   "The config-owned named queries whose registered definitions the refactor must
   preserve, authored as `defquery` blocks in .skein/config.clj."
   ["feature-active" "feature-work" "feature-owner-work" "feature-run"
    "workflow-runs" "devflow-runs" "work"])
+
+(defn- portable-source
+  "Rewrite an op-help envelope's absolute `:source` file to a repo-relative path.
+
+  The runtime resolves each op's source to an absolute on-disk path — the most
+  useful form for the live API — so freezing it verbatim would bind the surface
+  baseline to one checkout. Strip the checkout-root prefix here so the frozen
+  surface reads e.g. `.skein/config.clj` and stays portable across CI and other
+  worktrees; `:line` is kept as-is."
+  [detail]
+  (let [root (str (System/getProperty "user.dir") "/")]
+    (cond-> detail
+      (get-in detail [:source :file])
+      (update-in [:source :file]
+                 (fn [file]
+                   (if (str/starts-with? file root)
+                     (subs file (count root))
+                     file))))))
 
 (defn- capture-config-surface
   "Load the config module at config-path into an isolated runtime and return its
@@ -173,12 +286,16 @@
   (let [db-file (db-test/temp-db-file)
         config-dir (str "/tmp/skein-surface-" (java.util.UUID/randomUUID))]
     (.mkdirs (java.io.File. config-dir))
-    (let [rt (weaver-runtime/start! db-file {:world (test-world config-dir)})]
+    (write-embedded-spools! config-dir)
+    (let [rt (weaver-runtime/start! db-file {:world (test-world config-dir)
+                                             :publish? false})]
       (try
-        (load-file config-path)
-        ((requiring-resolve 'config/install!))
-        {:op-help (into {} (map (fn [op] [op (op! "help" [op])])) config-op-names)
-         :queries (into {} (map (fn [q] [q (get (graph/queries rt) q)])) named-query-names)}
+        (with-runtime-loader
+          rt
+          (fn []
+            (load-module-source! rt :config config-path)
+            {:op-help (into {} (map (fn [op] [op (portable-source (op! "help" [op]))])) config-op-names)
+             :queries (into {} (map (fn [q] [q (get (graph/queries rt) q)])) named-query-names)}))
         (finally
           (weaver-runtime/stop! rt)
           (db-test/delete-sqlite-family! db-file)
@@ -187,92 +304,36 @@
 (defn- assert-config-registrations
   "Assert the repo-local query/op/pattern registrations are present."
   [rt]
-  (doseq [query-name ["kanban-cards" "kanban-unstarted" "feature-active" "feature-work"
+  (doseq [query-name ["kanban-cards" "kanban-pending" "feature-active" "feature-work"
                       "feature-owner-work" "feature-run" "workflow-runs" "devflow-runs" "work"]]
     (is (contains? (graph/queries rt) query-name)))
   (is (contains? (graph/queries rt) "bench-runs"))
-  (doseq [op-name ["kanban" "branches" "current-dags" "devflow-start" "devflow-next" "devflow-choices"
+  (doseq [op-name ["kanban" "devflow-start" "devflow-ready" "devflow-choices"
                    "devflow-choose" "devflow-complete" "devflow-advance"
-                   "devflow-describe" "devflow-history" "devflow-archive"
+                   "devflow-describe" "devflow-run-history" "devflow-squash-run"
                    "devflow-status" "workflow-runs" "devflow-conventions"
-                   "flow-await" "flow-status" "hitl" "land" "agent" "bench"]]
-    (is (some #(= op-name (:name %)) (weaver/ops rt))))
+                   "flow-await" "hitl" "land" "flow" "agent" "bench"]]
+    (is (some #(= op-name (:name %)) (weaver/ops rt)) op-name))
   (is (some #(= "delegate-pipeline" (:name %)) (patterns/patterns rt)))
   ;; agent-plan is spool-owned now; a real startup wires the agents spool in
   ;; via init.clj, so it must still be registered end to end
   (is (some #(= "agent-plan" (:name %)) (patterns/patterns rt)))
   ;; agent review must consume the one authoritative policy text by default;
-  ;; the text ships from skein.spools.delegation, the accessor stays on agent-run
-  (is (= (var-get (requiring-resolve 'skein.spools.delegation/review-contract))
-         ((requiring-resolve 'skein.spools.agent-run/default-review-contract-text))))
+  ;; the text ships from ct.spools.delegation, the accessor stays on agent-run
+  (is (= (var-get (requiring-resolve 'ct.spools.delegation/review-contract))
+         ((requiring-resolve 'ct.spools.agent-run/default-review-contract-text))))
+  ;; this repo runs the agent-plan task workflow, which no spool registers for
+  ;; it: harnesses.clj opts its serving runs into the exported fragment
+  (is (= (var-get (requiring-resolve 'ct.spools.delegation/worker-contract))
+         ((requiring-resolve 'ct.spools.agent-run/default-task-contract-text))))
   ;; the repo owns chime's attention rules; the chime engine ships none
   (is (= [:agent-failure :gate-error :hitl-checkpoint-ready :kanban-blocked :kanban-completed
           :kanban-started :parked-run]
-         (mapv :name ((requiring-resolve 'skein.spools.chime/rules)))))
+         (mapv :key ((requiring-resolve 'skein.spools.chime/rules)))))
   ;; the declarative reviewer rosters register from .skein/reviewers.clj
-  (let [rosters ((requiring-resolve 'skein.spools.delegation/rosters))]
+  (let [rosters ((requiring-resolve 'ct.spools.delegation/rosters))]
     (is (= [:change-review :complex-patch-review :docs-review] (mapv :name rosters)))
-    (is (some #(= "test-sleeps" (:name %)) (:reviewers (first rosters))))))
-
-(def ^:private external-spool-coordinate-pairs
-  "Pairs of weaver-side spools.edn keys and test-JVM deps.edn coordinates."
-  [{:spools-key 'codethread/devflow
-    :deps-key 'io.github.codethread/devflow.spool}
-   {:spools-key 'codethread/kanban
-    :deps-key 'io.github.codethread/kanban.spool}])
-
-(deftest external-spool-coordinates-are-synced-across-spools-edn-and-deps-edn
-  ;; The weaver resolves external spool coordinates from .skein/spools.edn while
-  ;; config_test loads .skein/config.clj in-process through deps.edn's :test
-  ;; :extra-deps. Each external spool must name the same checkout in both files,
-  ;; otherwise the test JVM and the weaver can run different spool revisions.
-  (let [spools-edn (edn/read-string (slurp ".skein/spools.edn"))
-        deps-edn (edn/read-string (slurp "deps.edn"))
-        spools (get spools-edn :spools)
-        declared-spools-keys (set (map :spools-key external-spool-coordinate-pairs))
-        external-spools-keys (set (keep (fn [[spools-key entry]]
-                                          (when (:git/url entry)
-                                            spools-key))
-                                        spools))
-        missing-pairs (sort (remove declared-spools-keys external-spools-keys))
-        extra-pairs (sort (remove external-spools-keys declared-spools-keys))]
-    (is (= external-spools-keys declared-spools-keys)
-        (str ".skein/spools.edn :git/url external spools must be declared in "
-             "external-spool-coordinate-pairs; missing " (pr-str missing-pairs)
-             ", extra " (pr-str extra-pairs)))
-    (doseq [{:keys [spools-key deps-key]} external-spool-coordinate-pairs]
-      (testing (str spools-key " <-> " deps-key)
-        (let [spools-entry (get-in spools-edn [:spools spools-key])
-              deps-entry (get-in deps-edn [:aliases :test :extra-deps deps-key])]
-          (is (map? spools-entry)
-              (str spools-key " missing from .skein/spools.edn for declared pair "
-                   spools-key " <-> " deps-key))
-          (is (map? deps-entry)
-              (str deps-key " missing from deps.edn :test :extra-deps for declared pair "
-                   spools-key " <-> " deps-key))
-          (cond
-            (and (:git/sha spools-entry) (:git/sha deps-entry))
-            (is (= (:git/sha spools-entry) (:git/sha deps-entry))
-                (str spools-key " :git/sha in .skein/spools.edn (" (:git/sha spools-entry)
-                     ") must match " deps-key " :git/sha in deps.edn :test :extra-deps ("
-                     (:git/sha deps-entry) ")"))
-
-            (and (:local/root spools-entry) (:local/root deps-entry))
-            (let [spools-root (.getCanonicalFile (io/file ".skein" (:local/root spools-entry)))
-                  deps-root (.getCanonicalFile (io/file "." (:local/root deps-entry)))]
-              (is (= spools-root deps-root)
-                  (str spools-key " :local/root in .skein/spools.edn (" spools-root
-                       ") must resolve to the same checkout as " deps-key
-                       " :local/root in deps.edn :test :extra-deps (" deps-root ")")))
-
-            :else
-            ;; a failing assertion rather than a throw so one bad pair still
-            ;; lets the remaining declared pairs be checked in the same run
-            (is false
-                (str spools-key " <-> " deps-key
-                     " coordinates in .skein/spools.edn and deps.edn must both be "
-                     ":local/root or both be :git/sha; got " (pr-str spools-entry)
-                     " and " (pr-str deps-entry)))))))))
+    (is (some #(= "test-sleeps" (:name %)) (:seats (first rosters))))))
 
 (deftest devflow-conventions-op-lists-repo-conventions
   ;; :queries derives from skein.macros.queries/remembered-queries (TASK-Srm-007);
@@ -284,50 +345,55 @@
               :spools [{:namespace "skein.spools.workflow"
                         :doc "spools/workflow.md"
                         :purpose "Workflow engine: definitions compiled to strand molecules with checkpoints, routing, and gates."}
-                       {:namespace "skein.spools.devflow"
+                       {:namespace "ct.spools.devflow"
                         :doc "spools/devflow.md"
                         :purpose "Feature lifecycle (intake -> proposal -> spec-plan -> tasks/implementation) keyed by feature name."}
-                       {:namespace "skein.spools.ephemeral"
-                        :doc "spools/ephemeral.md"
-                        :purpose "Temporary parent-owned strands burned via a userland attribute."}
-                       {:namespace "skein.spools.kanban"
+                       {:namespace "ct.spools.kanban"
                         :doc "spools/kanban.md"
                         :purpose "User-facing kanban board: feature/epic cards with refinement/pending/claimed/in_review lanes."}]
-              :ops [{:name "kanban" :help "strand help kanban" :manual "strand kanban about"}
+              :ops [{:name "kanban" :help "strand help kanban" :manual "strand about kanban"}
                     {:name "kanban-export" :help "strand help kanban-export"}
                     {:name "kanban-tree" :help "strand help kanban-tree"
                      :purpose "Epic -> feature -> task kanban hierarchy with derived task status, in one projection for renderers."}
-                    {:name "branches" :help "strand help branches"}
                     {:name "devflow-start" :help "strand help devflow-start"}
-                    {:name "devflow-next" :help "strand help devflow-next"}
+                    {:name "devflow-ready" :help "strand help devflow-ready"}
                     {:name "devflow-choices" :help "strand help devflow-choices"}
                     {:name "devflow-choose" :help "strand help devflow-choose"}
                     {:name "devflow-complete" :help "strand help devflow-complete"}
                     {:name "devflow-advance" :help "strand help devflow-advance"}
                     {:name "devflow-describe" :help "strand help devflow-describe"}
-                    {:name "devflow-history" :help "strand help devflow-history"}
-                    {:name "devflow-archive" :help "strand help devflow-archive"}
+                    {:name "devflow-run-history" :help "strand help devflow-run-history"}
+                    {:name "devflow-squash-run" :help "strand help devflow-squash-run"}
                     {:name "devflow-status" :help "strand help devflow-status"}
                     {:name "workflow-runs" :help "strand help workflow-runs"}
-                    {:name "current-dags" :help "strand help current-dags"}
-                    {:name "carder-report" :help "strand help carder-report"}
                     {:name "feature-costs" :help "strand help feature-costs"
                      :purpose "Agent-run cost/usage rollup beneath a work root, as pure data. Registered by .skein/analytics.clj."}
-                    {:name "agent" :help "strand help agent" :manual "strand agent about"}
+                    {:name "agent" :help "strand help agent" :manual "strand about agent"}
+                    {:name "flow" :help "strand help flow"
+                     :purpose (format-alpha/reflow
+                               "|Generic driver for any registered workflow: start by name, then
+                                |next/complete/choose by run-id. The registered story workflow is
+                                |the module-shaping discipline: split-first refactor,
+                                |public-surface tests, auto-spawned adversarial review gates,
+                                |measure, fold-back-or-keep-split checkpoint. Pour it for
+                                |substantial module work anywhere; for skein.api.* modules
+                                |SPEC-003.C19a is the binding form contract. Start params
+                                |(JSON): feature, module, worktree required; card and
+                                |reviewer-harness (a seat outside your model family; default
+                                |sol-med) optional. Registered by .skein/workflows.clj.")}
                     {:name "flow-await" :help "strand help flow-await"}
-                    {:name "flow-status" :help "strand help flow-status"}
                     {:name "hitl" :help "strand help hitl" :purpose "Interactive user+agent session with a self-terminating tracking strand."}
-                    {:name "land" :help "strand help land" :manual "strand land about"
+                    {:name "land" :help "strand help land" :manual "strand about land"
                      :purpose (format-alpha/reflow
                                "|Coordinator-only landing workflow: push+draft-PR, green CI, roster
-                                |sign-off, squash-merge to local main with full verification, then
-                                |green main CI. Registered by .skein/workflows.clj.")}]
+                                |sign-off, then a mechanical GitHub squash-merge under the merge lock
+                                |with main CI watched to green. Registered by .skein/workflows.clj.")}]
               :patterns [{:name "agent-plan"
-                          :purpose "Create a feature strand plus task/review children for agent work; shipped by skein.spools.delegation."}
+                          :purpose "Create a feature strand plus task/review children for agent work; shipped by ct.spools.delegation."}
                          {:name "delegate-pipeline"
                           :purpose "Sequential chain-loop workflow of subagent gates with optional acceptance checkpoint. Registered by .skein/workflows.clj."}]
               :queries [{:name "kanban-cards" :usage "strand list --query kanban-cards"}
-                        {:name "kanban-unstarted" :usage "strand ready --query kanban-unstarted"}
+                        {:name "kanban-pending" :usage "strand ready --query kanban-pending"}
                         {:name "feature-active" :usage "strand list --query feature-active --param feature=<feature>"}
                         {:name "feature-work" :usage "strand ready --query feature-work --param feature=<feature>"}
                         {:name "feature-owner-work"
@@ -340,8 +406,10 @@
 
 (deftest converted-config-surface-is-byte-identical-to-pre-refactor
   ;; TASK-Srm-009.MI1 acceptance gate. surface_baseline.edn is the config-owned
-  ;; op-help + named-query surface captured from the pre-refactor config (base
-  ;; ad5d2eb, before the defquery/defop conversion) via capture-config-surface.
+  ;; op-help + named-query surface captured via capture-config-surface; it was
+  ;; snapshotted pre-defquery/defop-conversion (base ad5d2eb), re-captured
+  ;; when declared :returns joined the op-help surface (PLAN-Dcr-001), and
+  ;; re-captured again for the canonical help envelope (TASK-Dtf-001).
   ;; Asserting the current converted config reproduces it byte-for-byte proves the
   ;; refactor changed no generated `help <op>` and no registered query definition;
   ;; the devflow-conventions payload is pinned by the test above. The golden is a
@@ -367,11 +435,11 @@
                              ["A3" {:feature "alpha" :kind "note"}]
                              ["B1" {:feature "beta" :kind "task" :owner "amy"}]
                              ["R1" {:workflow/run-id "alpha"}]
-                             ["M1" {:workflow/role "molecule"}]
-                             ["D1" {:workflow/role "molecule" :workflow/family "devflow"}]
+                             ["M1" {:workflow/role "root"}]
+                             ["D1" {:workflow/role "root" :workflow/family "devflow"}]
                              ["S1" {:agent-run/run "true"}]
-                             ["K1" {:kanban/card "true" :kanban/status "refinement"}]]]
-        (weaver/add rt {:title title :state "active" :attributes attrs}))
+                             ["K1" {:kanban/card "true" :kanban/lane "refinement"}]]]
+        (weaver/add! rt {:title title :state "active" :attributes attrs}))
       (let [rows (fn [query-name params]
                    (set (map :title (weaver/list rt (get (graph/queries rt) query-name) params))))]
         (is (= #{"A1" "A2" "A3"} (rows "feature-active" {:feature "alpha"})))
@@ -389,33 +457,33 @@
   ;; missing-usage ids for runs whose harness recorded nothing.
   (with-config-runtime
     (fn [rt]
-      (let [card (weaver/add rt {:title "Feature card" :state "active"
-                                 :attributes {:kanban/card "true"}})
-            run-a (weaver/add rt {:title "Delegate: implement"
-                                  :state "closed"
+      (let [card (weaver/add! rt {:title "Feature card" :state "active"
+                                  :attributes {:kanban/card "true"}})
+            run-a (weaver/add! rt {:title "Delegate: implement"
+                                   :state "closed"
                                ;; values stamped as typed JSON, the shape the
                                ;; shuttle spool writes; the corrupt-usage test
                                ;; covers the string form
-                                  :attributes {:agent-run/run "true"
-                                               :agent-run/harness "build"
-                                               :agent-run/cost-usd 1.25
-                                               :agent-run/tokens-total 1000
-                                               :agent-run/tokens {"input" 800 "output" 200}
-                                               :agent-run/usage-source "session"
-                                               :agent-run/exit-code 0
-                                               :agent-run/started-at "2026-07-10T10:00:00Z"
-                                               :agent-run/finished-at "2026-07-10T10:05:00Z"}})
-            run-b (weaver/add rt {:title "Review: skeptic"
-                                  :state "closed"
-                                  :attributes {:agent-run/run "true"
-                                               :agent-run/harness "hard-gpt"
-                                               :agent-run/started-at "2026-07-10T10:06:00Z"
-                                               :agent-run/finished-at "2026-07-10T10:08:30Z"}})
-            note (weaver/add rt {:title "Not a run" :state "closed"
-                                 :attributes {:kind "note"}})]
-        (weaver/update rt (:id card) {:edges [{:type "parent-of" :to (:id run-a)}
-                                              {:type "parent-of" :to (:id run-b)}
-                                              {:type "parent-of" :to (:id note)}]})
+                                   :attributes {:agent-run/run "true"
+                                                :agent-run/harness "build"
+                                                :agent-run/cost-usd 1.25
+                                                :agent-run/tokens-total 1000
+                                                :agent-run/tokens {"input" 800 "output" 200}
+                                                :agent-run/usage-source "session"
+                                                :agent-run/exit-code 0
+                                                :agent-run/started-at "2026-07-10T10:00:00Z"
+                                                :agent-run/finished-at "2026-07-10T10:05:00Z"}})
+            run-b (weaver/add! rt {:title "Review: skeptic"
+                                   :state "closed"
+                                   :attributes {:agent-run/run "true"
+                                                :agent-run/harness "hard-gpt"
+                                                :agent-run/started-at "2026-07-10T10:06:00Z"
+                                                :agent-run/finished-at "2026-07-10T10:08:30Z"}})
+            note (weaver/add! rt {:title "Not a run" :state "closed"
+                                  :attributes {:kind "note"}})]
+        (weaver/update! rt (:id card) {:edges [{:type "parent-of" :to (:id run-a)}
+                                               {:type "parent-of" :to (:id run-b)}
+                                               {:type "parent-of" :to (:id note)}]})
         (let [result (op! "feature-costs" [(:id card)])]
           (is (= "feature-costs" (:operation result)))
           (is (= {:id (:id card) :title "Feature card" :state "active"}
@@ -445,11 +513,11 @@
     (fn [rt]
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"root strand not found"
                             (op! "feature-costs" ["nope"])))
-      (let [root (weaver/add rt {:title "Ad hoc root" :state "active" :attributes {}})
-            bad (weaver/add rt {:title "Corrupt run" :state "closed"
-                                :attributes {:agent-run/run "true"
-                                             :agent-run/cost-usd "not-a-number"}})]
-        (weaver/update rt (:id root) {:edges [{:type "parent-of" :to (:id bad)}]})
+      (let [root (weaver/add! rt {:title "Ad hoc root" :state "active" :attributes {}})
+            bad (weaver/add! rt {:title "Corrupt run" :state "closed"
+                                 :attributes {:agent-run/run "true"
+                                              :agent-run/cost-usd "not-a-number"}})]
+        (weaver/update! rt (:id root) {:edges [{:type "parent-of" :to (:id bad)}]})
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"malformed agent-run attribute"
                               (op! "feature-costs" [(:id root)]))
             "a present but unparseable usage value is corrupt data, not absence")))))
@@ -463,13 +531,13 @@
   (with-startup-config-runtime
     (fn [_rt]
       (let [rules ((requiring-resolve 'skein.spools.chime/rules))
-            by-key (into {} (map (juxt :name identity)) rules)
+            by-key (into {} (map (juxt :key identity)) rules)
             fire (fn [rule-key strand]
                    (@(requiring-resolve (:fn (get by-key rule-key)))
                     {:strand strand :ready-ids #{}}))]
         (is (= [:agent-failure :gate-error :hitl-checkpoint-ready :kanban-blocked
                 :kanban-completed :kanban-started :parked-run]
-               (mapv :name rules)))
+               (mapv :key rules)))
         ;; gate-error fires on any strand stamped with a gate error
         (let [note (fire :gate-error {:id "g1" :state "active" :title "Gate A"
                                       :attributes {:gate/error "spawn failed"}})]
@@ -484,50 +552,6 @@
           (is (= "Agent run failed: Run" (:title note)))
           (is (str/includes? (:body note) "boom")))))))
 
-(deftest current-dags-op-builds-self-contained-plan-task-projection
-  (with-config-runtime
-    (fn [rt]
-      (let [plan (weaver/add rt {:title "Feature: plan feature"
-                                 :state "active"
-                                 :attributes {:feature "plan-feature" :kind "plan" :workflow "agent-plan"}})
-            impl (weaver/add rt {:title "Implement it"
-                                 :state "active"
-                                 :attributes {:feature "plan-feature" :kind "task" :workflow "agent-plan"
-                                              :task_key "impl" :owner "agent-a" :harness "build"
-                                              :cwd "/tmp/work" :validation ["clojure -M:test"]}})
-            review (weaver/add rt {:title "Review it"
-                                   :state "active"
-                                   :attributes {:feature "plan-feature" :kind "review" :workflow "agent-plan"
-                                                :task_key "review" :hitl true}})]
-        (weaver/update rt (:id plan) {:edges [{:type "parent-of" :to (:id impl)}
-                                              {:type "parent-of" :to (:id review)}]})
-        (weaver/update rt (:id review) {:edges [{:type "depends-on" :to (:id impl)}]})
-        (let [strands (weaver/list rt (var-get (requiring-resolve 'config/feature-active-query))
-                                   {:feature "plan-feature"})
-              children (:edges (graph/subgraph rt [(:id plan)] {:type "parent-of"}))
-              ready (weaver/ready rt (var-get (requiring-resolve 'config/feature-work-query))
-                                  {:feature "plan-feature"})]
-          (is (= 3 (count strands)))
-          (is (= #{(:id impl) (:id review)}
-                 (set (map :to_strand_id children))))
-          ;; review depends on impl, so only impl is ready
-          (is (= ["Implement it"] (mapv :title ready)))
-          ;; current-dags stays self-contained: a blocker outside the plan DAG
-          ;; must not surface as a dangling depends-on edge
-          (let [external (weaver/add rt {:title "External blocker"
-                                         :state "active"
-                                         :attributes {:kind "task"}})]
-            (weaver/update rt (:id impl)
-                           {:edges [{:type "depends-on" :to (:id external)}]})
-            (let [dag (->> (:dags (op! "current-dags" []))
-                           (filter #(= (:id plan) (get-in % [:root :id])))
-                           first)
-                  dag-ids (set (map :id (:strands dag)))]
-              (is (some? dag))
-              (is (every? #(and (contains? dag-ids (:from_strand_id %))
-                                (contains? dag-ids (:to_strand_id %)))
-                          (concat (:parent_of_edges dag) (:depends_on_edges dag)))))))))))
-
 (deftest kanban-tree-op-projects-epic-feature-task-hierarchy
   ;; The kanban-tree projection joins the parent-of tiers (epic -> feature ->
   ;; task) the flat query surface can't, and derives task status. Uses the full
@@ -536,27 +560,27 @@
   ;; (done/blocked/doing/ready), and that closed tasks appear only under --all.
   (with-startup-config-runtime
     (fn [rt]
-      (let [blocker (weaver/add rt {:title "Blocker" :state "active" :attributes {:kind "task"}})
-            epic (weaver/add rt {:title "Epic E" :state "active"
-                                 :attributes {:kanban/card "true" :kanban/type "epic"}})
-            f1 (weaver/add rt {:title "Feature under epic" :state "active"
-                               :attributes {:kanban/card "true" :kanban/type "feature"}})
-            f2 (weaver/add rt {:title "Top-level feature" :state "active"
-                               :attributes {:kanban/card "true" :kanban/type "feature"}})
-            t-doing (weaver/add rt {:title "Doing task" :state "active"
-                                    :attributes {:kanban/task "true" :owner "amy"}})
-            t-ready (weaver/add rt {:title "Ready task" :state "active"
-                                    :attributes {:kanban/task "true"}})
-            t-blocked (weaver/add rt {:title "Blocked task" :state "active"
-                                      :attributes {:kanban/task "true" :owner "bob"}})
-            t-done (weaver/add rt {:title "Done task" :state "closed"
-                                   :attributes {:kanban/task "true" :owner "amy"}})]
-        (weaver/update rt (:id epic) {:edges [{:type "parent-of" :to (:id f1)}]})
-        (weaver/update rt (:id f1) {:edges [{:type "parent-of" :to (:id t-doing)}
-                                            {:type "parent-of" :to (:id t-ready)}
-                                            {:type "parent-of" :to (:id t-blocked)}
-                                            {:type "parent-of" :to (:id t-done)}]})
-        (weaver/update rt (:id t-blocked) {:edges [{:type "depends-on" :to (:id blocker)}]})
+      (let [blocker (weaver/add! rt {:title "Blocker" :state "active" :attributes {:kind "task"}})
+            epic (weaver/add! rt {:title "Epic E" :state "active"
+                                  :attributes {:kanban/card "true" :kanban/type "epic"}})
+            f1 (weaver/add! rt {:title "Feature under epic" :state "active"
+                                :attributes {:kanban/card "true" :kanban/type "feature"}})
+            f2 (weaver/add! rt {:title "Top-level feature" :state "active"
+                                :attributes {:kanban/card "true" :kanban/type "feature"}})
+            t-doing (weaver/add! rt {:title "Doing task" :state "active"
+                                     :attributes {:kanban/task "true" :owner "amy"}})
+            t-ready (weaver/add! rt {:title "Ready task" :state "active"
+                                     :attributes {:kanban/task "true"}})
+            t-blocked (weaver/add! rt {:title "Blocked task" :state "active"
+                                       :attributes {:kanban/task "true" :owner "bob"}})
+            t-done (weaver/add! rt {:title "Done task" :state "closed"
+                                    :attributes {:kanban/task "true" :owner "amy"}})]
+        (weaver/update! rt (:id epic) {:edges [{:type "parent-of" :to (:id f1)}]})
+        (weaver/update! rt (:id f1) {:edges [{:type "parent-of" :to (:id t-doing)}
+                                             {:type "parent-of" :to (:id t-ready)}
+                                             {:type "parent-of" :to (:id t-blocked)}
+                                             {:type "parent-of" :to (:id t-done)}]})
+        (weaver/update! rt (:id t-blocked) {:edges [{:type "depends-on" :to (:id blocker)}]})
         (let [by-id (fn [result] (into {} (map (juxt :id identity)) (:cards result)))
               active (by-id (op! "kanban-tree" []))
               full (by-id (op! "kanban-tree" ["--all" "true"]))
@@ -578,39 +602,6 @@
           (is (= {"Doing task" "doing" "Ready task" "ready" "Blocked task" "blocked" "Done task" "done"}
                  (task-status (full (:id f1))))))))))
 
-(deftest branches-op-groups-branch-stamped-work-roots
-  (with-config-runtime
-    (fn [rt]
-      (let [root (weaver/add rt {:title "Card: feature-x"
-                                 :state "active"
-                                 :attributes {:kanban/card "true" :kanban/status "claimed"
-                                              :owner "agent-a" :branch "feature-x"
-                                              :worktree "/tmp/feature-x"}})
-            task (weaver/add rt {:title "Implement feature-x"
-                                 :state "active"
-                                 :attributes {:kind "task"}})
-            review (weaver/add rt {:title "Review feature-x"
-                                   :state "active"
-                                   :attributes {:kind "review"}})]
-        (weaver/update rt (:id root) {:edges [{:type "parent-of" :to (:id task)}
-                                              {:type "parent-of" :to (:id review)}]})
-        (weaver/update rt (:id review) {:edges [{:type "depends-on" :to (:id task)}]})
-        ;; a branch-stamped child (task assigned owner+branch) must not
-        ;; surface as a second work root for the branch
-        (weaver/update rt (:id task) {:attributes {:kind "task" :branch "feature-x" :owner "agent-b"}})
-        (let [result (op! "branches" [])
-              branch (first (:branches result))
-              view (first (:roots branch))]
-          (is (= ["feature-x"] (mapv :branch (:branches result))))
-          (is (= [(:id root)] (mapv #(get-in % [:root :id]) (:roots branch))))
-          (is (= #{(:id task) (:id review)}
-                 (set (map :id (:active_descendants view)))))
-          ;; review depends on the task, so the frontier is root + task
-          (is (= #{(:id root) (:id task)} (set (map :id (:ready view))))))
-        (is (= 1 (count (:branches (op! "branches" ["feature-x"])))))
-        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no active work root"
-                              (op! "branches" ["missing-branch"])))))))
-
 (deftest delegate-pipeline-weave-creates-chain-loop-gates
   (with-config-runtime
     (fn [rt]
@@ -629,8 +620,11 @@
                    (or (get-in s [:attributes k])
                        (get-in s [:attributes (name k)])))]
         (is (= #{"a" "b"} (set (keys by-task))))
-        (is (str/includes? (attr (by-task "a") :agent-run/prompt)
-                           "[worker contract]"))
+        (is (str/includes? (attr (by-task "a") :agent-run/prompt) "A body"))
+        ;; a gate's run serves the gate, so the agent-run preamble injects the
+        ;; contract this repo registers; prepending it here would double it
+        (is (not (str/includes? (attr (by-task "a") :agent-run/prompt) "[worker contract]")))
+        (is (not (str/includes? (attr (by-task "a") :agent-run/prompt) "[task workflow]")))
         (is (= "worker" (attr (by-task "b") :agent-run/harness))))))
   (testing "acceptance checkpoint is optional and task max-attempts pass through"
     (with-config-runtime
@@ -666,37 +660,37 @@
         (is (= "devflow.proposal.orient" (:action-ref (first (:ready in-proposal))))))
       (let [status (op! "devflow-status" ["ops-feature"])]
         (is (false? (:done status)))
-        (is (= "proposal" (get-in (first (:roots status)) [:attributes :devflow/stage])))
+        (is (= "proposal" (get-in (:root status) [:attributes :devflow/stage])))
         (is (= [{:attributes {:devflow/stage "proposal"}}]
                (->> (:runs (op! "workflow-runs" ["devflow"]))
                     (mapv (fn [run] {:attributes (select-keys (:attributes run) [:devflow/stage])})))))))))
 
-(deftest devflow-advance-describe-history-and-archive-ops
+(deftest devflow-advance-describe-run-history-and-squash-run-ops
   (with-config-runtime
     (fn [_rt]
       (let [description (op! "devflow-describe" ["proposal"])]
         (is (= "devflow-describe" (:operation description)))
         (is (= "proposal" (:stage description)))
         (is (= "Devflow proposal: <feature>" (get-in description [:description :name]))))
-      (op! "devflow-start" ["archive-feature" "already-in-worktree-ok"])
-      (let [aborted (op! "devflow-advance" ["archive-feature" "abort" "{\"reason\":\"not now\"}"])]
+      (op! "devflow-start" ["squash-feature" "already-in-worktree-ok"])
+      (let [aborted (op! "devflow-advance" ["squash-feature" "abort" "{\"reason\":\"not now\"}"])]
         (is (= "devflow-advance" (:operation aborted)))
         (is (= "abort" (:stage (first (:ready aborted)))))
         (is (= "devflow.abort.record" (:action-ref (first (:ready aborted))))))
-      (let [done (op! "devflow-advance" ["archive-feature" "recorded abort"])]
+      (let [done (op! "devflow-advance" ["squash-feature" "recorded abort"])]
         (is (true? (:done done)))
         (is (empty? (:ready done))))
-      (let [history (op! "devflow-history" ["archive-feature"])]
-        (is (= "devflow-history" (:operation history)))
-        (is (seq (:history history))))
-      (let [archived (op! "devflow-archive" ["archive-feature"])]
-        (is (= "devflow-archive" (:operation archived)))
-        (is (= "digest" (get-in archived [:digest :attributes :workflow/role])))))))
+      (let [history (op! "devflow-run-history" ["squash-feature"])]
+        (is (= "devflow-run-history" (:operation history)))
+        (is (seq (:run-history history))))
+      (let [squashed (op! "devflow-squash-run" ["squash-feature"])]
+        (is (= "devflow-squash-run" (:operation squashed)))
+        (is (= "digest" (get-in squashed [:digest :attributes :workflow/role])))))))
 
 (deftest work-query-excludes-workflow-plumbing-but-keeps-steps
   (with-config-runtime
     (fn [rt]
-      (doseq [[title role] [["Root" "molecule"]
+      (doseq [[title role] [["Root" "root"]
                             ["Procedure" "procedure"]
                             ["Digest" "digest"]
                             ["Step" "step"]
@@ -705,42 +699,46 @@
                             ["Plain task" nil]
                             ["Pending card" nil]
                             ["Refinement card" nil]]]
-        (weaver/add rt {:title title
-                        :state "active"
-                        :attributes (cond-> {:feature "work-query"}
-                                      role (assoc :workflow/role role)
-                                      (= title "Run record") (assoc :agent-run/run "true")
-                                      (= title "Pending card") (assoc :kanban/card "true"
-                                                                      :kanban/status "pending")
-                                      (= title "Refinement card") (assoc :kanban/card "true"
-                                                                         :kanban/status "refinement"))}))
+        (weaver/add! rt {:title title
+                         :state "active"
+                         :attributes (cond-> {:feature "work-query"}
+                                       role (assoc :workflow/role role)
+                                       (= title "Run record") (assoc :agent-run/run "true")
+                                       (= title "Pending card") (assoc :kanban/card "true"
+                                                                       :kanban/lane "pending")
+                                       (= title "Refinement card") (assoc :kanban/card "true"
+                                                                          :kanban/lane "refinement"))}))
       (is (= #{"Step" "Checkpoint" "Plain task" "Pending card"}
              (set (map :title (weaver/list rt (var-get (requiring-resolve 'config/work-query)) {})))))
       (is (= #{"Step" "Checkpoint" "Plain task" "Pending card"}
              (set (map :title (weaver/ready rt (var-get (requiring-resolve 'config/work-query)) {}))))))))
 
 (deftest reviewers-file-registers-declarative-roster
-  ;; exercises the same load path init.clj's :file+:call reviewers module runs
+  ;; exercises the same contribution path init.clj's reviewers module runs
   (with-config-runtime
-    (fn [_rt]
+    (fn [rt]
+      ;; materialize delegation's registry handle so its roster kind is a declared
+      ;; publication backend before reviewers.clj contributes its roster partition
+      ((requiring-resolve 'ct.spools.delegation/contribute)
+       {:runtime rt :module/key :skein/spools-delegation})
       (load-file ".skein/reviewers.clj")
-      ((requiring-resolve 'reviewers/install!))
-      (let [rosters ((requiring-resolve 'skein.spools.delegation/rosters))
+      (publish-module-contribution! rt :reviewers (requiring-resolve 'reviewers/contribute))
+      (let [rosters ((requiring-resolve 'ct.spools.delegation/rosters))
             roster (first (filter #(= :change-review (:name %)) rosters))
             complex-roster (first (filter #(= :complex-patch-review (:name %)) rosters))
             docs-roster (first (filter #(= :docs-review (:name %)) rosters))]
         (is (= [:change-review :complex-patch-review :docs-review] (mapv :name rosters)))
-        (let [sleeps (first (filter #(= "test-sleeps" (:name %)) (:reviewers roster)))]
-          (is (some? sleeps) "owner-required test-sleeps reviewer is declared")
-          (is (str/includes? (:contract sleeps) "time itself is a genuine component")))
-        (is (= :review-gpt (get-in roster [:synthesizer :harness]))
+        (let [sleeps (first (filter #(= "test-sleeps" (:name %)) (:seats roster)))]
+          (is (some? sleeps) "owner-required test-sleeps seat is declared")
+          (is (str/includes? (:brief sleeps) "time itself is a genuine component")))
+        (is (= :sol-med (get-in roster [:synthesis :harness]))
             "sign-off synthesis stays on the cross-vendor GPT seat")
-        (is (= :hard-gpt (get-in complex-roster [:synthesizer :harness]))
+        (is (= :terra-med (get-in complex-roster [:synthesis :harness]))
             "complex patch review is synthesized outside its reviewer seats")
-        (let [fact-check (first (filter #(= "docs-fact-check" (:name %)) (:reviewers docs-roster)))]
+        (let [fact-check (first (filter #(= "docs-fact-check" (:name %)) (:seats docs-roster)))]
           (is (some? fact-check) "docs roster leads with the accuracy seat")
-          (is (str/includes? (:contract fact-check) "NEVER the canonical .skein")))
-        (is (= :review-gpt (get-in docs-roster [:synthesizer :harness]))
+          (is (str/includes? (:brief fact-check) "NEVER the canonical .skein")))
+        (is (= :sol-med (get-in docs-roster [:synthesis :harness]))
             "docs sign-off synthesis stays on the cross-vendor GPT seat")))))
 
 (deftest codex-harness-persists-sessions-and-declares-resume
@@ -748,7 +746,7 @@
   ;; persist) and declares the verified `codex exec resume <session-id>` splice.
   (with-config-runtime
     (fn [_rt]
-      (let [codex ((requiring-resolve 'skein.spools.agent-run/resolve-harness) :codex)]
+      (let [codex ((requiring-resolve 'ct.spools.agent-run/resolve-harness) :codex)]
         (is (not-any? #{"--ephemeral"} (:argv codex))
             "sessions persist so codex exec resume can continue them")
         (is (= ["resume" :agent-run/session-id] (:resume codex))
@@ -785,11 +783,11 @@
   (with-config-runtime
     (fn [_rt]
       (letfn [(positionals [op-name]
-                (->> (get-in (op! "help" [op-name]) [:arg-spec :positionals])
+                (->> (get-in (op! "help" [op-name]) [:node :invocation :positionals])
                      (mapv (juxt :name :required :variadic))))]
         (is (= [["feature" true false] ["worktree-check" false false]]
                (positionals "devflow-start")))
-        (is (= [["feature" true false]] (positionals "devflow-next")))
+        (is (= [["feature" true false]] (positionals "devflow-ready")))
         (is (= [["feature" true false] ["step-selector" false true]]
                (positionals "devflow-choices")))
         (is (= [["feature" true false] ["choice" true false] ["tail" false true]]
@@ -799,50 +797,218 @@
         (is (= [["feature" true false] ["tail" false true]]
                (positionals "devflow-advance")))
         (is (= [["stage-key" false false]] (positionals "devflow-describe")))
-        (is (= [["feature" true false]] (positionals "devflow-history")))
-        (is (= [["feature" true false]] (positionals "devflow-archive")))
+        (is (= [["feature" true false]] (positionals "devflow-run-history")))
+        (is (= [["feature" true false]] (positionals "devflow-squash-run")))
         (is (= [["feature" true false]] (positionals "devflow-status")))
         (is (= "Start the devflow lifecycle for a feature."
-               (get-in (op! "help" ["devflow-start"]) [:arg-spec :doc])))))))
+               (get-in (op! "help" ["devflow-start"]) [:node :doc])))))))
+
+(defn- shell-gate-complete!
+  "Close the ready :shell land gate for feature the way the shell executor
+  does — `complete!` with `:by \"shell\"`. The config fixture loads
+  workflows.clj without installing the shell executor, so tests stand in
+  for its pass path."
+  [feature notes]
+  ((requiring-resolve 'skein.spools.workflow/complete!)
+   feature {:by "shell" :notes notes}))
+
+(defn- write-fake-gh!
+  "Write a deterministic `gh` executable for feature-CI watch script tests."
+  [dir]
+  (let [file (io/file dir "gh")]
+    (spit file
+          (str "#!/bin/sh\n"
+               "set -eu\n"
+               "case \"$1 $2\" in\n"
+               "  'pr view')\n"
+               "    case \"$FAKE_GH_MODE\" in\n"
+               "      delayed)\n"
+               "        n=0\n"
+               "        if [ -f \"$FAKE_GH_COUNTER\" ]; then n=$(cat \"$FAKE_GH_COUNTER\"); fi\n"
+               "        n=$((n + 1))\n"
+               "        printf '%s\\n' \"$n\" > \"$FAKE_GH_COUNTER\"\n"
+               "        case \"$n\" in\n"
+               "          1) printf '%s\\t0\\n' \"$FAKE_GH_STALE_SHA\" ;;\n"
+               "          2) printf '%s\\t0\\n' \"$FAKE_GH_EXPECTED_SHA\" ;;\n"
+               "          *) printf '%s\\t3\\n' \"$FAKE_GH_EXPECTED_SHA\" ;;\n"
+               "        esac ;;\n"
+               "      absent) printf '%s\\t0\\n' \"$FAKE_GH_EXPECTED_SHA\" ;;\n"
+               "      stale-absent) printf '%s\\t0\\n' \"$FAKE_GH_STALE_SHA\" ;;\n"
+               "      malformed-shape) printf 'not-a-pair\\n' ;;\n"
+               "      malformed-head) printf 'not-a-sha\\t3\\n' ;;\n"
+               "      short-head) printf 'deadbeef\\t3\\n' ;;\n"
+               "      malformed-count) printf '%s\\tnot-a-count\\n' \"$FAKE_GH_EXPECTED_SHA\" ;;\n"
+               "      lookup-fail) echo 'lookup failed' >&2; exit 42 ;;\n"
+               "      watch-fail) printf '%s\\t3\\n' \"$FAKE_GH_EXPECTED_SHA\" ;;\n"
+               "    esac ;;\n"
+               "  'pr checks')\n"
+               "    printf 'watch:%s\\n' \"$*\"\n"
+               "    if [ \"$FAKE_GH_MODE\" = watch-fail ]; then exit 17; fi ;;\n"
+               "  *) echo \"unexpected gh argv: $*\" >&2; exit 64 ;;\n"
+               "esac\n"))
+    (is (.setExecutable file true))
+    file))
+
+(defn- run-feature-ci-watch
+  "Run script against fake-gh-dir with mode and startup timeout, without sleeping."
+  [script fake-gh-dir mode expected-sha timeout]
+  (let [env (merge (into {} (System/getenv))
+                   {"PATH" (str (.getAbsolutePath fake-gh-dir)
+                                java.io.File/pathSeparator
+                                (System/getenv "PATH"))
+                    "FAKE_GH_MODE" mode
+                    "FAKE_GH_COUNTER" (str (io/file fake-gh-dir (str "counter-" mode)))
+                    "FAKE_GH_EXPECTED_SHA" expected-sha
+                    "FAKE_GH_STALE_SHA" (str/join (repeat 40 "0"))})]
+    (sh/sh "sh" "-c" script "land-ci-watch" "land-x" (str timeout) "0"
+           :dir (System/getProperty "user.dir")
+           :env env)))
+
+(deftest land-feature-ci-watch-waits-for-check-registration-and-preserves-failures
+  (with-config-runtime
+    (fn [rt]
+      (let [_ (op! "land" ["start" "land-ci-script"
+                           "--branch" "land-x"
+                           "--worktree" (System/getProperty "user.dir")])
+            completed (op! "land" ["complete" "land-ci-script"])
+            gate-attrs (:attributes (weaver/show rt (get-in completed [:ready 0 :id])))
+            [shell-command shell-flag script script-name branch startup-timeout poll-interval]
+            (:shell/argv gate-attrs)
+            expected-sha (str/trim (:out (sh/sh "git" "rev-parse" "HEAD")))
+            fake-gh-dir (.toFile
+                         (java.nio.file.Files/createTempDirectory
+                          "skein-land-fake-gh"
+                          (make-array java.nio.file.attribute.FileAttribute 0)))]
+        (try
+          (write-fake-gh! fake-gh-dir)
+          (is (= ["sh" "-c" "land-ci-watch" "land-x" "180" "5"]
+                 [shell-command shell-flag script-name branch startup-timeout poll-interval]))
+          (let [{:keys [exit out err]} (run-feature-ci-watch script fake-gh-dir "delayed" expected-sha 10)]
+            (is (zero? exit))
+            (is (= "watch:pr checks land-x --watch --fail-fast\n" out))
+            (is (= "" err))
+            (is (= "3" (str/trim (slurp (io/file fake-gh-dir "counter-delayed"))))))
+          (let [{:keys [exit err]} (run-feature-ci-watch script fake-gh-dir "absent" expected-sha 0)]
+            (is (= 1 exit))
+            (is (str/includes? err "timed out after 0s waiting for CI checks on land-x"))
+            (is (str/includes? err (str "expected HEAD: " expected-sha)))
+            (is (str/includes? err (str "last PR HEAD: " expected-sha "; checks: 0"))))
+          (let [{:keys [exit err]} (run-feature-ci-watch script fake-gh-dir "stale-absent" expected-sha 0)]
+            (is (= 1 exit))
+            (is (str/includes? err (str "expected HEAD: " expected-sha)))
+            (is (str/includes? err (str "last PR HEAD: " (str/join (repeat 40 "0"))))))
+          (let [{:keys [exit err]} (run-feature-ci-watch script fake-gh-dir "malformed-shape" expected-sha 10)]
+            (is (= 1 exit))
+            (is (str/includes? err "malformed PR check metadata")))
+          (let [{:keys [exit err]} (run-feature-ci-watch script fake-gh-dir "malformed-head" expected-sha 10)]
+            (is (= 1 exit))
+            (is (str/includes? err "malformed PR head")))
+          (let [{:keys [exit err]} (run-feature-ci-watch script fake-gh-dir "short-head" expected-sha 10)]
+            (is (= 1 exit))
+            (is (str/includes? err "malformed PR head for land-x: deadbeef")))
+          (let [{:keys [exit err]} (run-feature-ci-watch script fake-gh-dir "malformed-count" expected-sha 10)]
+            (is (= 1 exit))
+            (is (str/includes? err "malformed PR check count")))
+          (let [{:keys [exit err]} (run-feature-ci-watch script fake-gh-dir "lookup-fail" expected-sha 10)]
+            (is (= 42 exit))
+            (is (str/includes? err "lookup failed")))
+          (let [{:keys [exit out]} (run-feature-ci-watch script fake-gh-dir "watch-fail" expected-sha 10)]
+            (is (= 17 exit))
+            (is (= "watch:pr checks land-x --watch --fail-fast\n" out)))
+          (finally
+            (delete-directory! fake-gh-dir)))))))
 
 (deftest land-ops-drive-a-poured-run-end-to-end
   (with-config-runtime
-    (fn [_rt]
+    (fn [rt]
       (let [started (op! "land" ["start" "land-x" "--branch" "land-x" "--worktree" "/tmp/land-x"])]
-        (is (= "land-start" (:operation started)))
+        (is (= "land start" (:operation started)))
         (is (false? (:done started)))
-        (is (= "land.pr.open" (:action-ref (first (:ready started))))))
-      ;; drive the linear steps up to the sign-off checkpoint
-      (is (= "land.ci.green"
-             (:action-ref (first (:ready (op! "land" ["complete" "land-x" "pushed; PR #1"]))))))
+        (is (= "land.pr.open" (:action-ref (first (:ready started)))))
+        (is (not (contains? (first (:ready started)) :choice-details))))
+      ;; completing push-draft-pr leaves the machine ci-green shell gate ready,
+      ;; carrying the interpolated watch command for the shell executor
+      (let [completed (op! "land" ["complete" "land-x" "pushed; PR #1"])
+            gate (first (:ready completed))
+            gate-attrs (:attributes (weaver/show rt (:id gate)))]
+        (is (= "land complete" (:operation completed)))
+        (is (= "land.ci.green" (:action-ref gate)))
+        (is (= "shell" (:gate gate)))
+        (is (not (contains? gate :choice-details)))
+        (is (= ["sh" "-c" "land-ci-watch" "land-x" "180" "5"]
+               (let [[command flag _script & args] (:shell/argv gate-attrs)]
+                 (into [command flag] args))))
+        (is (= "/tmp/land-x" (:shell/cwd gate-attrs))))
+      ;; a coordinator cannot hand-close a CI gate; the shell executor owns it
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Gate steps require a non-blank :by"
+                            (op! "land" ["complete" "land-x" "trying to skip CI"])))
+      (shell-gate-complete! "land-x" "checks green")
       (is (= "land.signoff.review"
-             (:action-ref (first (:ready (op! "land" ["complete" "land-x" "HEAD green"]))))))
-      (let [at-checkpoint (op! "land" ["complete" "land-x" "roster passed"])]
-        (is (= "checkpoint" (:kind (first (:ready at-checkpoint)))))
-        (is (= "signoff" (:checkpoint (first (:ready at-checkpoint))))))
-      ;; the sign-off checkpoint offers approved + abort; abort requires a reason
-      (let [choices (workflow/choice-details "land-x")
+             (:action-ref (first (:ready (op! "land" ["next" "land-x"]))))))
+      (let [at-checkpoint (op! "land" ["complete" "land-x" "roster passed"])
+            checkpoint (first (:ready at-checkpoint))
+            choices ((requiring-resolve 'skein.spools.workflow/choice-details) "land-x")
+            next-checkpoint (first (:ready (op! "land" ["next" "land-x"])))
+            status-checkpoint (first (:ready (op! "land" ["status" "land-x"])))]
+        (is (= "checkpoint" (:role checkpoint)))
+        (is (= "signoff" (:checkpoint checkpoint)))
+        (is (= ["approved" "abort"] (:choices checkpoint)))
+        (is (= choices (:choice-details checkpoint)))
+        (is (= choices (:choice-details next-checkpoint)))
+        (is (= choices (:choice-details status-checkpoint))))
+      ;; the sign-off checkpoint offers approved + abort; both declare required input
+      (let [choices (:choice-details
+                     (first (:ready (op! "land" ["next" "land-x"]))))
+            approved-input (get-in choices ["approved" "input"])
             abort-input (get-in choices ["abort" "input"])]
         (is (= #{"approved" "abort"} (set (keys choices))))
+        (is (= #{"subject" "body"} (set (map #(get % "key") approved-input))))
+        (is (every? #(true? (get % "required")) approved-input))
         (is (= "reason" (get (first abort-input) "key")))
         (is (true? (get (first abort-input) "required"))))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"missing required keys"
-                            (op! "land" ["choose" "land-x" "abort"])))
-      ;; approved is terminal-in-molecule: it continues to the local merge/verify
-      (let [approved (op! "land" ["choose" "land-x" "approved"])]
-        (is (= "land-choose" (:operation approved)))
-        (is (= "land.merge.local-verify" (:action-ref (first (:ready approved)))))
+                            (op! "land" ["choose" "land-x" "approved"])))
+      ;; approval routes to the mechanical merge continuation. Subject and body
+      ;; remain argv elements rather than being interpolated into shell source.
+      (let [subject "feat: land x"
+            body "Squashed commits: abc123"
+            approved (op! "land" ["choose" "land-x" "approved"
+                                  "{\"subject\":\"feat: land x\",\"body\":\"Squashed commits: abc123\"}"])
+            gate (first (:ready approved))
+            gate-attrs (:attributes (weaver/show rt (:id gate)))
+            script (nth (:shell/argv gate-attrs) 2)]
+        (is (= "land choose" (:operation approved)))
+        (is (= "land.pr.merge" (:action-ref gate)))
+        (is (= "shell" (:gate gate)))
+        (is (not (contains? gate :choice-details)))
+        (is (str/includes? script "gh pr merge"))
+        (is (= ["sh" "-c" script "land-merge" "land-x" subject body]
+               (:shell/argv gate-attrs)))
         (is (= "merge-lock" (get-in (op! "land" ["status" "land-x"]) [:merge-lock :attributes :kind]))))
       (op! "land" ["start" "land-z" "--branch" "land-z" "--worktree" "/tmp/land-z"])
       (op! "land" ["complete" "land-z"])
-      (op! "land" ["complete" "land-z"])
+      (shell-gate-complete! "land-z" "checks green")
       (op! "land" ["complete" "land-z"])
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"another land run holds the merge lock"
-                            (op! "land" ["choose" "land-z" "approved"])))
-      (is (= "land.main.ci-green"
-             (:action-ref (first (:ready (op! "land" ["complete" "land-x" "merged; gates green"]))))))
-      (let [ready-cleanup (op! "land" ["complete" "land-x" "main pushed"])
+                            (op! "land" ["choose" "land-z" "approved"
+                                         "{\"subject\":\"feat: land z\",\"body\":\"Squashed commits: def456\"}"])))
+      (shell-gate-complete! "land-x" "PR merged")
+      (let [gate (first (:ready (op! "land" ["next" "land-x"])))
+            gate-attrs (:attributes (weaver/show rt (:id gate)))]
+        (is (= "land.main.pull" (:action-ref gate)))
+        (is (= "shell" (:gate gate)))
+        (is (str/includes? (last (:shell/argv gate-attrs)) "--ff-only")))
+      (shell-gate-complete! "land-x" "main fast-forwarded")
+      (let [gate (first (:ready (op! "land" ["next" "land-x"])))
+            gate-attrs (:attributes (weaver/show rt (:id gate)))]
+        (is (= "land.main.ci-green" (:action-ref gate)))
+        (is (= "shell" (:gate gate)))
+        (is (= "sh" (first (:shell/argv gate-attrs))))
+        (is (str/includes? (last (:shell/argv gate-attrs)) "gh run list")))
+      (shell-gate-complete! "land-x" "main runs green")
+      (let [ready-cleanup (op! "land" ["next" "land-x"])
             cleanup-step (first (:ready ready-cleanup))]
+        (is (= "land next" (:operation ready-cleanup)))
         (is (= "land.cleanup" (:action-ref cleanup-step)))
         ;; cardless run: the cleanup instruction must omit kanban-finish
         ;; entirely rather than render a literal "<card>" placeholder
@@ -852,7 +1018,7 @@
         (is (true? (:done done)))
         (is (empty? (:ready done))))
       (let [status (op! "land" ["status" "land-x"])]
-        (is (= "land-status" (:operation status)))
+        (is (= "land status" (:operation status)))
         (is (true? (:done status)))
         (is (empty? (:ready status)))
         (is (nil? (:merge-lock status)))
@@ -861,26 +1027,28 @@
 (deftest land-signoff-abort-routes-to-record-step
   (with-config-runtime
     (fn [rt]
-      (let [card-id (:id (weaver/add rt {:title "Abort card"
-                                         :attributes {:kanban/card "true"
-                                                      :kanban/status "claimed"
-                                                      :kanban/type "feature"}}))]
+      (let [card-id (:id (weaver/add! rt {:title "Abort card"
+                                          :attributes {:kanban/card "true"
+                                                       :kanban/lane "claimed"
+                                                       :kanban/type "feature"}}))]
         (op! "land" ["start" "land-y" "--branch" "land-y" "--worktree" "/tmp/land-y" "--card" card-id]))
+      ;; completing push-draft-pr starts the automated CI watch and review
+      ;; pipeline, so it is the completion that moves the card to in_review
       (op! "land" ["complete" "land-y"])           ; push-draft-pr
-      (op! "land" ["complete" "land-y"])           ; ci-green
-      (let [root (workflow/current-root "land-y")
+      (let [root ((requiring-resolve 'skein.spools.workflow/current-root) "land-y")
             context (get-in root [:attributes :workflow/context])
             card-id (or (:card context) (get context "card"))]
-        (is (= "in_review" (get-in (weaver/show rt card-id) [:attributes :kanban/status]))))
+        (is (= "in_review" (get-in (weaver/show rt card-id) [:attributes :kanban/lane]))))
+      (shell-gate-complete! "land-y" "checks green") ; ci-green
       (op! "land" ["complete" "land-y"])           ; signoff-review
       (let [aborted (op! "land" ["choose" "land-y" "abort" "{\"reason\":\"scope changed\"}"])]
-        (is (= "land-choose" (:operation aborted)))
+        (is (= "land choose" (:operation aborted)))
         ;; routing is a hard cutover to the reason-recording continuation
         (is (= "land.abort.record" (:action-ref (first (:ready aborted))))))
-      (let [root (workflow/current-root "land-y")
+      (let [root ((requiring-resolve 'skein.spools.workflow/current-root) "land-y")
             context (get-in root [:attributes :workflow/context])
             card-id (or (:card context) (get context "card"))]
-        (is (= "claimed" (get-in (weaver/show rt card-id) [:attributes :kanban/status]))))
+        (is (= "claimed" (get-in (weaver/show rt card-id) [:attributes :kanban/lane]))))
       (let [done (op! "land" ["complete" "land-y" "abort recorded"])]
         (is (true? (:done done)))
         (is (empty? (:ready done)))))))
@@ -888,17 +1056,20 @@
 (deftest land-cleanup-instruction-interpolates-the-real-card-id
   (with-config-runtime
     (fn [rt]
-      (let [card-id (:id (weaver/add rt {:title "Cleanup card"
-                                         :attributes {:kanban/card "true"
-                                                      :kanban/status "claimed"
-                                                      :kanban/type "feature"}}))]
+      (let [card-id (:id (weaver/add! rt {:title "Cleanup card"
+                                          :attributes {:kanban/card "true"
+                                                       :kanban/lane "claimed"
+                                                       :kanban/type "feature"}}))]
         (op! "land" ["start" "land-w" "--branch" "land-w" "--worktree" "/tmp/land-w" "--card" card-id])
         (op! "land" ["complete" "land-w"])                          ; push-draft-pr
-        (op! "land" ["complete" "land-w"])                          ; ci-green
+        (shell-gate-complete! "land-w" "checks green")              ; ci-green
         (op! "land" ["complete" "land-w"])                          ; signoff-review
-        (op! "land" ["choose" "land-w" "approved"])
-        (op! "land" ["complete" "land-w"])                          ; merge-local-verify
-        (let [ready-cleanup (op! "land" ["complete" "land-w"])      ; push-main-ci-green
+        (op! "land" ["choose" "land-w" "approved"
+                     "{\"subject\":\"feat: land w\",\"body\":\"Squashed commits: abc123\"}"])
+        (shell-gate-complete! "land-w" "PR merged")                  ; merge-pr
+        (shell-gate-complete! "land-w" "main fast-forwarded")       ; pull-main
+        (shell-gate-complete! "land-w" "main runs green")           ; main-ci-green
+        (let [ready-cleanup (op! "land" ["next" "land-w"])
               cleanup-step (first (:ready ready-cleanup))]
           (is (= "land.cleanup" (:action-ref cleanup-step)))
           (is (str/includes? (:instruction cleanup-step)
@@ -910,9 +1081,10 @@
     (fn [_rt]
       (op! "land" ["start" "land-lock-x" "--branch" "land-lock-x" "--worktree" "/tmp/land-lock-x"])
       (op! "land" ["complete" "land-lock-x"])
+      (shell-gate-complete! "land-lock-x" "checks green")
       (op! "land" ["complete" "land-lock-x"])
-      (op! "land" ["complete" "land-lock-x"])
-      (op! "land" ["choose" "land-lock-x" "approved"])
+      (op! "land" ["choose" "land-lock-x" "approved"
+                   "{\"subject\":\"feat: land lock x\",\"body\":\"Squashed commits: abc123\"}"])
       (is (= "merge-lock" (get-in (op! "land" ["status" "land-lock-x"])
                                   [:merge-lock :attributes :kind])))
       ;; a blank reason fails at the handler; a missing reason fails at the arg-spec
@@ -922,7 +1094,7 @@
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Missing required argument tail"
                             (op! "land" ["break-lock"])))
       (let [broken (op! "land" ["break-lock" "coordinator confirmed stale lock"])]
-        (is (= "land-break-lock" (:operation broken)))
+        (is (= "land break-lock" (:operation broken)))
         (is (= "closed" (get-in broken [:broken :state])))
         (is (= "coordinator confirmed stale lock"
                (get-in broken [:broken :attributes :land/broken-reason])))
@@ -933,10 +1105,10 @@
     (fn [rt]
       ;; a healthy world holds one lock; two active merge-lock strands is a
       ;; corrupt state break-lock must refuse rather than pick one arbitrarily.
-      (weaver/add rt {:title "Merge lock: land-dup-a"
-                      :attributes {:kind "merge-lock" :land/run-id "land-dup-a"}})
-      (weaver/add rt {:title "Merge lock: land-dup-b"
-                      :attributes {:kind "merge-lock" :land/run-id "land-dup-b"}})
+      (weaver/add! rt {:title "Merge lock: land-dup-a"
+                       :attributes {:kind "merge-lock" :land/run-id "land-dup-a"}})
+      (weaver/add! rt {:title "Merge lock: land-dup-b"
+                       :attributes {:kind "merge-lock" :land/run-id "land-dup-b"}})
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"multiple active merge locks found"
                             (op! "land" ["break-lock" "trying to clear a corrupt state"]))))))
 
@@ -949,7 +1121,7 @@
                                          "--worktree" "/tmp/land-blank-card"
                                          "--card" ""])))
       ;; absent --card stays legal: not every land run has a card
-      (is (= "land-start"
+      (is (= "land start"
              (:operation (op! "land" ["start" "land-no-card"
                                       "--branch" "land-no-card"
                                       "--worktree" "/tmp/land-no-card"])))))))
@@ -958,19 +1130,20 @@
   (with-config-runtime
     (fn [_rt]
       (let [help (op! "help" ["land"])
-            subs (get-in help [:arg-spec :subcommands])
+            subs (get-in help [:node :children])
             by-name (into {} (map (juxt :name identity)) subs)]
+        (is (= "land about" (:operation (op! "land" ["about"]))))
         (is (= #{"about" "start" "next" "complete" "choose" "status" "break-lock"}
                (set (map :name subs))))
-        (is (str/starts-with? (get-in help [:arg-spec :doc])
+        (is (str/starts-with? (get-in help [:node :doc])
                               "Drive the coordinator landing workflow"))
         ;; flags render sorted by key: branch, card, worktree
         (is (= [["branch" true] ["card" false] ["worktree" true]]
-               (mapv (juxt :name :required) (get-in by-name ["start" :flags]))))
+               (mapv (juxt :name :required) (get-in by-name ["start" :invocation :flags]))))
         (is (= [["feature" true false]]
-               (mapv (juxt :name :required :variadic) (get-in by-name ["start" :positionals]))))
+               (mapv (juxt :name :required :variadic) (get-in by-name ["start" :invocation :positionals]))))
         (is (= [["feature" true false] ["choice" true false] ["tail" false true]]
-               (mapv (juxt :name :required :variadic) (get-in by-name ["choose" :positionals])))))
+               (mapv (juxt :name :required :variadic) (get-in by-name ["choose" :invocation :positionals])))))
       ;; required flags and positionals fail loudly at parse
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Missing required flag --branch"
                             (op! "land" ["start" "no-flags"])))
@@ -979,120 +1152,97 @@
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unknown workflow run"
                             (op! "land" ["status" "never-landed"]))))))
 
-(deftest flow-status-op-joins-history-frontier-gates-runs-and-stalls
-  (with-config-runtime
-    (fn [rt]
-      (let [definition (workflow/workflow
-                        "Flow status test"
-                        (workflow/gate :a "Delegate A" :subagent)
-                        (workflow/gate :b "Delegate B" :subagent :depends-on [:a])
-                        (workflow/checkpoint :accept "Accept" :depends-on [:b]
-                                             :choices [:accepted]))]
-        (workflow/start! "flow-status-test" definition {})
-        (let [gate-a (:id (first (workflow/next-steps "flow-status-test")))
-              run-a (weaver/add rt {:title "Run A"
-                                    :state "closed"
-                                    :attributes {:agent-run/run "true"
-                                                 :agent-run/phase "done"
-                                                 :agent-run/result "A complete"
-                                                 :gate/run-id "flow-status-test"}
-                                    :edges [{:type "serves" :to gate-a}]})]
-          (workflow/complete! "flow-status-test" {:step gate-a :by (:id run-a)})
-          (let [gate-b (:id (first (workflow/next-steps "flow-status-test")))
-                run-b (weaver/add rt {:title "Run B"
-                                      :state "active"
-                                      :attributes {:agent-run/run "true"
-                                                   :agent-run/phase "failed"
-                                                   :agent-run/error "boom"
-                                                   :gate/run-id "flow-status-test"}
-                                      :edges [{:type "serves" :to gate-b}]})]
-            ;; failure summaries are scoped to the requested run: an unrelated
-            ;; failed run and an unrelated error-stamped gate must not leak in
-            (weaver/add rt {:title "Unrelated failed run"
-                            :attributes {:agent-run/run "true"
-                                         :agent-run/phase "failed"
-                                         :agent-run/error "other workflow"}})
-            (weaver/add rt {:title "Unrelated stalled gate"
-                            :attributes {:workflow/gate "subagent"
-                                         :gate/error "spawn failed elsewhere"}})
-            (let [status (op! "flow-status" ["flow-status-test"])
-                  by-title (into {} (map (juxt :title identity)) (:gates status))]
-              (is (= "flow-status" (:operation status)))
-              (is (false? (:done status)))
-              (is (= ["Delegate B"] (mapv :title (:frontier status))))
-              (is (= [:gate-closed] (mapv :type (get-in status [:history 0 :events]))))
-              (is (= "done" (get-in by-title ["Delegate A" :run :agent-run/phase])))
-              (is (= "failed" (get-in by-title ["Delegate B" :run :agent-run/phase])))
-              (is (true? (get-in by-title ["Delegate B" :stalled?])))
-              (is (= #{(:id run-b)} (set (map :id (:agent-failures status)))))
-              (is (empty? (:stalled-gates status)))
-              (is (str/includes? (:dev/mermaid status) "Delegate B (stalled)")))))))))
+(defn- assert-treadle-installed-after-runtime-dependencies
+  "Assert the subagent executor module orders after the modules it consumes.
 
-(defn- assert-treadle-installed-after-config
-  "Assert the subagent executor loaded and declares :config in :after — its install! runs an
-  initial gate scan, so config.clj's harness aliases must already exist or a
-  durable ready gate would be stamped gate/error on every cold start."
+  A green startup fixture already proves every required module applied (start!
+  throws otherwise), so the load-order guarantee lives in the declared `:after`
+  edges, read from the module graph."
   [rt]
-  (let [use (get (runtime/uses rt) :skein/spools-treadle)]
-    (is (= :loaded (:status use)))
-    (is (some #{:config} (get-in use [:opts :after])))))
+  (let [decl (get-in (runtime/status rt) [:modules :skein/spools-treadle])]
+    (is (some? decl) ":skein/spools-treadle is a declared module")
+    (is (every? (set (:after decl)) [:harnesses :workflows])
+        "treadle depends on :harnesses and :workflows")))
 
 (defn- assert-workflow-spool-consent-edges
-  "Assert repo startup guards every module that now relies on the workflow coordinate."
+  "Assert repo startup guards every module that relies on the workflow coordinate."
   [rt]
-  (let [uses (runtime/uses rt)]
-    (doseq [use-id [:skein/spools-workflow :skein/spools-reed]]
-      (is (= ['skein.spools/workflow] (get-in uses [use-id :opts :spools]))
-          (str use-id " must opt into skein.spools/workflow")))
-    (is (= ['skein.spools/carder 'skein.spools/loom 'skein.spools/workflow
-            'skein.spools/agent-run 'codethread/devflow 'skein.macros/macros]
-           (get-in uses [:config :opts :spools]))
+  (let [modules (:modules (runtime/status rt))]
+    (doseq [id [:skein/spools-workflow :skein/spools-shell]]
+      (is (= ['skein.spools/workflow] (:spools (get modules id)))
+          (str id " must opt into skein.spools/workflow")))
+    (is (= ['skein.spools/workflow 'ct.spools/agent-run
+            'codethread/devflow 'skein.macros/macros]
+           (:spools (get modules :config)))
         ":config must guard every spool coordinate its config.clj ns requires")
-    (is (true? (get-in uses [:config :opts :required?]))
+    (is (true? (:required? (get modules :config)))
         ":config is required — a guarded but non-required module skips silently, dropping the op/query surface")
-    (doseq [use-id [:workflows]]
-      (is (= ['skein.spools/loom 'skein.spools/workflow 'skein.spools/delegation]
-             (get-in uses [use-id :opts :spools]))
-          (str use-id " must opt into skein.spools/loom, skein.spools/workflow, and skein.spools/delegation")))))
+    (is (= ['skein.spools/workflow 'ct.spools/delegation]
+           (:spools (get modules :workflows)))
+        ":workflows must opt into skein.spools/workflow and ct.spools/delegation")))
 
-(defn- assert-ephemeral-spool-consent-edge
-  "Assert repo startup guards the activated ephemeral spool with its coordinate."
+(defn- assert-kanban-tracker-installed
+  "Assert startup declared the required devflow tracker binding and it is live."
   [rt]
-  (let [uses (runtime/uses rt)]
-    (is (= ['skein.spools/ephemeral] (get-in uses [:skein/spools-ephemeral :opts :spools]))
-        ":skein/spools-ephemeral must opt into skein.spools/ephemeral")))
+  (let [decl (get-in (runtime/status rt) [:modules :kanban/tracker])]
+    (is (some? decl) ":kanban/tracker is a declared module")
+    (is (true? (:required? decl)))
+    (is (re-find #"Bound tracker: devflow" (:tracker (op! "kanban" ["about"]))))))
 
-(defn- assert-roster-spool-consent-edge
-  "Assert repo startup guards the activated roster spool with its coordinate."
-  [rt]
-  (let [uses (runtime/uses rt)]
-    (is (= ['skein.spools/roster] (get-in uses [:skein/spools-roster :opts :spools]))
-        ":skein/spools-roster must opt into skein.spools/roster")))
+(deftest kanban-tracker-devflow-projection-contract
+  (with-config-runtime
+    (fn [_rt]
+      (load-file ".skein/kanban_tracker.clj")
+      (let [project (requiring-resolve 'kanban-tracker/devflow-projection)
+            current-root (requiring-resolve 'ct.spools.devflow/current-root)
+            ready (requiring-resolve 'ct.spools.devflow/ready)]
+        (testing "an active root projects its stage and ready steps"
+          (with-redefs-fn {current-root (constantly {:attributes {:devflow/stage "tasks"}})
+                           ready (constantly [{:id "next" :title "Do next" :role "step"}])}
+            #(is (= {:status "tasks"
+                     :ready [{:id "next" :title "Do next" :role "step"}]}
+                    (project "active-run")))))
+        (testing "no active root is the accepted nil-status projection"
+          (with-redefs-fn {current-root (constantly nil)
+                           ready (fn [_] (throw (ex-info "must not read steps" {})))}
+            #(is (= {:status nil :ready []}
+                    (project "inactive-run")))))
+        (testing "a malformed run id fails at the adapter boundary"
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"non-blank string"
+                                (project ""))))
+        (testing "an active root without a stage fails loudly"
+          (with-redefs-fn {current-root (constantly {:attributes {}})}
+            #(is (thrown-with-msg? clojure.lang.ExceptionInfo #"non-blank devflow/stage"
+                                   (project "missing-stage")))))
+        (testing "malformed ready steps fail the owning kanban projection spec"
+          (with-redefs-fn {current-root (constantly {:attributes {:devflow/stage "tasks"}})
+                           ready (constantly [{}])}
+            #(is (thrown-with-msg? clojure.lang.ExceptionInfo #"projection must match"
+                                   (project "malformed-step")))))))))
 
-(defn- assert-loom-spool-consent-edge
-  "Assert repo startup guards the activated loom spool with its coordinate."
-  [rt]
-  (let [uses (runtime/uses rt)]
-    (is (= ['skein.spools/loom] (get-in uses [:skein/spools-loom :opts :spools]))
-        ":skein/spools-loom must opt into skein.spools/loom")))
-
-(deftest repo-local-startup-and-reload-preserve-registrations
+(deftest repo-local-startup-and-refresh-preserve-registrations
   (with-startup-config-runtime
     (fn [rt]
       (assert-config-registrations rt)
-      (assert-treadle-installed-after-config rt)
+      (assert-treadle-installed-after-runtime-dependencies rt)
       (assert-workflow-spool-consent-edges rt)
-      (assert-ephemeral-spool-consent-edge rt)
-      (assert-roster-spool-consent-edge rt)
-      (assert-loom-spool-consent-edge rt)
+      (assert-kanban-tracker-installed rt)
+      (is (map? (op! "help" ["agent"])))
+      (is (seq (op! "agent" ["harnesses"])))
+      (is (= "bench about" (:operation (op! "bench" ["about"]))))
+      (is (str/includes? (:tracker (op! "kanban" ["about"]))
+                         "Bound tracker: devflow"))
       (op! "devflow-start" ["startup-feature" "already-in-worktree-ok"])
-      (is (= :loaded (:status (runtime/reload! rt))))
+      (let [refresh-result (runtime/refresh! rt)]
+        (is (contains? #{:applied :unchanged} (:status refresh-result))))
+      (let [refresh-result (runtime/refresh! rt {:only #{:config}})]
+        (is (contains? #{:applied :unchanged} (:status refresh-result))))
+      (is (every? #(= :applied (:status %))
+                  (vals (:resource/outcomes (runtime/status rt)))))
       (assert-config-registrations rt)
       (assert-workflow-spool-consent-edges rt)
-      (assert-ephemeral-spool-consent-edge rt)
-      (assert-roster-spool-consent-edge rt)
-      (assert-loom-spool-consent-edge rt)
-      ;; runtime registries reload; the strand graph and run state persist
+      (assert-kanban-tracker-installed rt)
+      ;; Module-owned registrations refresh; the strand graph and run state persist.
       (let [status (op! "devflow-status" ["startup-feature"])]
         (is (false? (:done status)))
         (is (= "create-or-confirm-worktree" (:checkpoint (first (:ready status)))))))))
@@ -1121,13 +1271,13 @@
   [form]
   (if (and (seq? form) (= 'quote (first form))) (second form) form))
 
-(defn- use-form?
-  "True when form is a `runtime/use!` module registration call."
+(defn- module-form?
+  "True when form is a `runtime/module!` declaration call."
   [form]
-  (and (seq? form) (= 'runtime/use! (first form))))
+  (and (seq? form) (= 'runtime/module! (first form))))
 
-(defn- parse-use-form
-  "Project a `(runtime/use! runtime <key> <opts>)` form into its guard-relevant data."
+(defn- parse-module-form
+  "Project a `(runtime/module! runtime <key> <opts>)` form into its guard-relevant data."
   [form]
   (let [opts (nth form 3)]
     {:key (nth form 2)
@@ -1163,7 +1313,7 @@
                   (let [deps (edn/read-string (slurp (io/file root "deps.edn")))
                         paths (or (:paths deps) ["src"])]
                     [coord (mapv #(io/file root %) paths)]))))
-        (:spools (runtime/syncs rt))))
+        (:spools (spool-sync/approved-spool-syncs rt))))
 
 (defn- ns->source-relative-path
   "Return the classpath-relative source path for a namespace symbol."
@@ -1181,28 +1331,28 @@
 
 (deftest init-use-guards-declare-required-spool-coordinates
   ;; PROP-usc-001.R1/.V, PLAN-usc-001.V4/.TC2: the guard-wiring acceptance gate.
-  ;; A synced root resolves through the add-libs classloader whether or not a
-  ;; use! declares :spools, so a green world load never proves consent is wired.
-  ;; This asserts it directly: every init.clj use! that pulls a skein.spools.*/
-  ;; skein.macros.* namespace onto the classpath — a :ns activation (its own
-  ;; coordinate) or a :file module's ns :require (each required coordinate) —
-  ;; must declare that coordinate in :spools, batteries (the classpath exception
-  ;; with no coordinate) excepted. Coordinates resolve through the synced root
-  ;; manifests, never a name heuristic: skein.spools.devflow lives in the
-  ;; codethread/devflow root and skein.spools.executors.shell in the
+  ;; A synced root resolves through the spool classloader whether or not a
+  ;; module! declares :spools, so a green world load never proves consent is
+  ;; wired. This asserts it directly: every init.clj module! that pulls a
+  ;; skein.spools.*/skein.macros.* namespace onto the classpath — a :ns module
+  ;; (its own coordinate) or a :file module's ns :require (each required
+  ;; coordinate) — must declare that coordinate in :spools, batteries (the
+  ;; classpath exception with no coordinate) excepted. Coordinates resolve
+  ;; through the synced root manifests, never a name heuristic: ct.spools.devflow
+  ;; lives in the codethread/devflow root and skein.spools.executors.shell in the
   ;; skein.spools/workflow root, so a prefix rule would both false-fail devflow
   ;; and false-pass a real miss.
   (with-startup-config-runtime
     (fn [rt]
       (let [coordinate-roots (coordinate-source-roots rt)
-            uses (map parse-use-form (filter use-form? (read-all-forms ".skein/init.clj")))]
-        (is (seq uses) "parsed at least one init.clj use! form")
-        (doseq [{:keys [key ns file spools]} uses
-                :when (not= ns 'skein.spools.batteries)]
+            modules (map parse-module-form (filter module-form? (read-all-forms ".skein/init.clj")))]
+        (is (seq modules) "parsed at least one init.clj module! form")
+        (doseq [{:keys [key file spools] use-ns :ns} modules
+                :when (not= use-ns 'skein.spools.batteries)]
           (let [required-nss (if file
                                (->> (ns-require-libs (read-first-form (io/file ".skein" file)))
                                     (filter spool-or-macros-ns?))
-                               [ns])]
+                               [use-ns])]
             (doseq [required-ns required-nss]
               (let [coord (resolve-spool-coordinate coordinate-roots required-ns)]
                 (is (some? coord)

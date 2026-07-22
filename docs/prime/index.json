@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "topics": {
+    "skein": "docs/prime/skein.md",
+    "strand": "docs/prime/strand.md"
+  }
+}

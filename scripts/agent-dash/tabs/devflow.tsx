@@ -45,11 +45,11 @@ import {
 
 type FrontierItem = {
   id: string;
-  kind: string; // "step" | "checkpoint"
+  role: string; // "step" | "checkpoint"
   title: string;
   state?: string;
   instruction?: string;
-  hitl: boolean; // human-in-the-loop checkpoint (workflow/hitl on the item strand)
+  hitl: boolean; // human-in-the-loop checkpoint (workflow/checkpoint-kind on the item strand)
 };
 
 type StateLabel = "error" | "attention" | "active" | "done";
@@ -78,27 +78,27 @@ type Gate = { gate: string; id: string; run?: GateRun };
 
 type FlowStatus = {
   done?: boolean;
-  frontier?: { id: string; kind: string; title: string; state?: string; instruction?: string }[];
+  frontier?: { id: string; role: string; title: string; state?: string; instruction?: string }[];
   gates?: Gate[];
   "agent-failures"?: unknown[];
   "stalled-gates"?: unknown[];
 };
 
-// hitl is not carried inline in the flow-status frontier, and only checkpoints
-// can be human decisions, so we only pay the extra `strand show` for those.
+// checkpoint-kind is not carried inline in the flow-status frontier, and only
+// checkpoints can be human decisions, so we only pay the extra `strand show` for those.
 async function frontierWithHitl(raw: NonNullable<FlowStatus["frontier"]>): Promise<FrontierItem[]> {
   return Promise.all(
     raw.map(async (f): Promise<FrontierItem> => {
       let hitl = false;
-      if (f.kind === "checkpoint") {
+      if (f.role === "checkpoint") {
         try {
           const item = (await strandJson(["show", f.id])) as StrandRecord;
-          hitl = item.attributes?.["workflow/hitl"] === "true";
+          hitl = item.attributes?.["workflow/checkpoint-kind"] === "human";
         } catch {
           hitl = false;
         }
       }
-      return { id: f.id, kind: f.kind, title: str(f.title), state: f.state, instruction: f.instruction, hitl };
+      return { id: f.id, role: f.role, title: str(f.title), state: f.state, instruction: f.instruction, hitl };
     }),
   );
 }
@@ -107,7 +107,7 @@ function frontierAttr(frontier: FrontierItem[]): string {
   if (frontier.length === 0) return "none";
   return frontier
     .map((f, i) => {
-      const head = `${i + 1}. ${f.kind} ${f.id}${f.hitl ? " [HITL]" : ""}  ${oneLine(f.title)}`;
+      const head = `${i + 1}. ${f.role} ${f.id}${f.hitl ? " [HITL]" : ""}  ${oneLine(f.title)}`;
       return f.instruction ? `${head}\n   ↳ ${oneLine(f.instruction)}` : head;
     })
     .join("\n");
@@ -171,7 +171,7 @@ async function fetchDevflow(all: boolean): Promise<DevflowRow[]> {
 
 // ── graph build ────────────────────────────────────────────────────────────
 // Shape the feature's step subtree into the shared graph pipeline's generic
-// nodes. `subgraph <run-id>` returns the molecule and its step/checkpoint
+// nodes. `subgraph <run-id>` returns the root and its step/checkpoint
 // children joined by parent-of; each subagent gate that has fulfilled its step
 // contributes a run node hung beneath that step, so the DAG shows which agent ran
 // each delegated step and where it stands.
@@ -225,7 +225,7 @@ function featureGraph(sub: SubgraphResult, gates: Gate[]): { nodes: GraphNode[];
 
 // ── list view ──────────────────────────────────────────────────────────────
 
-const LIST_HINT = "↑↓/jk move · ⌃d/⌃u page · ⏎ attrs+frontier · d graph · a all/active · r refresh · ⇥ tab · q quit";
+const LIST_HINT = "↑↓/jk move · ⌃d/⌃u page · ⏎ attrs+frontier · y copy · d graph · a all/active · r refresh · ⇥ tab · q quit";
 
 const frontierText = (r: DevflowRow): string =>
   r.flowError
@@ -305,6 +305,8 @@ export const devflowTab = defineTab<DevflowView>({
   inDetail: (v) => v.mode === "list" && v.s.view === "detail",
   // ⌃g opens the selected run strand; the graph pane has no single strand focus.
   editTarget: (v) => (v.mode === "list" ? (v.rows[v.s.selected] ?? null) : null),
+  // y copies the selected run's id, or the graphed run's id from the graph pane.
+  copyId: (v) => (v.mode === "list" ? (v.rows[v.s.selected]?.id ?? null) : (v.graph?.root ?? null)),
   refresh: async (v, all) => {
     if (v.mode === "list") {
       try {

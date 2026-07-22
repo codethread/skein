@@ -88,10 +88,9 @@ Hard limit: no docstring or string literal line may extend past column 180. Long
 
 When a value is prose (op payloads, `about` surfaces, rule descriptions, delegation bodies), do not build it from `(str ...)` fragments or one long literal. Author it as a `|`-margin block and reflow it with the shipped helpers:
 
-- `skein.api.format.alpha` — the blessed surface for any tier: trusted config (`.skein/`), userland, core.
-- `skein.spools.format` — the same `fill`/`reflow` under the documented spool-authoring names; prefer it inside `skein.spools.*`.
+- `skein.api.format.alpha` — the blessed surface for every tier, spools included: trusted config (`.skein/`), userland, core. (`skein.spools.format` is deleted; SPEC-005.C3.)
 
-`(fill block)` returns a vector of item strings (bare `|` line separates items; indented-past-the-bar lines keep an item verbatim for command samples). `(reflow block)` soft-wraps one paragraph into one string. Contract: `docs/writing-shared-spools.md`.
+`(fill block)` returns a vector of item strings (bare `|` line separates items; indented-past-the-bar lines keep an item verbatim for command samples). `(reflow block)` soft-wraps one paragraph into one string. Contract: `docs/spools/writing-shared-spools.md`.
 
 ```clojure
 (format-alpha/reflow
@@ -99,13 +98,13 @@ When a value is prose (op payloads, `about` surfaces, rule descriptions, delegat
   |single source line, soft-wrapped at authoring time.")
 ```
 
-Docstrings cannot use runtime helpers: wrap them by hand well short of the limit (match the surrounding namespace, usually ~80).
+Docstrings cannot use runtime helpers: wrap them by hand well short of the limit (match the surrounding namespace, usually ~80). Converted `skein.api.*` modules carry a hard 96-column bound on every source line, enforced by `quality.api-form` (SPEC-003.C19a).
 
 ### Audit red flags
 
 When scanning Clojure conformity, actively look for and report these before listing positives:
 
-- Any docstring or string literal line past column 180, or long prose built from `(str ...)` fragments instead of a `|`-margin block through `skein.api.format.alpha` / `skein.spools.format`.
+- Any docstring or string literal line past column 180, or long prose built from `(str ...)` fragments instead of a `|`-margin block through `skein.api.format.alpha`.
 - Public namespace lacks an `ns` docstring and has a non-trivial public role.
 - Public `defn`, `defmacro`, protocol, record/type, or important public `def` lacks a useful docstring.
 - Boundary data is validated only ad hoc when a reusable spec would clarify the shipped contract or enable generated checks.
@@ -113,6 +112,53 @@ When scanning Clojure conformity, actively look for and report these before list
 - Invalid input silently becomes a no-op, default value, SQL three-valued-logic surprise, coercion, or misleading empty result instead of failing loudly.
 - Public functions or `def` values appear unused, under-tested, or accidentally public. Constants, SQL fragments, dynamic compiler state, and implementation tables should normally be `^:private` unless they are intentional API and documented.
 - Tests only cover examples when a broad invariant would be better captured by property testing.
+
+### The story-file shape (api modules)
+
+A public namespace should read as a story: the promised fns lead, and each body shows the meat of its algorithm as named, composed steps. Placement of helpers — file-local privates below the publics, or a sibling `internal` namespace — is taste; what is not negotiable is that the public body surfaces the shape of the problem. SPEC-003.C19a holds converted `skein.api.*` modules to this.
+
+```clojure
+;; GOOD: the public fn IS the pipeline; helpers are named steps below it.
+(defn link!
+  "Link every configured project's dotfiles into place; return the
+  projects that changed."
+  [config-path]
+  (->> (load-configs config-path)
+       (pmap project-files-to-link)
+       (assert-no-conflicts!)
+       (mapv relink-project!)
+       (filterv changed?)))
+```
+
+```clojure
+;; BAD: a delegation husk — the story has been exiled to another file,
+;; and the reader learns nothing here.
+(defn link!
+  "Link every configured project's dotfiles into place."
+  [config-path]
+  (internal/link! config-path))
+```
+
+Concurrency shape is part of the story. Where calls run in sequence, where they fan out, and where the code blocks must read in the public body — a helper that hides a `future`, `pmap`, or blocking deref hides exactly the thing a review should question ("could we have started that fetch sooner?").
+
+```clojure
+;; BAD - the fan-out and the blocking joins are buried in the helper.
+(defn load-dashboard
+  "Assemble the dashboard for `ctx`."
+  [ctx]
+  (fetch-everything ctx))
+
+;; GOOD - sequence, parallelism, and joins read at the top level.
+(defn load-dashboard
+  "Assemble the dashboard for `ctx`."
+  [ctx]
+  (let [profile (future (fetch-profile ctx))   ; starts now
+        boards  (future (fetch-boards ctx))    ; runs alongside profile
+        prefs   (fetch-prefs ctx)]             ; must resolve before the join
+    (render-dashboard @profile @boards prefs)))
+```
+
+Method: write the split first, merge back by measurement. Draft the module as `alpha` composing `internal/<concern>` files — the compiler exposes coupling that imagination fudges — and write tests against the public surface only. Then measure: at roughly 500 lines or under, fold the concerns back into one story-ordered file (publics leading, section-commented private clusters, leaf mechanics last, one `declare` block as the accepted cost); over that, the split stands. The public-surface tests must pass unchanged through the fold, and watch for names that only made sense behind an alias (`case*` is a compiler special form someone hit this way). Recursion clusters stay together on whichever side they live; a public fn may run long when that keeps one story in one place. The worked example is `skein.api.return-shape.alpha`, folded to a single file after living as per-concern files.
 
 ### Public vs private helpers
 
@@ -264,7 +310,7 @@ Entry state: CLASSIFY_CHANGE
 ## Constraints
 
 - Do not spec every function by default.
-- Do not let any docstring or string literal line pass column 180; author long prose as `|`-margin blocks via `skein.api.format.alpha` (or `skein.spools.format` in spools).
+- Do not let any docstring or string literal line pass column 180; author long prose as `|`-margin blocks via `skein.api.format.alpha`.
 - Do not omit public docstrings for public Clojure API without a good local reason.
 - Do not leave implementation vars public by accident; make them private or document them as supported API.
 - Do not add weak property tests that only exercise trivial/generated happy paths.

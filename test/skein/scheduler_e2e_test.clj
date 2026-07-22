@@ -11,7 +11,6 @@
   one weaver survives a real stop/start and re-arms in a fresh weaver."
   (:require [clojure.java.io :as io]
             [clojure.test :refer [deftest is]]
-            [skein.api.events.alpha :as events]
             [skein.api.scheduler.alpha :as scheduler]
             [skein.api.weaver.alpha :as weaver]
             [skein.core.db :as db]
@@ -29,8 +28,8 @@
   "A due handler that mutates the graph: add a strand tagged from the payload,
   then signal the fire promise. Runs on the weaver's shared serialized lane."
   [{:keys [runtime payload]}]
-  (weaver/add runtime {:title (:title payload)
-                       :attributes {:origin "scheduler"}})
+  (weaver/add! runtime {:title (:title payload)
+                        :attributes {:origin "scheduler"}})
   (deliver @fired true))
 
 (defn- await-fire []
@@ -41,20 +40,18 @@
        (filter #(= "scheduler" (get-in % [:attributes :origin])))
        (mapv :title)))
 
-(deftest scheduled-handler-mutates-graph-and-is-introspectable
+(deftest scheduled-handler-mutates-graph-and-drains-pending
   (wt/with-runtime
     (fn [rt _db-file]
-      (test-alpha/set-clock! rt (constantly (Instant/ofEpochSecond 0)))
+      (test-alpha/set-clock! rt (test-alpha/manual-clock (Instant/ofEpochSecond 0)))
       (scheduler/schedule! rt {:key "seed-strand"
                                :wake-at (Instant/ofEpochSecond 1)
                                :handler `add-strand-handler
                                :payload {:title "Scheduled strand"}})
       (test-alpha/advance! rt (Duration/ofSeconds 2))
-      (events/await-quiescent! rt)
+      (test-alpha/await-quiescent! rt)
       (is (= ["Scheduled strand"] (scheduler-strand-titles rt))
           "the handler mutated the strand graph on the shared lane")
-      (is (= ["seed-strand"] (mapv :key (scheduler/recent-fires rt)))
-          "the completed wake is visible in introspection")
       (is (nil? (first (scheduler/pending rt))) "no wake remains armed"))))
 
 (deftest pending-wake-survives-weaver-restart-and-fires-on-rearm
@@ -66,7 +63,7 @@
       ;; pending, then stops before the wake is due.
       (let [rt1 (weaver-runtime/start! db-file {:world world :publish? false})]
         (try
-          (test-alpha/set-clock! rt1 (constantly (Instant/ofEpochSecond 0)))
+          (test-alpha/set-clock! rt1 (test-alpha/manual-clock (Instant/ofEpochSecond 0)))
           (scheduler/schedule! rt1 {:key "survivor"
                                     :wake-at (Instant/ofEpochSecond 3600)
                                     :handler `add-strand-handler
@@ -89,11 +86,11 @@
           ;; and re-arm happen later in the same run-fire! dispatch. Settle the
           ;; event lane so pending has drained before we read scheduler state,
           ;; the same quiescence gate the first test uses.
-          (events/await-quiescent! rt2)
+          (test-alpha/await-quiescent! rt2)
           (is (= ["Survivor strand"] (scheduler-strand-titles rt2))
               "the re-armed handler mutated the graph in the fresh weaver")
-          (is (= ["survivor"] (mapv :key (scheduler/recent-fires rt2)))
-              "the restart-fired wake is visible in introspection")
+          (is (empty? (scheduler/pending rt2))
+              "the restarted wake completed and is no longer pending")
           (finally
             (weaver-runtime/stop! rt2))))
       (finally

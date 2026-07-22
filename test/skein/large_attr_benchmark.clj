@@ -695,7 +695,8 @@
      :write-amp-payload-independence (<= (:eav-256kb-vs-free-patch-bytes w) 1.5)
      :filtered-scan (<= (get-in filtered [:eav :median-ms])
                         (get-in filtered [:document :median-ms]))
-     ;; Accepted 1.69x in EAS plan P7/BG2; ncso4 tracks bounded frontier queries.
+     ;; 1.7x rounds up the accepted 1.69x in EAS plan P7/BG2; ncso4 tracks bounded
+     ;; frontier queries.
      :ready (<= (get-in ready [:eav :median-ms])
                 (* 1.7 (get-in ready [:document :median-ms])))
      :list-assembly-500 (<= (get-in assembly [:eav :median-ms])
@@ -790,7 +791,7 @@
 
   `db/add-strand!` and `db/archive-attributes!` write the exact rows, indexes,
   and `archived` flags production carries; going through core storage rather than
-  `weaver/add` keeps seeding off the event queue (whose 1024-slot backpressure a
+  `weaver/add!` keeps seeding off the event queue (whose 1024-slot backpressure a
   250k bulk seed would trip) while measuring storage, not event fanout. Returns
   seed metadata including the ids sampled for point reads."
   [rt opts]
@@ -855,7 +856,9 @@
            :scenario scenario
            :rows (count rows)
            :omitted-descriptor (omitted-descriptor rows)
-           :sample-attribute-keys (some-> (first rows) attribute-keys))))
+           ;; sample the first row with hot attributes: strand ids are random, so the
+           ;; id-ordered first row may be a fully-archived strand whose lean map is empty
+           :sample-attribute-keys (some->> rows (map attribute-keys) (filter seq) first))))
 
 (defn- measure-text-search
   "Text-search `LIKE` scan through the shipped spool.
@@ -868,7 +871,7 @@
         limit (+ (:corpus-hot-count opts) (:corpus-archived-count opts) 50)
         result (volatile! nil)
         m (measure-workload
-           #(vreset! result (text-search/search rt (cond-> {:text needle :limit limit}
+           #(vreset! result (text-search/search rt (cond-> {:substring needle :limit limit}
                                                      archived? (assoc :archived? true))))
            opts)
         rows @result]

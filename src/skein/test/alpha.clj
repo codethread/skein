@@ -6,7 +6,8 @@
   fixtures (`config.json`, `spools.edn`, `init.clj`, arbitrary workspace
   files), starts an unpublished in-process weaver runtime with explicit
   storage selection, exposes an orchestration context map, and stops/cleans up
-  afterwards. Weaver-side behavior is exercised through `repl!`, which
+  afterwards. Manual clocks make runtime time and sleeps deterministic.
+  Weaver-side behavior is exercised through `repl!`, which
   evaluates weaver-routed forms over the runtime's real nREPL transport.
 
   Deliberately out of scope: strand/query wrappers, assertion DSLs, spool
@@ -16,8 +17,13 @@
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.string :as str]
+            [skein.api.clock.alpha :as clock]
+            [skein.api.return-shape.alpha :as return-shape]
+            [skein.api.runtime.alpha :as runtime]
+            [skein.api.weaver.alpha :as weaver]
             [skein.core.client :as client]
             [skein.core.weaver.config :as weaver-config]
+            [skein.core.weaver.access :as access]
             [skein.core.weaver.runtime :as weaver-runtime])
   (:import [java.nio.file Files Path]
            [java.nio.file.attribute FileAttribute]
@@ -28,6 +34,149 @@
   nil)
 
 (def ^:private default-timeout-ms 10000)
+
+(def ^:private return-context-keys #{:subcommand :channel})
+(def ^:private stream-channels #{:emits :result})
+
+(defn await-quiescent!
+  "Block until `runtime`'s event lane settles, then return `runtime`.
+
+  This lane-settling test primitive waits until the bounded event queue is empty
+  and no handler dispatch is in flight. It says nothing about completion signals
+  work dispatched off the lane may have initiated. Throws `ex-info` on timeout.
+  The default budget comes from `skein.spools.test-support/await-budget-ms`; pass
+  `:timeout-ms` to override it."
+  ([runtime] (await-quiescent! runtime {}))
+  ([runtime {:keys [timeout-ms]}]
+   (let [event-system (access/event-system runtime)
+         queue ^java.util.concurrent.BlockingQueue (:queue event-system)
+         dispatch-in-progress? (:dispatch-in-progress? event-system)
+         timeout-ms (or timeout-ms ((requiring-resolve 'skein.spools.test-support/await-budget-ms)))
+         _ (when-not (and (integer? timeout-ms) (pos? timeout-ms))
+             (throw (ex-info "await-quiescent! :timeout-ms must be a positive integer"
+                             {:timeout-ms timeout-ms})))
+         deadline (+ (System/currentTimeMillis) timeout-ms)]
+     (loop []
+       (cond
+         (and (.isEmpty queue) (not @dispatch-in-progress?)) runtime
+         (> (System/currentTimeMillis) deadline)
+         (throw (ex-info "Timed out awaiting event-lane quiescence"
+                         {:timeout-ms timeout-ms
+                          :queue-size (.size queue)
+                          :dispatch-in-progress? @dispatch-in-progress?}))
+         :else (do (Thread/sleep 5) (recur)))))))
+
+(defn- return-selection-error!
+  [entry declaration context reason message data]
+  (throw (ex-info message
+                  (merge {:operation (:name entry)
+                          :declaration declaration
+                          :context context
+                          :reason reason}
+                         data))))
+
+(defn- select-return-shape!
+  [entry context]
+  (when-not (map? context)
+    (return-selection-error! entry (:returns entry) context
+                             :invalid-return-context
+                             "Operation return context must be a map"
+                             {:value context}))
+  (when-let [unknown (seq (remove return-context-keys (keys context)))]
+    (return-selection-error! entry (:returns entry) context
+                             :unknown-return-context-keys
+                             "Operation return context contains unknown keys"
+                             {:keys (vec unknown)}))
+  (when-not (contains? entry :returns)
+    (return-selection-error! entry nil context
+                             :missing-return-declaration
+                             "Operation has no :returns declaration"
+                             {}))
+  (let [declaration (:returns entry)
+        routed? (and (map? declaration) (contains? declaration :subcommands))
+        return-case (cond
+                      (and routed? (not (contains? context :subcommand)))
+                      (return-selection-error! entry declaration context
+                                               :missing-return-subcommand
+                                               "Subcommand return declaration requires :subcommand context"
+                                               {})
+
+                      (and (not routed?) (contains? context :subcommand))
+                      (return-selection-error! entry declaration context
+                                               :unexpected-return-subcommand
+                                               "Flat return declaration does not accept :subcommand context"
+                                               {:subcommand (:subcommand context)})
+
+                      routed?
+                      (do
+                        (when-not (vector? (:subcommand context))
+                          (return-selection-error!
+                           entry declaration context
+                           :invalid-return-subcommand
+                           "Subcommand return context must be a path vector"
+                           {:subcommand (:subcommand context)}))
+                        (try
+                          (return-shape/select-case declaration (:subcommand context))
+                          (catch clojure.lang.ExceptionInfo e
+                            (let [data (ex-data e)]
+                              (return-selection-error!
+                               entry declaration context
+                               (:reason data)
+                               (ex-message e)
+                               (dissoc data :skein.api.return-shape.alpha/error :reason))))))
+
+                      :else declaration)
+        stream (when (and (map? return-case) (contains? return-case :stream))
+                 (:stream return-case))]
+    (if stream
+      (let [channel (:channel context)]
+        (when-not (contains? context :channel)
+          (return-selection-error! entry return-case context
+                                   :missing-return-channel
+                                   "Stream return declaration requires :channel context"
+                                   {}))
+        (when-not (stream-channels channel)
+          (return-selection-error! entry return-case context
+                                   :unknown-return-channel
+                                   "Operation return stream channel must be :emits or :result"
+                                   {:channel channel
+                                    :available-channels [:emits :result]}))
+        (get stream channel))
+      (do
+        (when (contains? context :channel)
+          (return-selection-error! entry return-case context
+                                   :unexpected-return-channel
+                                   "Non-stream return declaration does not accept :channel context"
+                                   {:channel (:channel context)}))
+        return-case))))
+
+(defn check-op-return!
+  "Check a captured operation return value against its registered declaration.
+
+  `runtime` is explicit and `operation` resolves through its live op registry.
+  The three-argument form checks a flat result. The four-argument form accepts
+  a context map with optional `:subcommand` and `:channel` (`:emits` or
+  `:result`) selectors; `:subcommand` is the full subcommand path vector
+  (DELTA-Lhc-001.CC7), walked through the declaration's nested `:subcommands`
+  tree (a legacy scalar string is tolerated intra-branch as a one-segment
+  path). Returns `value` unchanged on success. Missing or misaligned
+  declarations fail loudly. Shape mismatches carry the canonical operation
+  name, selected declaration, failing path, and actual value.
+
+  This helper only checks an already-captured value; it never invokes an op."
+  ([runtime operation value]
+   (check-op-return! runtime operation {} value))
+  ([runtime operation context value]
+   (let [entry (weaver/resolve-op runtime operation)
+         declaration (select-return-shape! entry context)]
+     (try
+       (return-shape/check! declaration value)
+       (catch clojure.lang.ExceptionInfo e
+         (throw (ex-info "Operation return value does not match declaration"
+                         (assoc (ex-data e)
+                                :operation (:name entry)
+                                :declaration declaration)
+                         e)))))))
 
 ;; Unix domain socket paths have a small platform limit (~104 bytes on macOS),
 ;; so generated worlds live under a short /tmp root rather than java.io.tmpdir.
@@ -223,7 +372,8 @@
   "Run `body` with `ctx-sym` bound to a disposable weaver world context.
 
   (with-weaver-world [ctx {:spools-edn {:spools {}}}]
-    (is (= [] (repl! ctx \"(skein.api.weaver.alpha/list (skein.api.current.alpha/runtime))\"))))"
+    (is (= [] (repl! ctx '(skein.api.weaver.alpha/list
+                           (skein.api.current.alpha/runtime))))))"
   [[ctx-sym opts] & body]
   `(run-with-weaver-world ~opts (fn [~ctx-sym] ~@body)))
 
@@ -236,14 +386,139 @@
                                   (binding [*weaver-world* ctx]
                                     (test-fn))))))
 
-(defn set-clock!
-  "Install `clock-fn` as `runtime`'s clock: a zero-arg fn returning an Instant.
+;; --- module lifecycle over a disposable world -------------------------------
+;;
+;; Thin wrappers over `skein.api.runtime.alpha` keyed by a `with-weaver-world`
+;; context so tests declare modules and inspect refresh/status against the
+;; disposable runtime, never a canonical world. Author module sources with the
+;; `:files` fixture, declare them with `declare-module!`, then refresh or read
+;; `module-status`.
 
-  Deterministic tests inject an advanceable clock so subsystems that read the
-  runtime clock seam (the scheduler) resolve due-ness against test time rather
-  than the wall clock. Pair with `advance!` to step it."
-  [runtime clock-fn]
-  (weaver-runtime/set-clock! runtime clock-fn))
+(defn declare-module!
+  "Declare one stable module in `ctx`'s disposable weaver runtime.
+
+  Delegates to `skein.api.runtime.alpha/module!`; see its contract for the
+  `opts` grammar and staged/refreshed result shape."
+  [ctx key opts]
+  (runtime/module! (:runtime ctx) key opts))
+
+(defn refresh-modules!
+  "Refresh `ctx`'s disposable weaver runtime against its declared module graph.
+
+  Delegates to `skein.api.runtime.alpha/refresh!`; the no-opts arity refreshes
+  the full graph and the `{:only keys}` arity refreshes the named modules."
+  ([ctx] (runtime/refresh! (:runtime ctx)))
+  ([ctx opts] (runtime/refresh! (:runtime ctx) opts)))
+
+(defn plan-modules
+  "Return the dry-run refresh intentions for `ctx`'s disposable weaver runtime.
+
+  Delegates to `skein.api.runtime.alpha/plan`; publishes and reconciles nothing."
+  ([ctx] (runtime/plan (:runtime ctx)))
+  ([ctx opts] (runtime/plan (:runtime ctx) opts)))
+
+(defn module-status
+  "Return the offline joined module status for `ctx`'s disposable weaver runtime.
+
+  Delegates to `skein.api.runtime.alpha/status`."
+  [ctx]
+  (runtime/status (:runtime ctx)))
+
+;; A manual clock is an ordinary Clock capability (`skein.api.clock.alpha/clock`)
+;; carrying extra `::control` state — its virtual instant and the one runtime it
+;; is installed in — so time and pumps can be driven from a single test thread.
+;; No protocol is involved, matching the reload-safe capability shape the base
+;; Clock now uses.
+
+(defn- manual-control
+  [clock]
+  (::control clock))
+
+(defn- manual-clock?
+  [clock]
+  (some? (manual-control clock)))
+
+(defn- require-positive-duration!
+  [duration]
+  (when-not (and (instance? Duration duration)
+                 (not (.isNegative ^Duration duration))
+                 (not (.isZero ^Duration duration)))
+    (throw (ex-info "advance! requires a strictly positive java.time.Duration"
+                    {:duration duration})))
+  duration)
+
+(defn- install-manual-clock!
+  [manual runtime]
+  (let [installed-runtime (:installed-runtime (manual-control manual))]
+    (loop []
+      (let [installed @installed-runtime]
+        (cond
+          (nil? installed)
+          (when-not (compare-and-set! installed-runtime nil runtime)
+            (recur))
+
+          (identical? installed runtime)
+          nil
+
+          :else
+          (throw (ex-info "A manual clock can be installed in only one runtime"
+                          {:installed-runtime installed
+                           :requested-runtime runtime})))))
+    nil))
+
+(defn- uninstall-manual-clock!
+  [manual runtime]
+  (let [installed-runtime (:installed-runtime (manual-control manual))]
+    (when (identical? @installed-runtime runtime)
+      (compare-and-set! installed-runtime runtime nil))
+    nil))
+
+(defn- advance-manual-clock!
+  [manual ^Duration duration]
+  (let [{:keys [current-instant installed-runtime]} (manual-control manual)
+        target (swap! current-instant #(.plus ^Instant % duration))]
+    (when-let [runtime @installed-runtime]
+      (weaver-runtime/run-clock-pumps! runtime))
+    target))
+
+(defn manual-clock
+  "Return an uninstalled manual Clock beginning at `initial-instant`.
+
+  Sleeping advances its time immediately. Once installed with `set-clock!`,
+  sleeping also runs that runtime's registered clock pumps synchronously."
+  [initial-instant]
+  (when-not (instance? Instant initial-instant)
+    (throw (ex-info "manual-clock requires a java.time.Instant"
+                    {:initial-instant initial-instant})))
+  (let [current-instant (atom initial-instant)
+        installed-runtime (atom nil)]
+    (assoc (clock/clock
+            (fn [] @current-instant)
+            (fn [^Duration duration]
+              (swap! current-instant #(.plus ^Instant % duration))
+              (when-let [runtime @installed-runtime]
+                (weaver-runtime/run-clock-pumps! runtime))
+              nil))
+           ::control {:current-instant current-instant
+                      :installed-runtime installed-runtime})))
+
+(defn set-clock!
+  "Install `installed-clock` as `runtime`'s Clock.
+
+  A manual clock may belong to only one runtime. Replacing one detaches it from
+  that runtime so later sleeps on the old clock cannot pump the runtime."
+  [runtime installed-clock]
+  (when-not (clock/clock? installed-clock)
+    (throw (ex-info "set-clock! requires a skein.api.clock.alpha/Clock"
+                    {:clock installed-clock})))
+  (when (manual-clock? installed-clock)
+    (install-manual-clock! installed-clock runtime))
+  (let [previous-clock (weaver-runtime/clock runtime)]
+    (weaver-runtime/set-clock! runtime installed-clock)
+    (when (and (not (identical? previous-clock installed-clock))
+               (manual-clock? previous-clock))
+      (uninstall-manual-clock! previous-clock runtime)))
+  nil)
 
 (defn advance!
   "Move `runtime`'s clock forward by `duration`, then pump clock consumers.
@@ -253,14 +528,13 @@
   every registered clock-consumer pump (subsystems that arm real timers off the
   runtime clock, such as the scheduler) runs synchronously so its due-check
   observes the new now before `advance!` returns. Returns the new Instant."
-  [runtime ^Duration duration]
-  (when (or (nil? duration) (.isZero duration) (.isNegative duration))
-    (throw (ex-info "advance! requires a strictly positive java.time.Duration"
-                    {:duration duration})))
-  (let [target (.plus ^Instant (weaver-runtime/now runtime) duration)]
-    (weaver-runtime/set-clock! runtime (constantly target))
-    (weaver-runtime/run-clock-pumps! runtime)
-    target))
+  [runtime duration]
+  (require-positive-duration! duration)
+  (let [installed-clock (weaver-runtime/clock runtime)]
+    (when-not (manual-clock? installed-clock)
+      (throw (ex-info "advance! requires an installed manual Clock"
+                      {:clock installed-clock})))
+    (advance-manual-clock! installed-clock duration)))
 
 (defn run-focused!
   "Run the named test namespaces in-process and return the aggregate
@@ -286,11 +560,11 @@
 (defn repl!
   "Evaluate a weaver-routed form against ctx's weaver world and return data.
 
-  `form` is a string of Clojure source or a form to render with pr-str. It
-  evaluates in the weaver runtime over its real nREPL transport with the
-  runtime ambiently bound, so `(skein.api.current.alpha/runtime)` resolves to
-  the test weaver. Results must be EDN-readable; weaver-side and transport
-  failures throw ExceptionInfo."
+  `form` is a quoted form rendered with pr-str, or a string of Clojure
+  source. It evaluates in the weaver runtime over its real nREPL transport
+  with the runtime ambiently bound, so `(skein.api.current.alpha/runtime)`
+  resolves to the test weaver. Results must be EDN-readable; weaver-side and
+  transport failures throw ExceptionInfo."
   [ctx form]
   (client/eval-in-world (:config-dir ctx)
                         {:timeout-ms (:timeout-ms ctx default-timeout-ms)}

@@ -35,12 +35,12 @@ You sit at the edges: describe outcomes, decide checkpoints, read the board.
   (chime/set-notifier! {:argv ["cc-notify"]})   ; anything with the `cmd <title>` + body-on-stdin shape
   ```
 
-- Watch progress with `make dash` (TUI over agent runs, the board, and devflow), `strand kanban board`, `strand branches [branch]`, and `strand flow-status <feature>`. For an ASCII board: `printf "(do (require 'skein.spools.kanban) (skein.spools.kanban/print-board!))\n" | mill weaver repl --stdin`.
+- Watch progress with `make dash` (TUI over agent runs, the board, and devflow), `strand kanban board`, `strand branches [branch]`, and `strand flow-status <feature>`. For an ASCII board: `printf "(do (require 'ct.spools.kanban) (ct.spools.kanban/print-board!))\n" | mill weaver repl --stdin`.
 - `strand agent harnesses` lists the model seats and their roles; the routing policy comments sit beside the alias definitions in `.skein/harnesses.clj`.
 
 ## Discovery: help, about, prime
 
-Skein has one convention for "how do I find out?", in three escalating tiers (canonical write-up: [`docs/skein.md`](./docs/skein.md) "Discovery tiers"):
+Skein has one convention for "how do I find out?", in three escalating tiers (canonical write-up: [`docs/reference.md`](./docs/reference.md) "Discovery tiers"):
 
 - **`help`** — generated from arg-spec data, never hand-written: `strand help [<op>]`.
 - **`about`** — the authored per-op manual: `strand agent about`, `strand kanban about`, `strand land about`.
@@ -58,7 +58,7 @@ strand --workspace "$ws" add "Sketch model"
 mill weaver stop --workspace "$ws"
 ```
 
-`mill weaver repl` attaches a live REPL to a running weaver. [Getting started](./docs/getting-started.md) walks the whole surface, and [`docs/skein.md`](./docs/skein.md) covers workspaces, reload/restart boundaries, and the REPL in depth.
+`mill weaver repl` attaches a live REPL to a running weaver. [The tutorial](./docs/tutorial.md) walks the whole surface, and [`docs/reference.md`](./docs/reference.md) covers workspaces, reload/restart boundaries, and the REPL in depth.
 
 Validate before committing:
 

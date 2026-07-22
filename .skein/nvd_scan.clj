@@ -170,31 +170,16 @@
           (close-issue! run-cmd number))))))
 
 (defn nvd-scan-tick
-  "cron `:run!`: run one NVD deep scan with the real gh, login-shell, and kanban
+  "cron `:handler`: run one NVD deep scan with the real gh, login-shell, and kanban
   seams. `runtime` scopes the kanban card write so it lands in the right world."
   [runtime]
   (run-nvd-scan! {:run-cmd run-command
                   :raise-card! (fn [{:keys [title body]}]
                                  (current/with-runtime runtime
-                                   ((requiring-resolve 'skein.spools.kanban/add!)
+                                   ((requiring-resolve 'ct.spools.kanban/add!)
                                     title {"--body" body "--priority" "p1"})))}))
 
-(defn- register-nvd-scan-job!
-  "Register the every-6-days NVD deep-scan cron job on the active runtime.
-
-  Shared across every maintainer's weaver; the +/-1h jitter and the 'scan-lock
-  running' issue lock keep concurrent maintainer weavers from all scanning at
-  once. Re-run on reload it re-registers idempotently."
-  []
-  {:nvd-scan (cron/register! (current/runtime)
-                             {:id :nvd-scan
-                              :interval-ms nvd-scan-interval-ms
-                              :jitter-ms nvd-scan-jitter-ms
-                              :run! 'nvd-scan/nvd-scan-tick})})
-
-(defn install!
-  "Register the scheduled NVD deep-scan cron job."
-  []
-  {:installed true
-   :namespace 'nvd-scan
-   :jobs (register-nvd-scan-job!)})
+(cron/defjob :nvd-scan
+  {:interval-ms nvd-scan-interval-ms
+   :jitter-ms nvd-scan-jitter-ms
+   :handler 'nvd-scan/nvd-scan-tick})

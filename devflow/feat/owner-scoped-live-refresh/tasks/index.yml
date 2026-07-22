@@ -1,0 +1,131 @@
+tasks:
+  - id: 1
+    description: Build owner-partitioned registry kernel
+    task_file: tasks/001-owner-partitioned-registry-kernel.md
+    status: complete
+    blocked_by: []
+  - id: 2
+    description: Migrate core registries to owner partitions
+    task_file: tasks/002-core-registry-owner-migration.md
+    status: complete
+    blocked_by: [1]
+  - id: 3
+    description: Add loaded namespace ledger and resolve uxc5f
+    task_file: tasks/003-loaded-namespace-ledger.md
+    status: complete
+    blocked_by: [25]
+  - id: 4
+    description: Build module graph and live refresh coordinator
+    task_file: tasks/004-module-graph-refresh-coordinator.md
+    status: complete
+    blocked_by: [3]
+  - id: 5
+    description: Publish new runtime API and test surface
+    task_file: tasks/005-runtime-api-and-test-surface.md
+    status: complete
+    blocked_by: [4]
+  - id: 6
+    description: Convert batteries roster and text-search
+    task_file: tasks/006-simple-first-party-spools.md
+    status: complete
+    blocked_by: [5, 24]
+  - id: 7
+    description: Convert workflow and shell executor
+    task_file: tasks/007-workflow-owner-reconciliation.md
+    status: complete
+    blocked_by: [5, 24]
+  - id: 8
+    description: Convert Chime and attention rules
+    task_file: tasks/008-chime-owner-reconciliation.md
+    status: complete
+    blocked_by: [10, 24]
+  - id: 9
+    description: Convert cron and scheduler references
+    task_file: tasks/009-cron-scheduler-reconciliation.md
+    status: complete
+    blocked_by: [5, 24]
+  - id: 10
+    description: Replace workspace remember forget install macros
+    task_file: tasks/010-workspace-contribution-macros.md
+    status: complete
+    blocked_by: [5, 24]
+  - id: 11
+    description: Cut bootstrap and workspace config to modules
+    task_file: tasks/011-bootstrap-workspace-module-graph.md
+    status: complete
+    blocked_by: [6, 7, 8, 9, 10]
+  - id: 12
+    description: Convert agent-run live registries and bindings
+    task_file: tasks/012-agent-run-owner-refresh.md
+    status: complete
+    blocked_by: [7, 24]
+  - id: 13
+    description: Convert delegation and bench registries
+    task_file: tasks/013-delegation-bench-owner-refresh.md
+    status: complete
+    blocked_by: [12]
+  - id: 14
+    description: Convert kanban and peering registrations
+    task_file: tasks/014-kanban-owner-refresh.md
+    status: complete
+    blocked_by: [7, 24]
+  - id: 15
+    description: Convert devflow route registration
+    task_file: tasks/015-devflow-owner-refresh.md
+    status: complete
+    blocked_by: [7, 24]
+  - id: 16
+    description: Remove old lifecycle and integrate local peer roots
+    task_file: tasks/016-integrated-lifecycle-cutover.md
+    status: complete
+    blocked_by: [11, 13, 14, 15]
+  - id: 17
+    description: Promote reviewed spec deltas
+    task_file: tasks/017-promote-spec-deltas.md
+    status: complete
+    blocked_by: [16]
+  - id: 18
+    description: Run cross-repository acceptance matrix
+    task_file: tasks/018-cross-repo-acceptance.md
+    status: complete
+    blocked_by: [16, 17, 26]
+  - id: 19
+    description: Prepare peer compatibility exception releases
+    task_file: tasks/019-peer-release-preparation.md
+    status: complete
+    blocked_by: [18]
+  - id: 20
+    description: "[HITL] Publish peer breaking successor markers"
+    task_file: tasks/020-publish-peer-releases.md
+    status: complete
+    blocked_by: [19]
+  - id: 21
+    description: Update pins and rehearse disposable cutover
+    task_file: tasks/021-pin-update-cutover-rehearsal.md
+    status: complete
+    blocked_by: [20]
+  - id: 22
+    description: Run full acceptance and prepare landing
+    task_file: tasks/022-full-acceptance-landing-readiness.md
+    status: complete
+    blocked_by: [17, 21, 26]
+  - id: 23
+    description: "[HITL] Adopt the new canonical live runtime"
+    task_file: tasks/023-canonical-runtime-adoption.md
+    status: complete
+    blocked_by: [22]
+  - id: 24
+    description: Publish owner registry API for spool domains
+    task_file: tasks/024-owner-registry-api.md
+    status: complete
+    blocked_by: [1]
+  - id: 25
+    description: Add dispatch snapshots and owner introspection
+    task_file: tasks/025-core-dispatch-snapshots.md
+    status: complete
+    blocked_by: [2]
+  - id: 26
+    description: Rewrite human docs and regenerate APIs
+    task_file: tasks/026-human-docs-api-regeneration.md
+    status: complete
+    blocked_by: [16]

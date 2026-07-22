@@ -25,18 +25,20 @@ Activate it from trusted startup config after syncing approved roots:
          '[skein.api.runtime.alpha :as runtime])
 
 (def runtime (current/runtime))
-(runtime/sync! runtime)
-(runtime/use! runtime :chime
+(runtime/module! runtime :chime
   {:ns 'skein.spools.chime
    :spools ['skein.spools/chime]
-   :call 'skein.spools.chime/install!
+   :contribute 'skein.spools.chime/contribute
+   :reconcile 'skein.spools.chime/reconcile
    :required? true})
 ```
 
-`install!` registers only the graph-event handler. A useful setup then layers two things on top:
+The module reconciler maintains the graph-event handler and registration
+barrier. A useful setup then layers two
+things on top:
 
 - shared config (`init.clj` / a workspace spool) registers the workspace's
-  rules with `defrule!`, so the repo decides what needs attention;
+  rules with `register!`, so the repo decides what needs attention;
 - each developer binds their notifier in gitignored `init.local.clj` with
   `set-notifier!`, so how you get told (a notification daemon, `osascript`,
   a bell) stays a personal choice.
@@ -54,7 +56,7 @@ Bind the notifier with plain data:
 
 For each notification, chime spawns `:argv` with the title appended as the final argument and the body written to stdin — any command with the shape `my-notify <title>` (body on stdin) works, including a small wrapper script around whatever your platform uses.
 
-Notifier state is weaver-lifetime: re-bind on every startup/reload (which `init.local.clj` does naturally). With no notifier bound, a fired rule records a loud failure in `(chime/failures)` instead of silently dropping the event.
+Notifier state is weaver-lifetime: re-bind on every startup/reload (which `init.local.clj` does naturally). With no notifier bound, a fired rule records a loud failure in `(chime/recent-failures)` instead of silently dropping the event.
 
 Manual sends use the same path:
 
@@ -90,17 +92,33 @@ Worked example — notify when a strand that parents other work is closed:
 ```
 
 ```clojure
-(chime/defrule! :parent-completed 'my.rules/parent-completed)
+(chime/register! :parent-completed 'my.rules/parent-completed)
 (chime/rules)
-(chime/remove-rule! :parent-completed)
+(chime/unregister! :parent-completed)
 ```
 
-Chime deduplicates notifications per `[rule strand]` while the rule keeps matching: a strand is marked seen only after the notifier process starts, so a missing or failing notifier does not swallow the alert, and the mark clears when the rule stops matching so a recurrence notifies again. Use `(chime/reset-seen!)` from tests or config to clear that memory.
+When a rule is registered, chime treats its currently matching strands as an
+initial seen baseline. Restarting a weaver therefore does not replay every
+durable condition on the next graph mutation. This suppresses every condition
+already true at registration, including one that first became true while the
+weaver was down and has never produced a notification. Conditions that start
+after registration notify normally. Chime's pre-commit mutation barrier orders
+concurrent graph changes after registration, so they are not absorbed into the
+baseline.
 
-Rule, notifier, and process failures are recorded by `(chime/failures)` and event handler failures remain visible through the Skein event failure surface.
+Chime then deduplicates notifications per `[rule strand]` while the rule keeps
+matching: a strand is marked seen only after the notifier process starts, so a
+missing or failing notifier does not swallow the alert, and the mark clears when
+the rule stops matching so a recurrence notifies again. Use
+`(chime/reset-seen!)` from tests or config to clear that memory.
+
+Rule, notifier, and process failures are recorded by `(chime/recent-failures)` and event handler failures remain visible through the Skein event failure surface.
 
 ## See also
 
 - [`../README.md`](../README.md) — shipped and approved local-root spool index.
-- [`../agent-run/README.md`](../agent-run/README.md) — local-root layout and loading pattern.
-- [`../../docs/skein.md#authoring-your-own-spool-code`](../../docs/skein.md#authoring-your-own-spool-code) — authoring and loading local spools.
+- [`agent-harness.spool/agent-run/README.md`][agent-run-contract] — external coordinate,
+  activation, and local-override pattern.
+- [`../../docs/spools/customisation.md#promoting-config-to-a-local-spool`](../../docs/spools/customisation.md#promoting-config-to-a-local-spool) — authoring and loading local spools.
+
+[agent-run-contract]: https://github.com/codethread/agent-harness.spool/blob/d01e6ce6555d370dc5c9e4e0371cdabe10fab491/agent-run/README.md

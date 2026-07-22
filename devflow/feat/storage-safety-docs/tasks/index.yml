@@ -1,0 +1,11 @@
+tasks:
+  - id: 1
+    description: PH1 prose — note-memory enforced, burn honesty, recovery cookbook
+    task_file: tasks/001-hand-authored-prose.md
+    status: complete
+    blocked_by: []
+  - id: 2
+    description: PH2 docstring surfaces, note-vocab correction, api-docs regen
+    task_file: tasks/002-docstrings-vocab-regen.md
+    status: complete
+    blocked_by: []

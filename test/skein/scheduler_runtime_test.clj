@@ -9,8 +9,7 @@
   real weaver runtime and its shared event worker."
   (:require [clojure.java.io :as io]
             [clojure.test :refer [deftest is testing]]
-            [skein.api.events.alpha :as events]
-            [skein.api.runtime.alpha :as runtime]
+            [skein.api.clock.alpha :as clock]
             [skein.core.db :as db]
             [skein.core.db-test :as db-test]
             [skein.core.weaver.runtime :as weaver-runtime]
@@ -53,7 +52,7 @@
   [ds queue-capacity]
   {:datasource ds
    :spool-state (atom {})
-   :clock (atom (fn [] (Instant/now)))
+   :clock (atom (clock/system-clock))
    :clock-pumps (atom {})
    :event-system {:queue (ArrayBlockingQueue. (int queue-capacity))}})
 
@@ -63,7 +62,7 @@
   [ds queue-capacity clock-seconds f]
   (let [rt (fake-runtime ds queue-capacity)
         st (scheduler/state rt)]
-    (test-alpha/set-clock! rt (constantly (instant clock-seconds)))
+    (test-alpha/set-clock! rt (test-alpha/manual-clock (instant clock-seconds)))
     (try
       (f rt st)
       (finally
@@ -170,7 +169,7 @@
             ;; by run-fire-skips-cancelled-and-rescheduled-wakes). Now deliver gen B.
             (.poll queue)
             (swap! (:in-flight st) disj "resched")
-            (test-alpha/set-clock! rt (constantly (instant 200)))
+            (test-alpha/set-clock! rt (test-alpha/manual-clock (instant 200)))
             (let [result (scheduler/dispatch-due! rt)]
               (is (= 1 (:dispatched result)))
               (is (= 1 (:scheduler/attempt (.poll queue)))
@@ -235,7 +234,7 @@
             (is (re-find #"handler blew up" (:error failure))))
           (is (empty? @(:in-flight st))))))))
 
-(deftest run-fire-captures-unresolvable-handler-as-failed
+(deftest run-fire-parks-unresolvable-handler-without-retiring-durable-wake
   (db-test/with-db
     (fn [ds]
       (db/schedule-wake! ds {:key "wake" :wake-at (instant 100)
@@ -247,10 +246,11 @@
                                              :scheduler/key "wake"
                                              :scheduler/wake-at-millis 100000
                                              :scheduler/attempt 1})))
-          (is (nil? (db/get-pending-wake ds "wake")))
-          (let [failure (first (db/recent-failures ds))]
-            (is (= "wake" (:key failure)))
-            (is (re-find #"resolved" (:error failure))))
+          (is (some? (db/get-pending-wake ds "wake"))
+              "missing handler retains its durable row for explicit repair")
+          (is (= [{:key "wake" :status :parked :park/reason :handler-unresolved}]
+                 (mapv #(select-keys % [:key :status :park/reason])
+                       (scheduler/wake-status rt))))
           (is (empty? @(:in-flight st))))))))
 
 (deftest run-fire-skips-cancelled-and-rescheduled-wakes
@@ -326,7 +326,7 @@
   (wt/with-runtime
     (fn [rt _db-file]
       (reset! fire-count 0)
-      (test-alpha/set-clock! rt (constantly (instant 0)))
+      (test-alpha/set-clock! rt (test-alpha/manual-clock (instant 0)))
       (db/schedule-wake! (:datasource rt)
                          {:key "soon" :wake-at (instant 1)
                           :handler 'skein.scheduler-runtime-test/counting-handler})
@@ -334,7 +334,7 @@
       (scheduler/rearm! rt)
       (scheduler/rearm! rt)
       (test-alpha/advance! rt (Duration/ofSeconds 2))
-      (events/await-quiescent! rt)
+      (test-alpha/await-quiescent! rt)
       (is (= 1 @fire-count) "repeated re-arm must not double-arm the same wake"))))
 
 (deftest reload-rearm-does-not-refire-completed-wake
@@ -348,9 +348,10 @@
       (scheduler/rearm! rt)
       (is (await-fire) "the overdue wake fires once")
       (is (await-completed (:datasource rt) "past"))
-      ;; A config reload re-arms the scheduler; a completed wake must not return.
-      (runtime/reload! rt)
-      (is (= 1 @fire-count) "a completed wake is not re-fired on reload"))))
+      ;; Resource reconciliation may re-arm the scheduler; a completed wake must
+      ;; not return.
+      (scheduler/rearm! rt)
+      (is (= 1 @fire-count) "a completed wake is not re-fired on rearm"))))
 
 (deftest stop-closes-scheduler-executor-thread
   (let [db-file (db-test/temp-db-file)

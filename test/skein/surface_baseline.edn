@@ -1,405 +1,562 @@
 {:op-help
- {"branches"
-  {:name "branches",
-   :provenance config,
-   :stream? false,
-   :deadline-class :standard,
-   :hook-class :mutating,
-   :doc "Show active branch-stamped work roots grouped by branch.",
-   :arg-spec
-   {:op "branches",
-    :doc "Show active branch-stamped work roots grouped by branch.",
-    :flags [],
-    :positionals
-    [{:name "branch",
-      :type "string",
-      :required false,
-      :variadic false,
-      :parse nil,
-      :doc "Optional branch name to scope the projection."}]}},
-  "devflow-advance"
-  {:name "devflow-advance",
-   :provenance config,
-   :stream? false,
-   :deadline-class :standard,
-   :hook-class :mutating,
-   :doc "Advance the current devflow step or checkpoint for a feature.",
-   :arg-spec
-   {:op "devflow-advance",
-    :doc "Advance the current devflow step or checkpoint for a feature.",
-    :flags [],
-    :positionals
-    [{:name "feature",
-      :type "string",
-      :required true,
-      :variadic false,
-      :parse nil,
-      :doc "Feature name; the workflow run id shared by all devflow ops."}
-     {:name "tail",
-      :type "string",
-      :required false,
-      :variadic true,
-      :parse nil,
-      :doc "Optional `[choice] [json-input] [notes]` and a trailing `step=<id>` selector."}]}},
+ {"devflow-advance"
+  {:schema-version 2,
+   :operation
+   {:name "devflow-advance",
+    :provenance "config",
+    :stream? false,
+    :raw-envelope false},
+   :source {:file ".skein/config.clj", :line 431},
+   :glossary {},
+   :node
+   {:children [],
+    :name "devflow-advance",
+    :failure-modes [],
+    :invocation
+    {:mode "declared",
+     :flags [],
+     :positionals
+     [{:name "feature",
+       :type "string",
+       :required true,
+       :variadic false,
+       :parse nil,
+       :doc
+       "Feature name; the workflow run id shared by all devflow ops."}
+      {:name "tail",
+       :type "string",
+       :required false,
+       :variadic true,
+       :parse nil,
+       :doc
+       "Optional `[choice] [json-input] [notes]` and a trailing `step=<id>` selector."}]},
+    :deadline-class "standard",
+    :notes [],
+    :hook-class "mutating",
+    :use-when [],
+    :doc
+    "Advance the current devflow step or checkpoint for a feature.",
+    :returns
+    {:type "map",
+     :required {"operation" "string"},
+     :optional {},
+     :extra "json"}}},
   "workflow-runs"
-  {:name "workflow-runs",
-   :provenance config,
-   :stream? false,
-   :deadline-class :standard,
-   :hook-class :mutating,
-   :doc "Show active workflow molecule roots, optionally filtered by family.",
-   :arg-spec
-   {:op "workflow-runs",
-    :doc "Show active workflow molecule roots, optionally filtered by family.",
-    :flags [],
-    :positionals
-    [{:name "family",
-      :type "string",
-      :required false,
-      :variadic false,
-      :parse nil,
-      :doc "Optional workflow family, e.g. devflow."}]}},
+  {:schema-version 2,
+   :operation
+   {:name "workflow-runs",
+    :provenance "config",
+    :stream? false,
+    :raw-envelope false},
+   :source {:file ".skein/config.clj", :line 513},
+   :glossary {},
+   :node
+   {:children [],
+    :name "workflow-runs",
+    :failure-modes [],
+    :invocation
+    {:mode "declared",
+     :flags [],
+     :positionals
+     [{:name "family",
+       :type "string",
+       :required false,
+       :variadic false,
+       :parse nil,
+       :doc "Optional workflow family, e.g. devflow."}]},
+    :deadline-class "standard",
+    :notes [],
+    :hook-class "read",
+    :use-when [],
+    :doc "Show active workflow roots, optionally filtered by family.",
+    :returns
+    {:type "map",
+     :required {"operation" "string"},
+     :optional {},
+     :extra "json"}}},
+  "devflow-squash-run"
+  {:schema-version 2,
+   :operation
+   {:name "devflow-squash-run",
+    :provenance "config",
+    :stream? false,
+    :raw-envelope false},
+   :source {:file ".skein/config.clj", :line 479},
+   :glossary {},
+   :node
+   {:children [],
+    :name "devflow-squash-run",
+    :failure-modes [],
+    :invocation
+    {:mode "declared",
+     :flags [],
+     :positionals
+     [{:name "feature",
+       :type "string",
+       :required true,
+       :variadic false,
+       :parse nil,
+       :doc
+       "Feature name; the workflow run id shared by all devflow ops."}]},
+    :deadline-class "standard",
+    :notes [],
+    :hook-class "mutating",
+    :use-when [],
+    :doc "Squash a finished devflow run into one digest strand.",
+    :returns
+    {:type "map",
+     :required {"operation" "string"},
+     :optional {},
+     :extra "json"}}},
   "devflow-status"
-  {:name "devflow-status",
-   :provenance config,
-   :stream? false,
-   :deadline-class :standard,
-   :hook-class :mutating,
-   :doc "Show the devflow root, ready steps, and done state for a feature.",
-   :arg-spec
-   {:op "devflow-status",
-    :doc "Show the devflow root, ready steps, and done state for a feature.",
-    :flags [],
-    :positionals
-    [{:name "feature",
-      :type "string",
-      :required true,
-      :variadic false,
-      :parse nil,
-      :doc "Feature name; the workflow run id shared by all devflow ops."}]}},
-  "flow-status"
-  {:name "flow-status",
-   :provenance config,
-   :stream? false,
-   :deadline-class :standard,
-   :hook-class :mutating,
-   :doc "Show workflow flow status for renderer consumption.",
-   :arg-spec
-   {:op "flow-status",
-    :doc "Show workflow flow status for renderer consumption.",
-    :flags [],
-    :positionals
-    [{:name "workflow-run-id",
-      :type "string",
-      :required true,
-      :variadic false,
-      :parse nil,
-      :doc "Workflow run id."}]}},
-  "carder-report"
-  {:name "carder-report",
-   :provenance config,
-   :stream? false,
-   :deadline-class :standard,
-   :hook-class :mutating,
-   :doc "Show the read-only carder graph hygiene report.",
-   :arg-spec
-   {:op "carder-report",
-    :doc "Show the read-only carder graph hygiene report.",
-    :flags
-    [{:name "days",
-      :flag "--days",
-      :type "int",
-      :required false,
-      :repeat false,
-      :parse nil,
-      :doc "Maximum active age, in days, before a strand is stale."}
-     {:name "include-plumbing",
-      :flag "--include-plumbing",
-      :type "boolean-token",
-      :required false,
-      :repeat false,
-      :parse nil,
-      :doc "Whether to include workflow and agent-run plumbing: true or false."}],
-    :positionals []}},
+  {:schema-version 2,
+   :operation
+   {:name "devflow-status",
+    :provenance "config",
+    :stream? false,
+    :raw-envelope false},
+   :source {:file ".skein/config.clj", :line 496},
+   :glossary {},
+   :node
+   {:children [],
+    :name "devflow-status",
+    :failure-modes [],
+    :invocation
+    {:mode "declared",
+     :flags [],
+     :positionals
+     [{:name "feature",
+       :type "string",
+       :required true,
+       :variadic false,
+       :parse nil,
+       :doc
+       "Feature name; the workflow run id shared by all devflow ops."}]},
+    :deadline-class "standard",
+    :notes [],
+    :hook-class "read",
+    :use-when [],
+    :doc
+    "Show the devflow root, ready steps, and done state for a feature.",
+    :returns
+    {:type "map",
+     :required {"operation" "string"},
+     :optional {},
+     :extra "json"}}},
   "devflow-describe"
-  {:name "devflow-describe",
-   :provenance config,
-   :stream? false,
-   :deadline-class :standard,
-   :hook-class :mutating,
-   :doc "Describe the devflow cycle or one registered stage.",
-   :arg-spec
-   {:op "devflow-describe",
+  {:schema-version 2,
+   :operation
+   {:name "devflow-describe",
+    :provenance "config",
+    :stream? false,
+    :raw-envelope false},
+   :source {:file ".skein/config.clj", :line 449},
+   :glossary {},
+   :node
+   {:children [],
+    :name "devflow-describe",
+    :failure-modes [],
+    :invocation
+    {:mode "declared",
+     :flags [],
+     :positionals
+     [{:name "stage-key",
+       :type "string",
+       :required false,
+       :variadic false,
+       :parse nil,
+       :doc "Optional stage key such as proposal or spec-plan."}]},
+    :deadline-class "standard",
+    :notes [],
+    :hook-class "read",
+    :use-when [],
     :doc "Describe the devflow cycle or one registered stage.",
-    :flags [],
-    :positionals
-    [{:name "stage-key",
-      :type "string",
-      :required false,
-      :variadic false,
-      :parse nil,
-      :doc "Optional stage key such as proposal or spec-plan."}]}},
-  "devflow-next"
-  {:name "devflow-next",
-   :provenance config,
-   :stream? false,
-   :deadline-class :standard,
-   :hook-class :mutating,
-   :doc "Show the ready devflow step views for a feature.",
-   :arg-spec
-   {:op "devflow-next",
-    :doc "Show the ready devflow step views for a feature.",
-    :flags [],
-    :positionals
-    [{:name "feature",
-      :type "string",
-      :required true,
-      :variadic false,
-      :parse nil,
-      :doc "Feature name; the workflow run id shared by all devflow ops."}]}},
+    :returns
+    {:type "map",
+     :required {"operation" "string"},
+     :optional {},
+     :extra "json"}}},
   "devflow-complete"
-  {:name "devflow-complete",
-   :provenance config,
-   :stream? false,
-   :deadline-class :standard,
-   :hook-class :mutating,
-   :doc "Close the current non-checkpoint devflow step for a feature.",
-   :arg-spec
-   {:op "devflow-complete",
-    :doc "Close the current non-checkpoint devflow step for a feature.",
-    :flags [],
-    :positionals
-    [{:name "feature",
-      :type "string",
-      :required true,
-      :variadic false,
-      :parse nil,
-      :doc "Feature name; the workflow run id shared by all devflow ops."}
-     {:name "tail",
-      :type "string",
-      :required false,
-      :variadic true,
-      :parse nil,
-      :doc "Optional notes and a trailing `step=<id>` selector."}]}},
+  {:schema-version 2,
+   :operation
+   {:name "devflow-complete",
+    :provenance "config",
+    :stream? false,
+    :raw-envelope false},
+   :source {:file ".skein/config.clj", :line 360},
+   :glossary {},
+   :node
+   {:children [],
+    :name "devflow-complete",
+    :failure-modes [],
+    :invocation
+    {:mode "declared",
+     :flags [],
+     :positionals
+     [{:name "feature",
+       :type "string",
+       :required true,
+       :variadic false,
+       :parse nil,
+       :doc
+       "Feature name; the workflow run id shared by all devflow ops."}
+      {:name "tail",
+       :type "string",
+       :required false,
+       :variadic true,
+       :parse nil,
+       :doc "Optional notes and a trailing `step=<id>` selector."}]},
+    :deadline-class "standard",
+    :notes [],
+    :hook-class "mutating",
+    :use-when [],
+    :doc
+    "Close the current non-checkpoint devflow step for a feature.",
+    :returns
+    {:type "map",
+     :required {"operation" "string"},
+     :optional {},
+     :extra "json"}}},
   "devflow-choose"
-  {:name "devflow-choose",
-   :provenance config,
-   :stream? false,
-   :deadline-class :standard,
-   :hook-class :mutating,
-   :doc "Record a devflow checkpoint choice for a feature, optionally with JSON input.",
-   :arg-spec
-   {:op "devflow-choose",
-    :doc "Record a devflow checkpoint choice for a feature, optionally with JSON input.",
-    :flags [],
-    :positionals
-    [{:name "feature",
-      :type "string",
-      :required true,
-      :variadic false,
-      :parse nil,
-      :doc "Feature name; the workflow run id shared by all devflow ops."}
-     {:name "choice",
-      :type "string",
-      :required true,
-      :variadic false,
-      :parse nil,
-      :doc "Checkpoint choice key, e.g. approved or abort."}
-     {:name "tail",
-      :type "string",
-      :required false,
-      :variadic true,
-      :parse nil,
-      :doc "Optional JSON-object input and a trailing `step=<id>` selector."}]}},
-  "devflow-archive"
-  {:name "devflow-archive",
-   :provenance config,
-   :stream? false,
-   :deadline-class :standard,
-   :hook-class :mutating,
-   :doc "Archive a finished devflow run into one digest strand.",
-   :arg-spec
-   {:op "devflow-archive",
-    :doc "Archive a finished devflow run into one digest strand.",
-    :flags [],
-    :positionals
-    [{:name "feature",
-      :type "string",
-      :required true,
-      :variadic false,
-      :parse nil,
-      :doc "Feature name; the workflow run id shared by all devflow ops."}]}},
+  {:schema-version 2,
+   :operation
+   {:name "devflow-choose",
+    :provenance "config",
+    :stream? false,
+    :raw-envelope false},
+   :source {:file ".skein/config.clj", :line 329},
+   :glossary {},
+   :node
+   {:children [],
+    :name "devflow-choose",
+    :failure-modes [],
+    :invocation
+    {:mode "declared",
+     :flags [],
+     :positionals
+     [{:name "feature",
+       :type "string",
+       :required true,
+       :variadic false,
+       :parse nil,
+       :doc
+       "Feature name; the workflow run id shared by all devflow ops."}
+      {:name "choice",
+       :type "string",
+       :required true,
+       :variadic false,
+       :parse nil,
+       :doc "Checkpoint choice key, e.g. approved or abort."}
+      {:name "tail",
+       :type "string",
+       :required false,
+       :variadic true,
+       :parse nil,
+       :doc
+       "Optional JSON-object input and a trailing `step=<id>` selector."}]},
+    :deadline-class "standard",
+    :notes [],
+    :hook-class "mutating",
+    :use-when [],
+    :doc
+    "Record a devflow checkpoint choice for a feature, optionally with JSON input.",
+    :returns
+    {:type "map",
+     :required {"operation" "string"},
+     :optional {},
+     :extra "json"}}},
+  "devflow-ready"
+  {:schema-version 2,
+   :operation
+   {:name "devflow-ready",
+    :provenance "config",
+    :stream? false,
+    :raw-envelope false},
+   :source {:file ".skein/config.clj", :line 295},
+   :glossary {},
+   :node
+   {:children [],
+    :name "devflow-ready",
+    :failure-modes [],
+    :invocation
+    {:mode "declared",
+     :flags [],
+     :positionals
+     [{:name "feature",
+       :type "string",
+       :required true,
+       :variadic false,
+       :parse nil,
+       :doc
+       "Feature name; the workflow run id shared by all devflow ops."}]},
+    :deadline-class "standard",
+    :notes [],
+    :hook-class "read",
+    :use-when [],
+    :doc "Show the ready devflow step views for a feature.",
+    :returns
+    {:type "map",
+     :required {"operation" "string"},
+     :optional {},
+     :extra "json"}}},
   "flow-await"
-  {:name "flow-await",
-   :provenance config,
-   :stream? false,
-   :deadline-class :unbounded,
-   :hook-class :mutating,
-   :doc "Block until a workflow run needs coordinator attention.",
-   :arg-spec
-   {:op "flow-await",
+  {:schema-version 2,
+   :operation
+   {:name "flow-await",
+    :provenance "config",
+    :stream? false,
+    :raw-envelope false},
+   :source {:file ".skein/config.clj", :line 601},
+   :glossary {},
+   :node
+   {:children [],
+    :name "flow-await",
+    :failure-modes [],
+    :invocation
+    {:mode "declared",
+     :flags
+     [{:name "timeout-secs",
+       :flag "--timeout-secs",
+       :type "int",
+       :required false,
+       :repeat false,
+       :parse nil,
+       :doc
+       "Optional timeout in seconds. Cap blocking awaits at ~50 minutes and re-issue, so provider prompt caches don't expire while idle."}],
+     :positionals
+     [{:name "workflow-run-id",
+       :type "string",
+       :required true,
+       :variadic false,
+       :parse nil,
+       :doc "Workflow run id."}]},
+    :deadline-class "unbounded",
+    :notes [],
+    :hook-class "mutating",
+    :use-when [],
     :doc "Block until a workflow run needs coordinator attention.",
-    :flags
-    [{:name "timeout-secs",
-      :flag "--timeout-secs",
-      :type "int",
-      :required false,
-      :repeat false,
-      :parse nil,
-      :doc "Optional timeout in seconds."}],
-    :positionals
-    [{:name "workflow-run-id",
-      :type "string",
-      :required true,
-      :variadic false,
-      :parse nil,
-      :doc "Workflow run id."}]}},
-  "devflow-history"
-  {:name "devflow-history",
-   :provenance config,
-   :stream? false,
-   :deadline-class :standard,
-   :hook-class :mutating,
-   :doc "Show ordered devflow run history for a feature.",
-   :arg-spec
-   {:op "devflow-history",
-    :doc "Show ordered devflow run history for a feature.",
-    :flags [],
-    :positionals
-    [{:name "feature",
-      :type "string",
-      :required true,
-      :variadic false,
-      :parse nil,
-      :doc "Feature name; the workflow run id shared by all devflow ops."}]}},
+    :returns
+    {:type "map", :required {}, :optional {}, :extra "json"}}},
   "hitl"
-  {:name "hitl",
-   :provenance config,
-   :stream? false,
-   :deadline-class :standard,
-   :hook-class :mutating,
-   :doc "Open an interactive HITL session: tracking strand + multiplexer run.",
-   :arg-spec
-   {:op "hitl",
-    :doc "Open an interactive HITL session: tracking strand + multiplexer run.",
-    :flags
-    [{:name "backend",
-      :flag "--backend",
-      :type "string",
-      :required false,
-      :repeat false,
-      :parse nil,
-      :doc "Multiplexer backend (default tmux)."}
-     {:name "context",
-      :flag "--context",
-      :type "string",
-      :required false,
-      :repeat false,
-      :parse nil,
-      :doc "Required session brief: the situation, artifacts, findings, and what to work through together."}
-     {:name "cwd",
-      :flag "--cwd",
-      :type "string",
-      :required false,
-      :repeat false,
-      :parse nil,
-      :doc "Working directory for the session (defaults to the workspace root)."}
-     {:name "harness",
-      :flag "--harness",
-      :type "string",
-      :required false,
-      :repeat false,
-      :parse nil,
-      :doc
-      "Interactive-capable harness (prompt-via :arg TUI, e.g. hitl-build — the default). Headless harnesses like build/worker die in a pane."}],
-    :positionals
-    [{:name "parent-id",
-      :type "string",
-      :required true,
-      :variadic false,
-      :parse nil,
-      :doc "Strand to hang the tracking strand under (kanban card, plan, or work root)."}
-     {:name "title",
-      :type "string",
-      :required true,
-      :variadic false,
-      :parse nil,
-      :doc "Short session title."}]}},
+  {:schema-version 2,
+   :operation
+   {:name "hitl",
+    :provenance "config",
+    :stream? false,
+    :raw-envelope false},
+   :source {:file ".skein/config.clj", :line 652},
+   :glossary {},
+   :node
+   {:children [],
+    :name "hitl",
+    :failure-modes [],
+    :invocation
+    {:mode "declared",
+     :flags
+     [{:name "backend",
+       :flag "--backend",
+       :type "string",
+       :required false,
+       :repeat false,
+       :parse nil,
+       :doc "Multiplexer backend (default tmux)."}
+      {:name "context",
+       :flag "--context",
+       :type "string",
+       :required false,
+       :repeat false,
+       :parse nil,
+       :doc
+       "Required session brief: the situation, artifacts, findings, and what to work through together."}
+      {:name "cwd",
+       :flag "--cwd",
+       :type "string",
+       :required false,
+       :repeat false,
+       :parse nil,
+       :doc
+       "Working directory for the session (defaults to the workspace root)."}
+      {:name "harness",
+       :flag "--harness",
+       :type "string",
+       :required false,
+       :repeat false,
+       :parse nil,
+       :doc
+       "Interactive-capable harness (prompt-via :arg TUI, e.g. hitl-fable — the default). Headless harnesses like build die in a pane."}],
+     :positionals
+     [{:name "parent-id",
+       :type "string",
+       :required true,
+       :variadic false,
+       :parse nil,
+       :doc
+       "Strand to hang the tracking strand under (kanban card, plan, or work root)."}
+      {:name "title",
+       :type "string",
+       :required true,
+       :variadic false,
+       :parse nil,
+       :doc "Short session title."}]},
+    :deadline-class "standard",
+    :notes [],
+    :hook-class "mutating",
+    :use-when [],
+    :doc
+    "Open an interactive HITL session: tracking strand + multiplexer run.",
+    :returns
+    {:type "map",
+     :required {"operation" "string"},
+     :optional {},
+     :extra "json"}}},
   "devflow-start"
-  {:name "devflow-start",
-   :provenance config,
-   :stream? false,
-   :deadline-class :standard,
-   :hook-class :mutating,
-   :doc "Start the devflow lifecycle for a feature.",
-   :arg-spec
-   {:op "devflow-start",
+  {:schema-version 2,
+   :operation
+   {:name "devflow-start",
+    :provenance "config",
+    :stream? false,
+    :raw-envelope false},
+   :source {:file ".skein/config.clj", :line 272},
+   :glossary {},
+   :node
+   {:children [],
+    :name "devflow-start",
+    :failure-modes [],
+    :invocation
+    {:mode "declared",
+     :flags [],
+     :positionals
+     [{:name "feature",
+       :type "string",
+       :required true,
+       :variadic false,
+       :parse nil,
+       :doc
+       "Feature name; the workflow run id shared by all devflow ops."}
+      {:name "worktree-check",
+       :type "string",
+       :required false,
+       :variadic false,
+       :parse nil,
+       :doc
+       "Worktree policy: required (default) or already-in-worktree-ok."}]},
+    :deadline-class "standard",
+    :notes [],
+    :hook-class "mutating",
+    :use-when [],
     :doc "Start the devflow lifecycle for a feature.",
-    :flags [],
-    :positionals
-    [{:name "feature",
-      :type "string",
-      :required true,
-      :variadic false,
-      :parse nil,
-      :doc "Feature name; the workflow run id shared by all devflow ops."}
-     {:name "worktree-check",
-      :type "string",
-      :required false,
-      :variadic false,
-      :parse nil,
-      :doc "Worktree policy: required (default) or already-in-worktree-ok."}]}},
+    :returns
+    {:type "map",
+     :required {"operation" "string"},
+     :optional {},
+     :extra "json"}}},
   "devflow-conventions"
-  {:name "devflow-conventions",
-   :provenance config,
-   :stream? false,
-   :deadline-class :standard,
-   :hook-class :mutating,
-   :doc "Show repo-local spools, ops, patterns, and queries.",
-   :arg-spec
-   {:op "devflow-conventions",
+  {:schema-version 2,
+   :operation
+   {:name "devflow-conventions",
+    :provenance "config",
+    :stream? false,
+    :raw-envelope false},
+   :source {:file ".skein/config.clj", :line 529},
+   :glossary {},
+   :node
+   {:children [],
+    :name "devflow-conventions",
+    :failure-modes [],
+    :invocation {:mode "declared", :flags [], :positionals []},
+    :deadline-class "standard",
+    :notes [],
+    :hook-class "read",
+    :use-when [],
     :doc "Show repo-local spools, ops, patterns, and queries.",
-    :flags [],
-    :positionals []}},
-  "current-dags"
-  {:name "current-dags",
-   :provenance config,
-   :stream? false,
-   :deadline-class :standard,
-   :hook-class :mutating,
-   :doc "Show active parent-of work DAGs with active depends-on edges.",
-   :arg-spec
-   {:op "current-dags",
-    :doc "Show active parent-of work DAGs with active depends-on edges.",
-    :flags [],
-    :positionals []}},
+    :returns
+    {:type "map",
+     :required {"operation" "string"},
+     :optional {},
+     :extra "json"}}},
+  "devflow-run-history"
+  {:schema-version 2,
+   :operation
+   {:name "devflow-run-history",
+    :provenance "config",
+    :stream? false,
+    :raw-envelope false},
+   :source {:file ".skein/config.clj", :line 466},
+   :glossary {},
+   :node
+   {:children [],
+    :name "devflow-run-history",
+    :failure-modes [],
+    :invocation
+    {:mode "declared",
+     :flags [],
+     :positionals
+     [{:name "feature",
+       :type "string",
+       :required true,
+       :variadic false,
+       :parse nil,
+       :doc
+       "Feature name; the workflow run id shared by all devflow ops."}]},
+    :deadline-class "standard",
+    :notes [],
+    :hook-class "read",
+    :use-when [],
+    :doc "Show ordered devflow run history for a feature.",
+    :returns
+    {:type "map",
+     :required {"operation" "string"},
+     :optional {},
+     :extra "json"}}},
   "devflow-choices"
-  {:name "devflow-choices",
-   :provenance config,
-   :stream? false,
-   :deadline-class :standard,
-   :hook-class :mutating,
-   :doc "Explain the current devflow checkpoint choices for a feature.",
-   :arg-spec
-   {:op "devflow-choices",
-    :doc "Explain the current devflow checkpoint choices for a feature.",
-    :flags [],
-    :positionals
-    [{:name "feature",
-      :type "string",
-      :required true,
-      :variadic false,
-      :parse nil,
-      :doc "Feature name; the workflow run id shared by all devflow ops."}
-     {:name "step-selector",
-      :type "string",
-      :required false,
-      :variadic true,
-      :parse nil,
-      :doc "Optional trailing `step=<id>` selector for a specific ready step."}]}}},
+  {:schema-version 2,
+   :operation
+   {:name "devflow-choices",
+    :provenance "config",
+    :stream? false,
+    :raw-envelope false},
+   :source {:file ".skein/config.clj", :line 308},
+   :glossary {},
+   :node
+   {:children [],
+    :name "devflow-choices",
+    :failure-modes [],
+    :invocation
+    {:mode "declared",
+     :flags [],
+     :positionals
+     [{:name "feature",
+       :type "string",
+       :required true,
+       :variadic false,
+       :parse nil,
+       :doc
+       "Feature name; the workflow run id shared by all devflow ops."}
+      {:name "step-selector",
+       :type "string",
+       :required false,
+       :variadic true,
+       :parse nil,
+       :doc
+       "Optional trailing `step=<id>` selector for a specific ready step."}]},
+    :deadline-class "standard",
+    :notes [],
+    :hook-class "read",
+    :use-when [],
+    :doc
+    "Explain the current devflow checkpoint choices for a feature.",
+    :returns
+    {:type "map",
+     :required {"operation" "string"},
+     :optional {},
+     :extra "json"}}}},
  :queries
  {"feature-active"
-  {:params [:feature], :where [:and [:= :state "active"] [:= [:attr :feature] [:param :feature]]]},
+  {:params [:feature],
+   :where
+   [:and
+    [:= :state "active"]
+    [:= [:attr :feature] [:param :feature]]]},
   "feature-work"
   {:params [:feature],
    :where
@@ -416,18 +573,28 @@
     [:= [:attr :owner] [:param :owner]]
     [:in [:attr :kind] ["task" "review"]]]},
   "feature-run"
-  {:params [:feature], :where [:and [:= :state "active"] [:= [:attr "workflow/run-id"] [:param :feature]]]},
-  "workflow-runs" [:and [:= :state "active"] [:= [:attr "workflow/role"] "molecule"]],
+  {:params [:feature],
+   :where
+   [:and
+    [:= :state "active"]
+    [:= [:attr "workflow/run-id"] [:param :feature]]]},
+  "workflow-runs"
+  [:and [:= :state "active"] [:= [:attr "workflow/role"] "root"]],
   "devflow-runs"
   [:and
    [:= :state "active"]
-   [:= [:attr "workflow/role"] "molecule"]
+   [:= [:attr "workflow/role"] "root"]
    [:= [:attr "workflow/family"] "devflow"]],
   "work"
   [:and
    [:= :state "active"]
-   [:or [:missing [:attr "agent-run/run"]] [:not [:= [:attr "agent-run/run"] "true"]]]
-   [:or [:missing [:attr "kanban/status"]] [:not [:= [:attr "kanban/status"] "refinement"]]]
+   [:or
+    [:missing [:attr "agent-run/run"]]
+    [:not [:= [:attr "agent-run/run"] "true"]]]
+   [:or
+    [:missing [:attr "kanban/lane"]]
+    [:not [:= [:attr "kanban/lane"] "refinement"]]]
    [:or
     [:missing [:attr "workflow/role"]]
-    [:not [:in [:attr "workflow/role"] ["molecule" "digest" "procedure"]]]]]}}
+    [:not
+     [:in [:attr "workflow/role"] ["root" "digest" "procedure"]]]]]}}

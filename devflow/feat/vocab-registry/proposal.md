@@ -153,14 +153,12 @@ fails, and cold start / `reload!` surfaces the conflicting-owner data — no sen
 
 ## PROP-Vr-001.C4 — the queryable read surface
 
-`skein.api.vocab.alpha` exposes read functions modelled on `relations.alpha`'s `relation`/`operational-relations`/
-`annotation-relations` trio (`alpha.clj:72-85`):
+`skein.api.vocab.alpha` exposes the data-first `declarations` read:
 
 - **`(vocab/declarations runtime)`** — all declarations, sorted deterministically (by `[:kind :name]`), each the full C1 map.
 - **`(vocab/declarations runtime {:kind :attr-namespace})`** / `{:kind :edge}` — one dimension.
-- **`(vocab/declaration runtime kind name)`** — the entry for one namespace or edge, or `nil` when undeclared (matching
-  `relations.alpha/relation` returning `nil` for an uncataloged name — an undeclared namespace is still a valid userland
-  namespace, NG1).
+- Callers derive a singular namespace or edge lookup by filtering the full declaration vector. An undeclared namespace
+  remains a valid userland namespace (NG1).
 
 All take `runtime` as the first argument (the shared-spool discipline, `docs/writing-shared-spools.md` rule 1); there is no
 ambient-singleton path.

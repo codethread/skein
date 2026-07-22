@@ -10,11 +10,15 @@ import (
 )
 
 const (
-	DefaultInitCLJ        = "(require '[skein.api.current.alpha :as current]\n         '[skein.api.runtime.alpha :as runtime])\n\n(def runtime (current/runtime))\n\n(runtime/sync! runtime)\n;; batteries ships on the classpath (:paths), so require it before its use!.\n(require 'skein.spools.batteries)\n(runtime/use! runtime :skein/spools-batteries\n  {:ns 'skein.spools.batteries\n   :call 'skein.spools.batteries/activate!})\n"
+	DefaultInitCLJ        = "(require '[skein.api.current.alpha :as current]\n         '[skein.api.runtime.alpha :as runtime])\n\n(def runtime (current/runtime))\n\n;; batteries ships on the classpath (:paths), not a synced spool root, so it\n;; declares no :spools and a fresh world needs zero sync approval. Require it so\n;; the module source load classifies it as classpath-owned; contribute publishes\n;; its CLI ops and reconcile seeds the glossary outcomes they reference.\n(require 'skein.spools.batteries)\n(runtime/module! runtime :skein/spools-batteries\n                 {:ns 'skein.spools.batteries\n                  :contribute 'skein.spools.batteries/contribute\n                  :reconcile 'skein.spools.batteries/reconcile})\n"
 	DefaultSkeinGitignore = "config.local.json\ninit.local.clj\nspools.local.edn\nstate/\ndata/\nweaver.*\n*.sqlite\n*.sqlite-*\n"
 )
 
 func BootstrapWorld(cwd, configDir, source string) (World, error) {
+	return bootstrapWorld(cwd, configDir, source, true)
+}
+
+func bootstrapWorld(cwd, configDir, source string, injectGuidance bool) (World, error) {
 	world, err := BootstrapTargetWorld(cwd, configDir)
 	if err != nil {
 		return World{}, err
@@ -48,7 +52,7 @@ func BootstrapWorld(cwd, configDir, source string) (World, error) {
 	if _, _, err := Load(world.ConfigDir); err != nil {
 		return World{}, err
 	}
-	if configDir == "" {
+	if configDir == "" && injectGuidance {
 		if err := ensureAgentGuidance(filepath.Dir(world.ConfigDir)); err != nil {
 			return World{}, err
 		}
@@ -69,8 +73,8 @@ const agentGuidanceSection = agentGuidanceMarker + `
 
 This repo uses Skein strands to track work. Orientation ships in the ` + "`mill`" + ` CLI:
 
-- ` + "`mill skein prime`" + ` — where the Skein source and docs live, and how to extend this repo's ` + "`.skein/`" + ` config.
-- ` + "`mill strand prime`" + ` — the strand planning/tracking workflow; run it before multi-step work.
+- ` + "`mill strand prime`" + ` — the day-to-day strand workflow; run it before multi-step work.
+- ` + "`mill skein prime`" + ` — read on demand, only when building on this repo's ` + "`.skein/`" + ` config or spools.
 ` + agentGuidanceEndMarker + `
 `
 

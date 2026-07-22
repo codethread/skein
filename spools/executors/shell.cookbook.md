@@ -33,7 +33,7 @@ Each recipe cites the honest source it was distilled from — the shell-executor
 
 **Situation.** A stage produced a file, and the next stage must not start unless that file exists and is non-empty. You want the workflow to block on a real filesystem check, not a self-reported "done".
 
-**Composition.** Model the check as an ordinary `workflow/gate` with waiter `:shell`, carrying the command as `shell/argv`. The shell executor watches for the gate to become ready, runs `test -s <path>` directly, and — on exit 0 — closes the gate through `workflow/complete!`. A non-zero exit stamps `shell/error` and leaves the gate ready.
+**Composition.** Model the check as an ordinary `workflow/gate` with waiter `:shell`, carrying the command as `shell/argv`. The shell executor watches for the gate to become ready, runs `test -s <path>` directly, and — on exit 0 — closes the gate through `workflow/complete!`. A non-zero exit stamps `gate/error` and leaves the gate ready.
 
 ```clojure
 (require '[skein.spools.workflow :as workflow])
@@ -53,7 +53,7 @@ Each recipe cites the honest source it was distilled from — the shell-executor
 (workflow/complete! "release-1")            ; finish :build; :verify becomes ready
 ;; the shell executor runs `test -s target/app.jar`; on exit 0 it stamps the gate
 ;; workflow/outcome-by = "shell", workflow/outcome-notes = "shell command exited 0",
-;; and :ship becomes ready. A missing/empty jar stamps shell/error instead.
+;; and :ship becomes ready. A missing/empty jar stamps gate/error instead.
 ```
 
 **Why this shape.**
@@ -106,7 +106,7 @@ Honest source: the worked example in [`executors/shell.md`](./shell.md#worked-ex
   asked for `sh`, so you got `sh` (contract
   [`executors/shell.md`, "Gate request attributes"](./shell.md#gate-request-attributes)).
 - **A non-zero exit is a real failure.** The `for` loop `exit 1`s on the first
-  empty file; the shell executor stamps `shell command exited 1` onto `shell/error` with the
+  empty file; the shell executor stamps `shell command exited 1` onto `gate/error` with the
   captured output tail, and the gate stays ready and discoverable rather than
   advancing the workflow.
 
@@ -155,15 +155,18 @@ Honest source: the argv contract in [`executors/shell.md`](./shell.md#gate-reque
   gate downstream of a `:subagent` gate keeps each executor single-purpose and
   the verification independently inspectable and recoverable.
 
-Honest source: the `depends-on` gate chaining in [`workflow.md`, "Gates"](../workflow.md#3-definition-layer), the subagent-executor `:subagent` contract in [`subagent.md`](./subagent.md), and the dependent `:shell` gate test in ``test/skein/spools/executors/shell_test.clj``.
+Honest source: the `depends-on` gate chaining in [`workflow.md`,
+"Gates"](../workflow.md#3-definition-layer), the subagent-executor `:subagent` contract in
+[`agent-harness.spool/agent-run/subagent.md`][subagent-contract], and the dependent `:shell` gate
+test in ``test/skein/spools/executors/shell_test.clj``.
 
 ---
 
-## Recipe: Recovering a stalled `shell/error` gate
+## Recipe: Recovering a stalled `gate/error` gate
 
-**Situation.** A shell check failed — the command exited non-zero, timed out, or the argv was malformed. The gate is stuck with `shell/error` and the shell executor is skipping it. You've fixed the underlying problem and want the check to run again.
+**Situation.** A shell check failed — the command exited non-zero, timed out, or the argv was malformed. The gate is stuck with `gate/error` and the shell executor is skipping it. You've fixed the underlying problem and want the check to run again.
 
-**Composition.** Discovery is the `stalled-shell-gates` named query (or the `gate-stalled?` predicate on a gate view). Recovery is a single mutation: **clear the gate's `shell/error` attribute** (optionally rewriting `shell/argv` or `shell/cwd`). The next scan finds a ready, un-errored, un-claimed `:shell` gate and re-runs the deterministic check.
+**Composition.** Discovery is the `stalled-shell-gates` named query (or the `gate-stalled?` predicate on a gate view). Recovery is a single mutation: **remove the gate's `gate/error` attribute** (optionally rewriting `shell/argv` or `shell/cwd`). Removal means the key is *absent*, not blank — trusted Clojure passes a nil patch (`{"gate/error" nil}`); from the CLI, `strand update <gate-id> --attributes '{"gate/error":null}'`. `--attr gate/error=` stores `""`, which is present data and leaves the gate stalled. The next scan finds a ready, un-errored, un-claimed `:shell` gate and re-runs the deterministic check.
 
 ```clojure
 (require '[skein.api.weaver.alpha :as weaver]
@@ -171,31 +174,32 @@ Honest source: the `depends-on` gate chaining in [`workflow.md`, "Gates"](../wor
 
 (def rt (current/runtime))              ; the active weaver runtime
 
-;; find stalled shell gates (any gate carrying shell/error)
+;; find stalled shell gates (any gate carrying gate/error)
 (weaver/list-query rt 'stalled-shell-gates {})
 
-;; recover: fix the underlying problem, then clear the error.
-;; Clearing shell/error is what lets the next scan re-run the check.
-(weaver/update rt gate-id {:attributes {"shell/error" nil
-                                     "shell/argv"  ["clojure" "-M:test"]}})
+;; recover: fix the underlying problem, then remove the error.
+;; Removing gate/error (a nil patch, not a blank stamp) re-arms the next scan.
+(weaver/update! rt gate-id {:attributes {"gate/error" nil
+                                        "shell/argv" ["clojure" "-M:test"]}})
 ;; next scan re-runs the check and closes the gate on exit 0.
 ```
 
 **Why this shape.**
 
-- **Clearing the error, not retrying, is the recovery verb.** Because the check is
-  deterministic and idempotent, a gate carrying `shell/error` (or a live
+- **Removing the error, not retrying, is the recovery verb.** Because the check is
+  deterministic and idempotent, a gate carrying `gate/error` (or a live
   `shell/running` claim) is skipped on every later scan — so an expensive
   `clojure -M:test` runs once per deliberate request, not on every graph mutation.
-  Blanking `shell/error` is the explicit "run it again" signal (contract
+  Removing `gate/error` — making the key absent — is the explicit "run it again"
+  signal; a blank `""` is present data and leaves the gate stalled (contract
   [`executors/shell.md`, "Failure and recovery"](./shell.md#failure-and-recovery)).
 - **Recovery is strictly simpler than the subagent executor's.** There is no separate run strand
   to reconcile — the failure detail lives on the gate itself. A weaver crash
-  between claim and outcome leaves `shell/running` with no live process; clearing
-  it re-runs the same idempotent check. `shell/running` and `shell/error` are
+  between claim and outcome leaves `shell/running` with no live process; removing
+  it re-runs the same idempotent check. `shell/running` and `gate/error` are
   distinct markers, so a crashed-mid-run gate is never confused with a failed one.
 - **The failure is loud and local, never lost.** A failed check does not advance
-  the workflow and does not masquerade as a completed step: it stamps `shell/error`
+  the workflow and does not masquerade as a completed step: it stamps `gate/error`
   with the exit code and a bounded output tail and leaves the gate ready, so it
   surfaces through `stalled-shell-gates` and through `await!` (which reads the
   registered `:shell` executor) — a graph fact, not a dropped result.
@@ -212,5 +216,7 @@ Honest source: the recovery and attention sections in [`executors/shell.md`](./s
   public fn referenced above.
 - [`workflow.cookbook.md`](../workflow.cookbook.md) — the gate and fan-out recipes
   that author the gates the shell executor fulfils.
-- [`subagent.md`](./subagent.md) — the `:subagent` sibling the shell executor composes
-  with.
+- [`ct.spools.executors.subagent`][subagent-contract] — the external `:subagent` sibling the shell
+  executor composes with.
+
+[subagent-contract]: https://github.com/codethread/agent-harness.spool/blob/d01e6ce6555d370dc5c9e4e0371cdabe10fab491/agent-run/subagent.md

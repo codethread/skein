@@ -8,7 +8,8 @@
             [skein.core.db :as db]
             [skein.core.weaver.metadata :as metadata]
             [skein.core.weaver.runtime :as runtime]
-            [skein.repl :as repl])
+            [skein.repl :as repl]
+            [skein.source-file :as source-file])
   (:import [java.time Instant]))
 
 (def cli-smoke-db "smoke-cli.sqlite")
@@ -17,6 +18,7 @@
 (def mill-bin (.getAbsolutePath (java.io.File. "cli/bin/mill")))
 (def checkout-root (.getAbsolutePath (java.io.File. ".")))
 (def stream-op-fixture (str checkout-root "/test/fixtures/stream-op-init.clj"))
+(def help-transform-fixture (str checkout-root "/test/fixtures/help-transform-init.clj"))
 (def smoke-run-root
   (doto (java.io.File. "/tmp" (str "sk" (.pid (java.lang.ProcessHandle/current))))
     (.mkdirs)))
@@ -222,8 +224,8 @@
   (assert (clojure.string/includes? haystack needle)
           (str message "\nmissing: " (pr-str needle) "\nin: " haystack)))
 
-(defn append-stream-op-fixture! [init-path]
-  (spit init-path (str (slurp init-path) "\n(load-file " (pr-str stream-op-fixture) ")\n")))
+(defn append-load-fixture! [init-path fixture]
+  (spit init-path (str (slurp init-path) "\n(load-file " (pr-str fixture) ")\n")))
 
 (defn smoke-cli-help! []
   (let [root (run-process! "Go CLI root help succeeds" [strand-bin "--help"])
@@ -251,8 +253,10 @@
     (delete-tree! (smoke-workspace (str db-file ".dispatcher")))
     (run-mill-config! workspace "init")
     ;; Register the pinned streaming-op fixture from the workspace init.clj so the
-    ;; weaver serves `test-stream` alongside the shipped batteries ops.
-    (append-stream-op-fixture! init-path)
+    ;; weaver serves `test-stream` alongside the shipped batteries ops, and elect a
+    ;; default help transform so `strand help` exercises the verbatim relay.
+    (append-load-fixture! init-path stream-op-fixture)
+    (append-load-fixture! init-path help-transform-fixture)
     (start-weaver-config! workspace)
     (try
       (let [design (cli-add-config! workspace "Design model" "--state" "closed" "--attr" "priority=high")
@@ -295,13 +299,25 @@
         (let [all (titles (parse-json (run-strand-config! workspace "list")))]
           (doseq [t ["Design model" "Write docs v2" "Body via stdin" "Body via payload" "Large body"]]
             (assert (some #{t} all) (str "dispatcher list returns all strands, missing: " t "\nin: " (pr-str all)))))
-        ;; Live op discovery through the core help op.
-        (let [help-list (parse-json (run-strand-config! workspace "help"))
-              help-add (parse-json (run-strand-config! workspace "help" "add"))]
-          (assert (some #(= "add" (:name %)) (:ops help-list)) "strand help lists the add batteries op")
-          (assert (some #(= "test-stream" (:name %)) (:ops help-list)) "strand help lists the fixture stream op")
-          (assert= "add" (:name help-add) "strand help <op> returns the op detail")
-          (assert (contains? help-add :arg-spec) "strand help <op> renders the op arg-spec"))
+        ;; Live op discovery through the core help op. With a default help
+        ;; transform elected (help-transform fixture), `--json` bypasses it to the
+        ;; raw canonical envelope (DELTA-Dtf-001.CC4).
+        (let [help-list (parse-json (run-strand-config! workspace "help" "--json"))
+              help-add (parse-json (run-strand-config! workspace "help" "--json" "add"))]
+          (assert (= 2 (:schema-version help-list)) "strand help --json catalog carries the versioned schema")
+          (assert (some #(= "add" (get-in % [:operation :name])) (:ops help-list)) "strand help --json lists the add batteries op")
+          (assert (some #(= "test-stream" (get-in % [:operation :name])) (:ops help-list)) "strand help --json lists the fixture stream op")
+          (assert= "add" (get-in help-add [:operation :name]) "strand help --json <op> returns the op detail envelope")
+          (assert (= "add" (get-in help-add [:node :name])) "strand help --json <op> projects the op's fractal node"))
+        ;; The elected transform's output relays through the full socket -> mill ->
+        ;; client chain VERBATIM: raw text, never a JSON-quoted string
+        ;; (DELTA-Dtf-002.CC1). The `--json` floor above proves the same op still
+        ;; yields the canonical envelope when asked.
+        (let [help-text (run-strand-config! workspace "help" "add")]
+          (assert (clojure.string/starts-with? help-text "RENDERED add:")
+                  (str "elected help transform relays raw text verbatim\n" help-text))
+          (assert (not (clojure.string/starts-with? (clojure.string/trim help-text) "\""))
+                  (str "verbatim help text must not be JSON-quoted\n" help-text)))
         ;; Unknown ops fail non-zero with the registry's available-names domain error.
         (assert-contains (run-strand-config-fails! workspace "no-such-op")
                          "Operation not found"
@@ -340,8 +356,8 @@
       (assert (.isFile config-file) "clean bootstrap preserves/creates config.json")
       (assert-file-contents (java.io.File. workspace "spools.edn") "{:spools {}}\n" "clean bootstrap creates empty spools.edn")
       (let [init-contents (slurp init-file)]
-        (doseq [needle ["(runtime/sync! runtime)" "(require 'skein.spools.batteries)" ":skein/spools-batteries" "skein.spools.batteries/activate!"]]
-          (assert-contains init-contents needle "clean bootstrap creates runtime sync + batteries init.clj template")))
+        (doseq [needle ["(require 'skein.spools.batteries)" "(runtime/module! runtime :skein/spools-batteries" ":ns 'skein.spools.batteries" "skein.spools.batteries/contribute" "skein.spools.batteries/reconcile"]]
+          (assert-contains init-contents needle "clean bootstrap creates the batteries module init.clj template")))
       (assert (.isDirectory (java.io.File. workspace "spools")) "clean bootstrap creates spools directory")
       (assert (not (.exists (java.io.File. workspace ".git"))) "clean bootstrap does not run git init")
       (let [strand-id (cli-add-config! workspace "Bootstrap clean strand" "--attr" "owner=ct")]
@@ -359,16 +375,17 @@
         init-path (java.io.File. workspace "init.clj")
         original-config "{\"configFormat\":\"alpha\"}\n"
         original-spools "{:spools {}}\n;; user comment\n"
-        original-init "(require '[skein.api.current.alpha :as current]
-         '[skein.api.runtime.alpha :as runtime]
-         '[skein.api.graph.alpha :as graph])
-(def runtime (current/runtime))
-(require 'skein.spools.batteries)
-(runtime/use! runtime :skein/spools-batteries
-  {:ns 'skein.spools.batteries
-   :call 'skein.spools.batteries/activate!})
-(graph/register-query! runtime 'dirty [:= [:attr :owner] \"dirty\"])
-"]
+        original-init (source-file/render-forms
+                       ['(require '[skein.api.current.alpha :as current]
+                                  '[skein.api.runtime.alpha :as runtime]
+                                  '[skein.api.graph.alpha :as graph])
+                        '(def runtime (current/runtime))
+                        '(require 'skein.spools.batteries)
+                        '(runtime/module! runtime :skein/spools-batteries
+                                          {:ns 'skein.spools.batteries
+                                           :contribute 'skein.spools.batteries/contribute
+                                           :reconcile 'skein.spools.batteries/reconcile})
+                        '(graph/register-query! runtime 'dirty [:= [:attr :owner] "dirty"])])]
     (delete-tree! (smoke-workspace (str db-file ".bootstrap-dirty")))
     (.mkdirs (java.io.File. workspace))
     (.mkdirs (java.io.File. workspace ".git"))
@@ -391,77 +408,74 @@
         (stop-weaver-config! workspace)
         (delete-tree! (smoke-workspace (str db-file ".bootstrap-dirty")))))))
 
+(defn startup-transformation-forms
+  "Return the smoke.startup init.clj forms, recording the async event marker
+  at `event-marker-path`."
+  [event-marker-path]
+  ['(ns smoke.startup
+      (:require [clojure.spec.alpha :as s]
+                [skein.api.current.alpha :as current]
+                [skein.api.runtime.alpha :as runtime]
+                [skein.api.events.alpha :as events]
+                [skein.api.graph.alpha :as graph]
+                [skein.api.hooks.alpha :as hooks]
+                [skein.api.patterns.alpha :as patterns]))
+   '(def runtime (current/runtime))
+   '(require 'skein.spools.batteries)
+   '(runtime/module! runtime :skein/spools-batteries
+                     {:ns 'skein.spools.batteries
+                      :contribute 'skein.spools.batteries/contribute
+                      :reconcile 'skein.spools.batteries/reconcile})
+   '(graph/register-query! runtime 'smoke-owned [:= [:attr :owner] "smoke"])
+   '(graph/register-query! runtime 'smoke-owner {:params [:owner] :where [:= [:attr :owner] [:param :owner]]})
+   '(s/def :smoke.startup/title string?)
+   '(s/def :smoke.startup/review-input (s/keys :req-un [:smoke.startup/title]))
+   '(defn reject-blocked-owner [ctx]
+      (when (= "blocked" (get-in ctx [:strand/after :attributes :owner]))
+        (throw (ex-info "smoke hook rejected blocked owner" {:code :smoke/blocked-owner}))))
+   '(hooks/register-hook! runtime :smoke/reject-blocked-owner #{:strand/add-before-commit} 'smoke.startup/reject-blocked-owner)
+   '(defn review-pattern [{:keys [input]}]
+      (let [title (:title input)]
+        [{:ref 'impl :title title :attributes {:owner "smoke"}}
+         {:ref 'review :title (str "Review: " title) :attributes {:kind "review"} :edges [{:type "depends-on" :to 'impl}]}]))
+   '(patterns/register-pattern! runtime 'review-task 'smoke.startup/review-pattern :smoke.startup/review-input)
+   (list 'def 'event-marker event-marker-path)
+   '(defn record-added! [event]
+      (spit event-marker (:title (:strand event))))
+   '(events/register-handler! runtime :smoke/record-added #{:strand/added} 'smoke.startup/record-added! {:source :smoke})])
+
 (defn smoke-startup-transformations! [db-file]
   (let [workspace (bootstrap-workspace db-file "startup-transform")
         init-path (java.io.File. workspace "init.clj")
         event-marker (java.io.File. workspace "event-handler.txt")
-        lib-root (java.io.File. workspace "spools/smoke-runtime-lib")]
+        lib-root (java.io.File. workspace "spools/smoke-runtime-lib")
+        startup-forms (startup-transformation-forms (.getCanonicalPath event-marker))]
     (delete-tree! (smoke-workspace (str db-file ".startup-transform")))
     (write-client-config-to-dir! workspace)
     (.mkdirs (java.io.File. lib-root "src"))
     (spit (java.io.File. lib-root "deps.edn") "{:paths [\"src\"]}\n")
     (spit (java.io.File. workspace "spools.edn") "{:spools {smoke/runtime-lib {:local/root \"spools/smoke-runtime-lib\"}}}\n")
-    (spit init-path
-          (str "(ns smoke.startup\n"
-               "  (:require [clojure.spec.alpha :as s]\n"
-               "            [skein.api.current.alpha :as current]\n"
-               "            [skein.api.runtime.alpha :as runtime]\n"
-               "            [skein.api.events.alpha :as events]\n"
-               "            [skein.api.graph.alpha :as graph]\n"
-               "            [skein.api.hooks.alpha :as hooks]\n"
-               "            [skein.api.views.alpha :as views]\n"
-               "            [skein.api.patterns.alpha :as patterns]))\n"
-               "(def runtime (current/runtime))\n"
-               "(runtime/sync! runtime)\n"
-               "(require 'skein.spools.batteries)\n"
-               "(runtime/use! runtime :skein/spools-batteries\n"
-               "  {:ns 'skein.spools.batteries\n"
-               "   :call 'skein.spools.batteries/activate!})\n"
-               "(graph/register-query! runtime 'smoke-owned [:= [:attr :owner] \"smoke\"])\n"
-               "(graph/register-query! runtime 'smoke-owner {:params [:owner] :where [:= [:attr :owner] [:param :owner]]})\n"
-               "(s/def ::title string?)\n"
-               "(s/def ::review-input (s/keys :req-un [::title]))\n"
-               "(defn reject-blocked-owner [ctx]\n"
-               "  (when (= \"blocked\" (get-in ctx [:strand/after :attributes :owner]))\n"
-               "    (throw (ex-info \"smoke hook rejected blocked owner\" {:code :smoke/blocked-owner}))))\n"
-               "(hooks/register! runtime :smoke/reject-blocked-owner #{:strand/add-before-commit} 'smoke.startup/reject-blocked-owner)\n"
-               "(defn review-pattern [{:keys [input]}]\n"
-               "  (let [title (:title input)]\n"
-               "    [{:ref 'impl :title title :attributes {:owner \"smoke\"}}\n"
-               "     {:ref 'review :title (str \"Review: \" title) :attributes {:kind \"review\"} :edges [{:type \"depends-on\" :to 'impl}]}]))\n"
-               "(patterns/register-pattern! runtime 'review-task 'smoke.startup/review-pattern ::review-input)\n"
-               "(def event-marker "
-               (pr-str (.getCanonicalPath event-marker))
-               ")\n"
-               "(defn record-added! [event]\n"
-               "  (spit event-marker (:title (:strand event))))\n"
-               "(defn smoke-owned-view [{:keys [params]}]\n"
-               "  (let [runtime (current/runtime)\n"
-               "        ids (graph/query-ids runtime 'smoke-owned {})]\n"
-               "    {:params params\n"
-               "     :ids ids\n"
-               "     :strands (graph/strands-by-ids runtime ids)}))\n"
-               "(views/register-view! runtime 'smoke-owned-view 'smoke.startup/smoke-owned-view)\n"
-               "(events/register! runtime :smoke/record-added #{:strand/added} 'smoke.startup/record-added! {:source :smoke})\n"))
+    (source-file/spit-forms! init-path startup-forms)
     (start-weaver-config! workspace)
     (try
       (run-mill-config! workspace "weaver" "status")
       (let [loader-state (edn/read-string
                           (run-mill-config-stdin!
                            workspace
-                           (str "(do\n"
-                                "  (require '[skein.api.current.alpha :as current]\n"
-                                "           '[skein.api.runtime.alpha :as runtime])\n"
-                                "  (let [runtime (current/runtime)]\n"
-                                "    {:approved (runtime/approved runtime)\n"
-                                "     :syncs (runtime/syncs runtime)}))\n")
+                           (source-file/render-forms
+                            ['(do
+                                (require '[skein.api.current.alpha :as current]
+                                         '[skein.api.runtime.alpha :as runtime])
+                                (let [runtime (current/runtime)]
+                                  {:approved (runtime/approved runtime)
+                                   :status (runtime/status runtime)}))])
                            "weaver" "repl" "--stdin"))]
         (assert= "spools/smoke-runtime-lib"
                  (get-in loader-state [:approved :spools 'smoke/runtime-lib :local/root])
                  "live REPL runtime loader reads real approved spool config")
-        (assert= :loaded
-                 (get-in loader-state [:syncs :spools 'smoke/runtime-lib :status])
-                 "live REPL runtime loader reads real approved spool sync state"))
+        (assert= :synced
+                 (get-in loader-state [:status :root/outcomes 'smoke/runtime-lib :status])
+                 "live REPL runtime loader reads real approved root state"))
       (let [strand-id (cli-add-config! workspace "Startup transformed strand" "--attr" "owner=smoke")
             rejected-output (run-strand-config-fails! workspace "add" "Hook rejected strand" "--attr" "owner=blocked")
             _ (assert-contains rejected-output "hook/failed" "startup hook rejection reaches CLI as hook/failed")
@@ -471,19 +485,17 @@
                     (throw (ex-info "event handler did not record async add event" {})))
                   (Thread/sleep 100)
                   (recur (dec attempts))))
-            payload (edn/read-string (run-mill-config-stdin! workspace (str "(do (require '[skein.api.current.alpha :as current] "
-                                                                            "'[skein.api.graph.alpha :as graph] '[skein.api.views.alpha "
-                                                                            ":as views]) (let [runtime (current/runtime)] {:query-ids "
-                                                                            "(graph/query-ids runtime 'smoke-owned {}) :view (views/view! "
-                                                                            "runtime 'smoke-owned-view {:source \"stdin\"}) :views "
-                                                                            "(views/views runtime)}))\n") "weaver" "repl" "--stdin"))]
+            payload (edn/read-string
+                     (run-mill-config-stdin!
+                      workspace
+                      (source-file/render-forms
+                       ['(do
+                           (require '[skein.api.current.alpha :as current]
+                                    '[skein.api.graph.alpha :as graph])
+                           (let [runtime (current/runtime)]
+                             {:query-ids (graph/query-ids runtime 'smoke-owned {})}))])
+                      "weaver" "repl" "--stdin"))]
         (assert= [strand-id] (:query-ids payload) "startup registered query is available through graph helper")
-        (assert= {:source "stdin"} (get-in payload [:view :params]) "startup view receives params")
-        (assert= [strand-id] (get-in payload [:view :ids]) "startup view can call graph/query-ids")
-        (assert= ["Startup transformed strand"] (titles (get-in payload [:view :strands])) "startup view can hydrate graph strands")
-        (assert= [{:name "smoke-owned-view" :fn 'smoke.startup/smoke-owned-view}]
-                 (:views payload)
-                 "startup registered view is introspectable")
         (assert= "Startup transformed strand" (slurp event-marker) "startup event handler observes async strand add event")
         (let [query-entry (some #(when (= "smoke-owner" (:name %)) %) (parse-json (run-strand-config! workspace "query" "list")))
               explanation (parse-json (run-strand-config! workspace "query" "explain" "smoke-owner"))]
@@ -506,35 +518,39 @@
         (let [runtime-woven (edn/read-string
                              (run-mill-config-stdin!
                               workspace
-                              (str "(do\n"
-                                   "  (defpattern! 'runtime-review 'smoke.startup/review-pattern :smoke.startup/review-input)\n"
-                                   "  (weave! 'runtime-review {:title \"Runtime patterned smoke\"}))\n")
+                              (source-file/render-forms
+                               ['(do
+                                   (defpattern! 'runtime-review 'smoke.startup/review-pattern :smoke.startup/review-input)
+                                   (weave! 'runtime-review {:title "Runtime patterned smoke"}))])
                               "weaver" "repl" "--stdin"))]
           (assert= ["Runtime patterned smoke" "Review: Runtime patterned smoke"]
                    (titles (:created runtime-woven))
                    "running weaver accepts runtime pattern registration through live REPL attach"))
-        (spit init-path
-              (clojure.string/replace
-               (slurp init-path)
-               "(patterns/register-pattern! runtime 'review-task 'smoke.startup/review-pattern ::review-input)\n"
-               (str "(patterns/register-pattern! runtime 'review-task 'smoke.startup/review-pattern ::review-input)\n"
-                    "(patterns/register-pattern! runtime 'reload-review 'smoke.startup/review-pattern ::review-input)\n")))
+        (source-file/spit-forms!
+         init-path
+         (conj startup-forms
+               '(patterns/register-pattern! runtime 'reload-review 'smoke.startup/review-pattern :smoke.startup/review-input)))
         (let [reload-payload (edn/read-string
                               (run-mill-config-stdin!
                                workspace
-                               (str "(do\n"
-                                    "  (require '[skein.api.current.alpha :as current]\n"
-                                    "           '[skein.api.runtime.alpha :as runtime])\n"
-                                    "  (runtime/reload! (current/runtime))\n"
-                                    "  {:patterns (patterns)\n"
-                                    "   :woven (weave! 'reload-review {:title \"Reload patterned smoke\"})})\n")
+                               (source-file/render-forms
+                                ['(do
+                                    (require '[skein.api.current.alpha :as current]
+                                             '[skein.api.runtime.alpha :as runtime])
+                                    (runtime/refresh! (current/runtime))
+                                    {:patterns (patterns)
+                                     :woven (weave! 'reload-review {:title "Reload patterned smoke"})})])
                                "weaver" "repl" "--stdin"))]
-          (assert= ["reload-review" "review-task"]
+          ;; refresh! adds the new config-defined reload-review and re-collects
+          ;; the startup review-task, while the live REPL-registered runtime-review
+          ;; survives — refresh! does not globally clear the registry the way the
+          ;; old destructive reload did (DELTA-OlrDrt-001.CC9).
+          (assert= ["reload-review" "review-task" "runtime-review"]
                    (mapv :name (:patterns reload-payload))
-                   "config reload refreshes pattern registry with new config-defined pattern")
+                   "config refresh! adds the new config pattern and preserves live registrations")
           (assert= ["Reload patterned smoke" "Review: Reload patterned smoke"]
                    (titles (get-in reload-payload [:woven :created]))
-                   "weave applies pattern added by config reload")))
+                   "weave applies pattern added by config refresh!")))
       (finally
         (stop-weaver-config! workspace)
         (delete-tree! (smoke-workspace (str db-file ".startup-transform")))))))
@@ -606,7 +622,7 @@
 (defn smoke-scheduler-handler
   "Smoke wake handler: mutate the graph, then signal the fire promise."
   [{:keys [runtime payload]}]
-  (weaver-api/add runtime {:title (:title payload) :attributes {:origin "smoke-scheduler"}})
+  (weaver-api/add! runtime {:title (:title payload) :attributes {:origin "smoke-scheduler"}})
   (deliver @scheduler-fired true))
 
 (defn smoke-scheduler! [runtime]
@@ -634,15 +650,13 @@
       (Thread/sleep 100)
       (recur (dec attempts))))
   (assert (some #(= "Smoke scheduled strand" (:title %)) (weaver-api/list runtime))
-          "scheduled handler mutated the strand graph")
-  (assert (some #(= "smoke-fire" (:key %)) (scheduler/recent-fires runtime))
-          "completed wake is visible in scheduler introspection"))
+          "scheduled handler mutated the strand graph"))
 
 (defn smoke-attribute-storage! [runtime]
   (let [owner "attribute-storage-smoke"
-        strand (weaver-api/add runtime {:title "Attribute storage smoke"
-                                        :attributes {:owner owner
-                                                     :payload {:nested true}}})
+        strand (weaver-api/add! runtime {:title "Attribute storage smoke"
+                                         :attributes {:owner owner
+                                                      :payload {:nested true}}})
         strand-id (:id strand)
         rows (mapv #(update % :value json/read-str :key-fn keyword)
                    (db/execute! (:datasource runtime)
@@ -656,7 +670,7 @@
               :keys ["owner"]
               :archived? true
               :changed 1}
-             (weaver-api/archive! runtime strand-id [:owner])
+             (weaver-api/archive-attributes! runtime strand-id [:owner])
              "trusted archive API marks selected attribute rows archived")
     (assert= [] (weaver-api/list runtime [:= [:attr :owner] owner] {})
              "hot query/list paths exclude archived attributes")
@@ -666,7 +680,7 @@
               :keys ["owner"]
               :archived? false
               :changed 1}
-             (weaver-api/unarchive! runtime strand-id [:owner])
+             (weaver-api/unarchive-attributes! runtime strand-id [:owner])
              "trusted unarchive API restores selected attribute rows")
     (assert= [strand-id] (mapv :id (weaver-api/list runtime [:= [:attr :owner] owner] {}))
              "hot query/list paths include unarchived attributes again")))

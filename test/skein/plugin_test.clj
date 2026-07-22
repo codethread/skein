@@ -35,7 +35,6 @@
 (deftest runtime-loader-state-is-the-public-path
   (with-runtime
     (fn [rt]
-      (is (= {:spools {}} (runtime/approved rt)))
-      (is (= {:spools {}} (runtime/syncs rt)))
-      (is (= {} (runtime/uses rt))))))
-
+      (is (= {:spools {} :families {}} (runtime/approved rt)))
+      (is (= {} (:modules (runtime/status rt))))
+      (is (= {} (:root/outcomes (runtime/status rt)))))))

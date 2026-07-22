@@ -10,7 +10,10 @@ import stringWidth from "string-width";
 import wrapAnsi from "wrap-ansi";
 import { opts, workspaceRoot, type DetailRow } from "./data";
 
-export const clip = (s: string, w: number): string => (w <= 0 ? "" : cliTruncate(s, w, { truncationCharacter: "…" }));
+// cliTruncate reserves a column for its ellipsis, so at w=1 it drops even a
+// single fitting glyph to "…"; short-circuit anything that already fits.
+export const clip = (s: string, w: number): string =>
+  w <= 0 ? "" : stringWidth(s) <= w ? s : cliTruncate(s, w, { truncationCharacter: "…" });
 export const pad = (s: string, w: number): string => {
   const t = clip(s, w);
   return t + " ".repeat(Math.max(0, w - stringWidth(t)));
@@ -72,13 +75,16 @@ export function useTerminalSize() {
 }
 
 // Clipped to a single line: a wrapped header would add rows the layout math
-// (which pins the frame to the terminal height) does not account for.
-export function Header({ all, noun, refreshedAt, cols }: { all: boolean; noun: string; refreshedAt: Date; cols: number }) {
+// (which pins the frame to the terminal height) does not account for. A transient
+// `flash` (a y-copy result) takes over the info half in green so the confirmation
+// lands where the eye already is, without stealing a layout row.
+export function Header({ all, noun, refreshedAt, cols, flash }: { all: boolean; noun: string; refreshedAt: Date; cols: number; flash?: string | null }) {
   const info = ` ${workspaceRoot} · ${all ? "all" : "active"} ${noun} · every ${opts.interval}s · ${refreshedAt.toLocaleTimeString()}`;
+  const tail = Math.max(0, cols - "agents".length);
   return (
     <Text>
       <Text bold>agents</Text>
-      <Text dimColor>{clip(info, Math.max(0, cols - "agents".length))}</Text>
+      {flash ? <Text color="green">{clip(` ${flash}`, tail)}</Text> : <Text dimColor>{clip(info, tail)}</Text>}
     </Text>
   );
 }
@@ -233,7 +239,7 @@ export function DetailView({
         ))}
       </Box>
       <Box marginTop={1}>
-        <Text dimColor>{clip(`↑↓/jk scroll · ⌃d/⌃u page · ⌃g open · esc back · q quit${maxScroll > 0 ? ` · ${from}↑ ${maxScroll - from}↓` : ""}`, cols)}</Text>
+        <Text dimColor>{clip(`↑↓/jk scroll · ⌃d/⌃u page · ⌃g open · y copy · esc back · q quit${maxScroll > 0 ? ` · ${from}↑ ${maxScroll - from}↓` : ""}`, cols)}</Text>
       </Box>
     </Box>
   );

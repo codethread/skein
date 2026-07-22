@@ -30,7 +30,7 @@
   USERLAND-ONLY, FOREVER: no `skein.*` namespace may require this module. It is a
   strict downstream consumer tier and must never sit upstream of the engine,
   blessed API, shipped spools, or REPL surface. Shared/distributed spools must
-  keep taking the runtime explicitly (see docs/writing-shared-spools.md); this
+  keep taking the runtime explicitly (see docs/spools/writing-shared-spools.md); this
   ergonomics layer is for workspace-local config, tests, and glue only."
   (:require [skein.api.current.alpha :as current]
             [skein.api.batch.alpha :as batch]
@@ -81,7 +81,7 @@
 (defn runtime
   "Return the resolved terse-call runtime for explicit `skein.api.*.alpha` use.
 
-  Escape hatch for reaching the surface this module does not wrap (graph, views,
+  Escape hatch for reaching the surface this module does not wrap (graph,
   events, hooks): grab the runtime and call the explicit-runtime API directly."
   []
   (resolve-runtime))
@@ -118,7 +118,7 @@
   ([title attributes]
    (strand! title (terse/reject-core-attribute-keys! attributes) {}))
   ([title attributes lifecycle]
-   (weaver/add (resolve-runtime) (merge {:title title :attributes attributes} lifecycle))))
+   (weaver/add! (resolve-runtime) (merge {:title title :attributes attributes} lifecycle))))
 
 (defn strand
   "Return the normalized strand row for `id`, or nil when no such strand exists."
@@ -128,19 +128,19 @@
 (defn update!
   "Apply `patch` to strand `id` and return the normalized update result."
   [id patch]
-  (weaver/update (resolve-runtime) id patch))
+  (weaver/update! (resolve-runtime) id patch))
 
 (defn supersede!
   "Replace `old-id` with `replacement-id` and return the supersession result."
   [old-id replacement-id]
-  (weaver/supersede (resolve-runtime) old-id replacement-id))
+  (weaver/supersede! (resolve-runtime) old-id replacement-id))
 
 (defn burn!
   "Physically delete one or more strands and their incident edges.
 
   Missing ids fail loudly. Returns the weaver burn summary."
   ([id]
-   (graph/burn-by-id! (resolve-runtime) id))
+   (graph/burn-by-ids! (resolve-runtime) [id]))
   ([id & ids]
    (graph/burn-by-ids! (resolve-runtime) (vec (cons id ids)))))
 
@@ -165,7 +165,11 @@
   Deliberately diverges from `skein.repl/load-queries!`, which takes a file
   path and reads EDN from disk: trusted in-process code owns its own I/O."
   [registry]
-  (graph/load-queries! (resolve-runtime) registry))
+  (let [runtime (resolve-runtime)]
+    (reduce-kv (fn [loaded query-name query-def]
+                 (merge loaded (graph/register-query! runtime query-name query-def)))
+               {}
+               registry)))
 
 (defn queries
   "Return the resolved runtime's in-memory named query registry."
@@ -216,7 +220,7 @@
   ([query-or-def params]
    (let [runtime (resolve-runtime)]
      (if (terse/named-query? query-or-def)
-       (weaver/ready-query runtime query-or-def params)
+       (weaver/ready runtime (graph/resolve-query runtime query-or-def) params)
        (weaver/ready runtime query-or-def params)))))
 
 (defn defpattern!
@@ -237,7 +241,7 @@
 (defn pattern
   "Return the registered pattern named `pattern-name`. Missing patterns fail loudly."
   [pattern-name]
-  (patterns/pattern (resolve-runtime) pattern-name))
+  (patterns/resolve-pattern (resolve-runtime) pattern-name))
 
 (defn pattern-explain
   "Return serializable input guidance for the registered pattern `pattern-name`."

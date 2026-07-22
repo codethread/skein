@@ -7,7 +7,67 @@
   `skein.core.weaver.lifecycle`."
   (:require [clojure.string :as str]
             [skein.core.weaver.access :as access]
+            [skein.core.weaver.core-registry :as core-registry]
             [skein.core.weaver.dispatch :as dispatch]))
+
+(declare validate-hook-key! validate-hook-types! validate-hook-opts! resolve-hook-fn!)
+
+(defn register-hook!
+  "Register or replace a lifecycle hook in `runtime` for selected hook types.
+
+  `key` is the stable registry identity (keyword, symbol, or non-blank string):
+  registering an existing key replaces that entry. `types` is a non-empty set of
+  hook type keywords, and `fn-sym` a fully qualified symbol resolved under the
+  runtime's spool classloader. `opts` may carry an integer `:order` (default 0)
+  plus data-first metadata. Returns the registered entry without its resolved
+  function value."
+  ([runtime key types fn-sym]
+   (register-hook! runtime core-registry/repl-owner key types fn-sym {}))
+  ([runtime key types fn-sym opts]
+   (register-hook! runtime core-registry/repl-owner key types fn-sym opts))
+  ([runtime owner key types fn-sym opts]
+   (let [opts (validate-hook-opts! opts)
+         entry {:key (validate-hook-key! key)
+                :types (validate-hook-types! types)
+                :fn fn-sym
+                :fn-value (resolve-hook-fn! runtime fn-sym)
+                :order (get opts :order 0)
+                :metadata (dissoc opts :order)}]
+     (core-registry/put-entry! (access/hook-store runtime) owner (:key entry) entry)
+     (dissoc entry :fn-value))))
+
+(defn unregister-hook!
+  "Unregister a lifecycle hook by stable key from `runtime` and return that key.
+
+  Unregistering an absent key is a no-op returning the validated key."
+  ([runtime key]
+   (unregister-hook! runtime core-registry/repl-owner key))
+  ([runtime owner key]
+   (let [key (validate-hook-key! key)]
+     (core-registry/remove-entry! (access/hook-store runtime) owner key)
+     key)))
+
+(defn hooks
+  "Return data-first lifecycle hook registry entries in execution order.
+
+  Entries sort by `:order`, then printed key for a deterministic tie-break, and
+  never carry the resolved `:fn-value`."
+  [runtime]
+  (mapv #(dissoc % :fn-value)
+        (sort-by (juxt :order (comp pr-str :key)) (vals (access/hook-registry runtime)))))
+
+(defn hook-provenance
+  "Return owner/provenance diagnostics for `runtime`'s lifecycle hook registry.
+
+  Maps each hook key to `{:effective :shadowed :contenders}` (see
+  `skein.core.weaver.core-registry/explain`); each contender names its `:owner`,
+  `:layer`, and `:override?`/`:effective?` flags, and its `:value` hook entry has
+  the resolved `:fn-value` stripped, so no function value or internal handle
+  leaves the registry (DELTA-OlrDrt-001.CC9)."
+  [runtime]
+  (core-registry/explain (access/hook-store runtime) #(dissoc % :fn-value)))
+
+;; --- validating and resolving registration input ----------------------
 
 (defn- validate-hook-key! [key]
   (when-not (or (keyword? key) (symbol? key) (string? key))
@@ -26,15 +86,6 @@
       (throw (ex-info "Hook types must be keywords" {:type type :types types}))))
   types)
 
-(defn- resolve-hook-fn! [runtime fn-sym]
-  (when-not (and (symbol? fn-sym) (namespace fn-sym))
-    (throw (ex-info "Hook function must be a fully qualified symbol" {:fn fn-sym})))
-  (let [resolved (access/with-spool-classloader runtime #(requiring-resolve fn-sym))
-        value (if (var? resolved) @resolved resolved)]
-    (when-not (ifn? value)
-      (throw (ex-info "Hook symbol must resolve to a callable value" {:fn fn-sym :resolved-class (str (class value))})))
-    resolved))
-
 (defn- validate-hook-opts! [opts]
   (let [opts (or opts {})]
     (when-not (map? opts)
@@ -45,30 +96,12 @@
       (throw (ex-info "Hook :order must be an integer" {:order (:order opts)})))
     opts))
 
-(defn register!
-  "Register or replace a lifecycle hook in `runtime` for selected hook types."
-  ([runtime key types fn-sym]
-   (register! runtime key types fn-sym {}))
-  ([runtime key types fn-sym opts]
-   (let [opts (validate-hook-opts! opts)
-         entry {:key (validate-hook-key! key)
-                :types (validate-hook-types! types)
-                :fn fn-sym
-                :fn-value (resolve-hook-fn! runtime fn-sym)
-                :order (get opts :order 0)
-                :metadata (dissoc opts :order)}]
-     (swap! (access/hook-registry runtime) assoc (:key entry) entry)
-     (dissoc entry :fn-value))))
-
-(defn unregister!
-  "Unregister a lifecycle hook by stable key from `runtime` and return that key."
-  [runtime key]
-  (let [key (validate-hook-key! key)]
-    (swap! (access/hook-registry runtime) dissoc key)
-    key))
-
-(defn hooks
-  "Return data-first lifecycle hook registry entries in execution order."
-  [runtime]
-  (mapv #(dissoc % :fn-value)
-        (sort-by (juxt :order (comp pr-str :key)) (vals @(access/hook-registry runtime)))))
+(defn- resolve-hook-fn! [runtime fn-sym]
+  (when-not (and (symbol? fn-sym) (namespace fn-sym))
+    (throw (ex-info "Hook function must be a fully qualified symbol" {:fn fn-sym})))
+  (let [resolved (access/with-spool-classloader runtime #(requiring-resolve fn-sym))
+        value (if (var? resolved) @resolved resolved)]
+    (when-not (ifn? value)
+      (throw (ex-info "Hook symbol must resolve to a callable value"
+                      {:fn fn-sym :resolved-class (str (class value))})))
+    resolved))

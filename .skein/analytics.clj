@@ -9,15 +9,14 @@
   :analytics module; sibling modules hold the rest of the repo policy (see
   config.clj's namespace docstring for the file-per-concern map)."
   (:require [clojure.data.json :as json]
-            [skein.macros.ops :refer [defop forget-ops! install-ops!]]
+            [skein.macros.ops :refer [defop]]
             [skein.api.current.alpha :as current]
             [skein.api.graph.alpha :as graph]
             [skein.api.weaver.alpha :as weaver])
   (:import (java.time Duration Instant)))
 
-;; Reload correctness: clear this namespace's remembered ops before the defop
-;; forms below re-register them, mirroring config.clj (TEN-003).
-(forget-ops! 'analytics)
+(def ^:private feature-costs-return
+  {:type :map :required {:operation :string} :extra :json})
 
 (defn- attr
   "Read strand attribute k, tolerating keyword- or string-keyed maps."
@@ -135,12 +134,14 @@
   bounds, per-harness rollups, and the ids of runs that recorded no usage.
   Pure data by design — no formatting, no rounding — so one payload serves a
   rich doc, a CSV, or an in-chat summary. Fails loudly on an unknown root."
-  {:arg-spec {:op "feature-costs"
-              :doc "Show the agent-run cost and usage rollup beneath a work root."
-              :positionals [{:name :root-id
-                             :type :string
-                             :required? true
-                             :doc "Work-root strand id (kanban card, plan, or ad hoc root)."}]}}
+  {:returns feature-costs-return :arg-spec {:op "feature-costs"
+                                            :hook-class :read
+                                            :deadline-class :standard
+                                            :doc "Show the agent-run cost and usage rollup beneath a work root."
+                                            :positionals [{:name :root-id
+                                                           :type :string
+                                                           :required? true
+                                                           :doc "Work-root strand id (kanban card, plan, or ad hoc root)."}]}}
   [ctx]
   (let [{:keys [root-id]} (:op/args ctx)
         rt (current/runtime)
@@ -159,10 +160,3 @@
        :totals (assoc (usage-rollup rows) :wall-clock (wall-clock rows))
        :by-harness (by-harness rows)
        :missing-usage (->> rows (remove :cost-usd) (mapv :id))})))
-
-(defn install!
-  "Install the repo-local analytics op surface."
-  []
-  {:installed true
-   :namespace 'analytics
-   :ops (install-ops! 'analytics)})

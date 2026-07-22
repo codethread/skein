@@ -36,8 +36,8 @@ Per `PROP-Vr-001.C1`–`C5`:
   *same* owner (`PROP-Vr-001.C3`, the reload invariant `R1`).
 - **TASK-Vr-001.MI3:** Read surface (`PROP-Vr-001.C4`), all runtime-first:
   `(vocab/declarations runtime)` (all, sorted by `[:kind :name]`, full C1 maps),
-  `(vocab/declarations runtime {:kind …})` (narrowed), `(vocab/declaration runtime kind name)` (one
-  entry or `nil` when undeclared). No ambient-singleton path — never read the published runtime singleton;
+  `(vocab/declarations runtime {:kind …})` (narrowed); callers derive singular reads by filtering the returned
+  declarations. No ambient-singleton path — never read the published runtime singleton;
   every read takes `runtime` explicitly (the blessed-namespace convention).
 - **TASK-Vr-001.MI4:** Back the store with `runtime/spool-state` (`skein.api.runtime.alpha/spool-state` —
   runtime-owned per-spool state that survives reload), versioned per the shape-drift discipline: a

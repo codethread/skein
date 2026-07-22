@@ -23,18 +23,7 @@ Function.
 Describe a registered weave pattern and its input contract in `runtime`.
 
   Missing patterns or unregistered input specs fail loudly.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/patterns/alpha.clj#L101-L114">Source</a></sub></p>
-
-## <a name="skein.api.patterns.alpha/pattern">`pattern`</a>
-``` clojure
-(pattern runtime pattern-name)
-```
-Function.
-
-Return the registered weave pattern for a simple symbol or keyword name.
-
-  Missing patterns fail loudly.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/patterns/alpha.clj#L59-L68">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/patterns/alpha.clj#L57-L72">Source</a></sub></p>
 
 ## <a name="skein.api.patterns.alpha/patterns">`patterns`</a>
 ``` clojure
@@ -43,17 +32,32 @@ Return the registered weave pattern for a simple symbol or keyword name.
 Function.
 
 Return registered weave pattern metadata from `runtime`, ordered by name.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/patterns/alpha.clj#L54-L57">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/patterns/alpha.clj#L37-L40">Source</a></sub></p>
 
 ## <a name="skein.api.patterns.alpha/register-pattern!">`register-pattern!`</a>
 ``` clojure
 (register-pattern! runtime pattern-name fn-sym input-spec)
 (register-pattern! runtime pattern-name doc fn-sym input-spec)
+(register-pattern! runtime owner pattern-name doc fn-sym input-spec)
 ```
 Function.
 
 Register a trusted weaver pattern handler and input spec in `runtime`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/patterns/alpha.clj#L43-L52">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/patterns/alpha.clj#L26-L35">Source</a></sub></p>
+
+## <a name="skein.api.patterns.alpha/resolve-pattern">`resolve-pattern`</a>
+``` clojure
+(resolve-pattern runtime pattern-name)
+```
+Function.
+
+Return the registered weave pattern for a name.
+
+  Accepts a simple symbol, keyword, or raw CLI string (trimmed, optional leading
+  colon), matching `skein.api.graph.alpha/resolve-query` string handling.
+
+  Missing patterns fail loudly.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/patterns/alpha.clj#L42-L55">Source</a></sub></p>
 
 ## <a name="skein.api.patterns.alpha/weave!">`weave!`</a>
 ``` clojure
@@ -63,4 +67,8 @@ Register a trusted weaver pattern handler and input spec in `runtime`.
 Function.
 
 Validate pattern input, invoke the pattern, and apply its create-only batch.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/patterns/alpha.clj#L186-L223">Source</a></sub></p>
+
+  The four-argument arity threads an explicit request-context map for trusted
+  callers (the connected-client tier); the three-argument arity derives its own
+  weave context.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/patterns/alpha.clj#L74-L108">Source</a></sub></p>

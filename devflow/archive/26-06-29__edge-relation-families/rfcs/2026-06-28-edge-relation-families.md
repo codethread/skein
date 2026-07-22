@@ -1,6 +1,6 @@
 # Edge Relation Families, Strand State, and Supersession
 
-**Document ID:** `RFC-007` **Status:** Implemented **Created:** 2026-06-28 **Related specs:** [Strand Model](../specs/strand-model.md), [Weaver Runtime](../specs/daemon-runtime.md), [REPL API](../specs/repl-api.md), [CLI Surface](../specs/cli.md) **Related tenets:** TEN-000 (alpha software), TEN-004 (Less is More), TEN-005 (Task graphs are DAGs)
+**Document ID:** `RFC-007` **Status:** Implemented **Created:** 2026-06-28 **Related specs:** [Strand Model](../specs/strand-model.md), [Weaver Runtime](../specs/daemon-runtime.md), [REPL API](../specs/repl-api.md), [CLI Surface](../specs/cli.md) **Related tenets:** TEN-000@1 (alpha software), TEN-004 (Less is More), TEN-005 (Task graphs are DAGs)
 
 ## RFC-007.P1 Problem
 
@@ -19,7 +19,7 @@ This creates two related defects. Userland cannot name/query relationships freel
 - **RFC-007.PH1 — Core owns graph mechanics and lifecycle truth.** The engine owns the durable node/edge/state substrate, write-time structural invariants, readiness semantics, and the few lifecycle transitions that change the active graph.
 - **RFC-007.PH2 — Batteries are tested defaults, not a closed world.** Skein ships a small tested set of operational graph relations and helper operations for common agent workflows. These names are supported defaults, but open valid relation names remain available for userland.
 - **RFC-007.PH3 — Annotation vocabulary stays flexible.** Rich domain-specific relationships, views, reports, and workflow policies are built in trusted config/libs over the primitives. Skein may document common annotation names, but it does not grow a command or engine rule per annotation.
-- **RFC-007.PH4 — Alpha reset is acceptable.** Per TEN-000, this feature may require users to drop existing databases and update code that used the old `active` field. We will not carry live migration or compatibility aliases for the old schema.
+- **RFC-007.PH4 — Alpha reset is acceptable.** Per TEN-000@1, this feature may require users to drop existing databases and update code that used the old `active` field. We will not carry live migration or compatibility aliases for the old schema.
 
 ## RFC-007.P3 Prior art: beads
 

@@ -7,13 +7,14 @@
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
-            [skein.api.events.alpha :as events]
+            [skein.api.hooks.alpha :as hooks]
             [skein.api.weaver.alpha :as weaver]
             [skein.core.db-test :as db-test]
             [skein.core.weaver.runtime :as weaver-runtime]
             [skein.repl :as repl]
             [skein.spools.chime :as chime]
-            [skein.spools.test-support :as test-support]))
+            [skein.spools.test-support :as test-support]
+            [skein.test.alpha :as test-alpha]))
 
 (defn- with-chime [f]
   (test-support/with-runtime
@@ -71,13 +72,13 @@
                                               :publish? false})]
         (try
           (weaver-runtime/with-runtime-binding rt-a
-            #(chime/defrule! :phase-failed 'skein.chime-test/phase-failed-rule))
+            #(chime/register! :phase-failed 'skein.chime-test/phase-failed-rule))
           (weaver-runtime/with-runtime-binding rt-b
-            #(chime/defrule! :needs-human 'skein.chime-test/needs-human-ready-rule))
+            #(chime/register! :needs-human 'skein.chime-test/needs-human-ready-rule))
           (is (= [:phase-failed]
-                 (weaver-runtime/with-runtime-binding rt-a #(mapv :name (chime/rules)))))
+                 (weaver-runtime/with-runtime-binding rt-a #(mapv :key (chime/rules)))))
           (is (= [:needs-human]
-                 (weaver-runtime/with-runtime-binding rt-b #(mapv :name (chime/rules)))))
+                 (weaver-runtime/with-runtime-binding rt-b #(mapv :key (chime/rules)))))
           (finally
             (weaver-runtime/stop! rt-a)
             (weaver-runtime/stop! rt-b))))
@@ -121,6 +122,13 @@
 (defn- invalid-notification-rule [_]
   {:body "missing title"})
 
+(def ^:private mutation-reached-hook (atom nil))
+
+(defn signal-mutation-hook
+  "Signal that a test mutation reached its pre-commit hook."
+  [_context]
+  (.countDown ^java.util.concurrent.CountDownLatch @mutation-reached-hook))
+
 ;; --- tests ------------------------------------------------------------------
 
 (deftest install-registers-no-rules
@@ -153,37 +161,37 @@
   (with-chime
     (fn [_ _]
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"fully qualified"
-                            (chime/defrule! :bad 'not-qualified)))
+                            (chime/register! :bad 'not-qualified)))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"cannot be resolved"
-                            (chime/defrule! :bad 'missing.ns/fn)))
-      (is (= :phase-failed (:rule (chime/defrule! "phase-failed" 'skein.chime-test/phase-failed-rule))))
-      (is (= :phase-failed (:removed (chime/remove-rule! :phase-failed))))
+                            (chime/register! :bad 'missing.ns/fn)))
+      (is (= :phase-failed (:key (chime/register! "phase-failed" 'skein.chime-test/phase-failed-rule))))
+      (is (= :phase-failed (:unregistered (chime/unregister! :phase-failed))))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Rule not found"
-                            (chime/remove-rule! :phase-failed))))))
+                            (chime/unregister! :phase-failed))))))
 
 (deftest missing-notifier-is-recorded-loudly
   (with-chime
     (fn [rt _]
-      (chime/defrule! :phase-failed 'skein.chime-test/phase-failed-rule)
-      (let [run (weaver/add rt {:title "failed run"
-                                :attributes {"phase" "failed"
-                                             "error" "boom"}})]
+      (chime/register! :phase-failed 'skein.chime-test/phase-failed-rule)
+      (let [run (weaver/add! rt {:title "failed run"
+                                 :attributes {"phase" "failed"
+                                              "error" "boom"}})]
         (chime/scan! {:strand/id (:id run)})
-        (is (= :notifier-missing (:kind (last (chime/failures)))))
-        (is (= "Run failed: failed run" (:title (last (chime/failures)))))))))
+        (is (= :notifier-missing (:kind (last (chime/recent-failures)))))
+        (is (= "Run failed: failed run" (:title (last (chime/recent-failures)))))))))
 
 (deftest registered-rules-fire-end-to-end
   (with-chime
     (fn [rt config-dir]
-      (chime/defrule! :phase-failed 'skein.chime-test/phase-failed-rule)
-      (chime/defrule! :parent-completed 'skein.chime-test/parent-completed-rule)
+      (chime/register! :phase-failed 'skein.chime-test/phase-failed-rule)
+      (chime/register! :parent-completed 'skein.chime-test/parent-completed-rule)
       (let [out-file (bind-file-notifier! config-dir)
-            failed (weaver/add rt {:title "run a"
-                                   :attributes {"phase" "failed"
-                                                "error" "stacktrace"}})
-            child (weaver/add rt {:title "child work"})
-            parent (weaver/add rt {:title "plan p"
-                                   :edges [{:type "parent-of" :to (:id child)}]})]
+            failed (weaver/add! rt {:title "run a"
+                                    :attributes {"phase" "failed"
+                                                 "error" "stacktrace"}})
+            child (weaver/add! rt {:title "child work"})
+            parent (weaver/add! rt {:title "plan p"
+                                    :edges [{:type "parent-of" :to (:id child)}]})]
         (chime/scan! {:strand/id (:id failed)})
         (eventually #(file-contains? out-file "Run failed: run a"))
         ;; titles and bodies land in separate appends, so bodies need their own wait
@@ -192,44 +200,131 @@
           ;; drain the event lane and join notifier threads so any parent
           ;; notification would have landed before asserting the still-open
           ;; parent has fired none
-          (events/await-quiescent! rt)
+          (test-alpha/await-quiescent! rt)
           (await-notifier-threads!)
           (is (not (file-contains? out-file "Plan complete: plan p")))
-          (weaver/update rt (:id parent) {:state "closed"})
+          (weaver/update! rt (:id parent) {:state "closed"})
           (chime/scan! {:strand/id (:id parent)})
           (is (eventually #(file-contains? out-file "Plan complete: plan p"))))))))
+
+(deftest restart-baselines-durable-matches-before-notifying-new-ones
+  (let [db-file (db-test/temp-db-file)
+        first-config (test-support/temp-config-dir {:prefix "skein-chime-restart-first"})
+        second-config (test-support/temp-config-dir {:prefix "skein-chime-restart-second"})]
+    (try
+      (let [first-rt (weaver-runtime/start!
+                      db-file
+                      {:world (test-support/test-world (.getCanonicalPath first-config))
+                       :publish? false})]
+        (try
+          (weaver-runtime/with-runtime-binding
+            first-rt
+            #(weaver/add! first-rt {:title "historical failure"
+                                    :attributes {"phase" "failed"}}))
+          (finally
+            (weaver-runtime/stop! first-rt))))
+      (let [second-rt (weaver-runtime/start!
+                       db-file
+                       {:world (test-support/test-world (.getCanonicalPath second-config))
+                        :publish? false})]
+        (try
+          (weaver-runtime/with-runtime-binding
+            second-rt
+            (fn []
+              (chime/install!)
+              (chime/register! :phase-failed 'skein.chime-test/phase-failed-rule)
+              (let [out-file (bind-file-notifier! second-config)]
+                (weaver/add! second-rt {:title "unrelated mutation"})
+                (test-alpha/await-quiescent! second-rt)
+                (await-notifier-threads!)
+                (is (not (file-contains? out-file "historical failure")))
+                (weaver/add! second-rt {:title "new failure"
+                                        :attributes {"phase" "failed"}})
+                (eventually #(file-contains? out-file "new failure"))
+                (is (not (file-contains? out-file "historical failure"))))))
+          (finally
+            (weaver-runtime/stop! second-rt))))
+      (finally
+        (db-test/delete-sqlite-family! db-file)))))
+
+(deftest mutation-committing-during-registration-notifies
+  (with-chime
+    (fn [rt config-dir]
+      (let [strand (weaver/add! rt {:title "failure during registration"})
+            out-file (bind-file-notifier! config-dir)
+            baseline-entered (java.util.concurrent.CountDownLatch. 1)
+            release-baseline (java.util.concurrent.CountDownLatch. 1)
+            mutation-entered (java.util.concurrent.CountDownLatch. 1)
+            affected-strands-var #'chime/affected-strands
+            original-affected-strands @affected-strands-var]
+        (test-alpha/await-quiescent! rt)
+        (reset! mutation-reached-hook mutation-entered)
+        (hooks/register-hook! rt :test/mutation-reached
+                              #{:strand/update-before-commit}
+                              'skein.chime-test/signal-mutation-hook
+                              {:order 0})
+        (try
+          (with-redefs-fn
+            {affected-strands-var
+             (fn [event]
+               (.countDown baseline-entered)
+               (.await release-baseline)
+               (original-affected-strands event))}
+            (fn []
+              (let [registration (future
+                                   (binding [chime/*runtime* rt]
+                                     (chime/register!
+                                      :phase-failed
+                                      'skein.chime-test/phase-failed-rule)))]
+                (.await baseline-entered)
+                (let [mutation (future
+                                 (binding [chime/*runtime* rt]
+                                   (weaver/update! rt (:id strand)
+                                                   {:attributes {"phase" "failed"}})))]
+                  (.await mutation-entered)
+                  (is (= ::blocked (deref mutation 100 ::blocked))
+                      "the mutation cannot commit inside the registration baseline")
+                  (.countDown release-baseline)
+                  @registration
+                  @mutation
+                  (test-alpha/await-quiescent! rt)
+                  (await-notifier-threads!)
+                  (is (file-contains? out-file "failure during registration"))))))
+          (finally
+            (.countDown release-baseline)
+            (reset! mutation-reached-hook nil)))))))
 
 (deftest ready-rule-fires-born-ready-and-when-unblocked
   (with-chime
     (fn [rt config-dir]
-      (chime/defrule! :needs-human 'skein.chime-test/needs-human-ready-rule)
+      (chime/register! :needs-human 'skein.chime-test/needs-human-ready-rule)
       (let [out-file (bind-file-notifier! config-dir)
-            born (weaver/add rt {:title "Approve proposal"
-                                 :attributes {"needs-human" "true"}})]
+            born (weaver/add! rt {:title "Approve proposal"
+                                  :attributes {"needs-human" "true"}})]
         (chime/scan! {:strand/id (:id born)})
         (eventually #(file-contains? out-file "Needs human: Approve proposal"))
-        (let [blocker (weaver/add rt {:title "blocker"})
-              blocked (:id (weaver/add rt {:title "Approve blocked"
-                                           :attributes {"needs-human" "true"}
-                                           :edges [{:type "depends-on" :to (:id blocker)}]}))]
+        (let [blocker (weaver/add! rt {:title "blocker"})
+              blocked (:id (weaver/add! rt {:title "Approve blocked"
+                                            :attributes {"needs-human" "true"}
+                                            :edges [{:type "depends-on" :to (:id blocker)}]}))]
           (chime/scan! {:strand/id blocked})
           ;; drain the event lane and join notifier threads so a notification
           ;; would have landed before asserting the blocked strand fired none
-          (events/await-quiescent! rt)
+          (test-alpha/await-quiescent! rt)
           (await-notifier-threads!)
           (is (not (file-contains? out-file "Needs human: Approve blocked")))
-          (weaver/update rt (:id blocker) {:state "closed"})
+          (weaver/update! rt (:id blocker) {:state "closed"})
           (chime/scan! {:strand/id (:id blocker)})
           (eventually #(file-contains? out-file "Needs human: Approve blocked")))))))
 
 (deftest dedup-and-reset-seen
   (with-chime
     (fn [rt config-dir]
-      (chime/defrule! :phase-failed 'skein.chime-test/phase-failed-rule)
+      (chime/register! :phase-failed 'skein.chime-test/phase-failed-rule)
       (let [out-file (bind-file-notifier! config-dir)
-            run (weaver/add rt {:title "flaky run"
-                                :attributes {"phase" "failed"
-                                             "error" "boom"}})]
+            run (weaver/add! rt {:title "flaky run"
+                                 :attributes {"phase" "failed"
+                                              "error" "boom"}})]
         (chime/scan! {:strand/id (:id run)})
         ;; Wait for the record terminator, not the title: the notifier script
         ;; writes TITLE first and "---" last, and snapshotting mid-write races.
@@ -238,7 +333,7 @@
           (chime/scan! {:strand/id (:id run)})
           ;; drain the event lane and join notifier threads so a duplicate
           ;; notification would have landed before asserting dedup held
-          (events/await-quiescent! rt)
+          (test-alpha/await-quiescent! rt)
           (await-notifier-threads!)
           (is (= once (slurp out-file)))
           (is (= {:seen 0} (chime/reset-seen!)))
@@ -251,11 +346,11 @@
   ;; double-notify. The atomic swap-vals! claim must let only one thread win.
   (with-chime
     (fn [rt config-dir]
-      (chime/defrule! :phase-failed 'skein.chime-test/phase-failed-rule)
+      (chime/register! :phase-failed 'skein.chime-test/phase-failed-rule)
       (let [out-file (bind-file-notifier! config-dir)
-            run (weaver/add rt {:title "raced run"
-                                :attributes {"phase" "failed"
-                                             "error" "boom"}})
+            run (weaver/add! rt {:title "raced run"
+                                 :attributes {"phase" "failed"
+                                              "error" "boom"}})
             threads 12
             ;; a shared latch fires every scan at once to maximise contention
             start (java.util.concurrent.CountDownLatch. 1)
@@ -280,41 +375,39 @@
 (deftest dedup-rearms-when-rule-stops-matching
   (with-chime
     (fn [rt config-dir]
-      (chime/defrule! :phase-failed 'skein.chime-test/phase-failed-rule)
+      (chime/register! :phase-failed 'skein.chime-test/phase-failed-rule)
       (let [out-file (bind-file-notifier! config-dir)
-            run (weaver/add rt {:title "retried run"
-                                :attributes {"phase" "failed"
-                                             "error" "first crash"}})]
+            run (weaver/add! rt {:title "retried run"
+                                 :attributes {"phase" "failed"
+                                              "error" "first crash"}})]
         (chime/scan! {:strand/id (:id run)})
         (eventually #(file-contains? out-file "retried run"))
         ;; recovery clears the seen mark, so a later recurrence notifies again
-        (weaver/update rt (:id run) {:attributes {"phase" "done"}})
+        (weaver/update! rt (:id run) {:attributes {"phase" "done"}})
         (chime/scan! {:strand/id (:id run)})
-        (weaver/update rt (:id run) {:attributes {"phase" "failed"
-                                                  "error" "second crash"}})
+        (weaver/update! rt (:id run) {:attributes {"phase" "failed"
+                                                   "error" "second crash"}})
         (chime/scan! {:strand/id (:id run)})
         (eventually #(> (count (re-seq #"retried run" (slurp out-file))) 1))))))
 
 (deftest rule-failures-are-recorded
   (with-chime
     (fn [rt _]
-      (let [strand (weaver/add rt {:title "x"})]
-        (chime/defrule! :throwing 'skein.chime-test/throwing-rule)
+      (let [strand (weaver/add! rt {:title "x"})]
+        (chime/register! :throwing 'skein.chime-test/throwing-rule)
         (chime/scan! {:strand/id (:id strand)})
-        (is (= :rule (:kind (last (chime/failures)))))
-        (is (= :throwing (:rule (last (chime/failures)))))
-        (chime/defrule! :invalid 'skein.chime-test/invalid-notification-rule)
+        (is (= :rule (:kind (last (chime/recent-failures)))))
+        (is (= :throwing (:rule (last (chime/recent-failures)))))
+        (chime/register! :invalid 'skein.chime-test/invalid-notification-rule)
         (chime/scan! {:strand/id (:id strand)})
-        (is (= :rule (:kind (last (chime/failures)))))
-        (is (= :invalid (:rule (last (chime/failures)))))))))
+        (is (= :rule (:kind (last (chime/recent-failures)))))
+        (is (= :invalid (:rule (last (chime/recent-failures)))))))))
 
 (deftest state-shape-matches-declared-version
   ;; Drift alarm for chime's versioned spool-state: a key added to new-state
-  ;; without a state-version bump would survive reload! as a stale map.
+  ;; without a state-version bump would survive refresh as a stale map.
   (test-support/assert-state-shape
-   ;; white-box read of a private var: kondo flags cross-ns private access, but
-   ;; #'ns/private is legal and intentional here.
-   #_{:clj-kondo/ignore [:unresolved-var]}
+   ;; White-box read of a private var; #'ns/private is legal and intentional.
    #'chime/new-state
    #{:notifier-binding :rule-registry :seen-notifications :failure-log
      :scanned-batch-ids}))

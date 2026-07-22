@@ -77,7 +77,7 @@ Honest source: this repo's [`.skein/init.clj`](../.skein/init.clj) chime block a
 
 **Situation.** A strand crosses into a state you want to hear about — a delegated run flips to `failed`, a workflow checkpoint becomes a human's to decide — and you want one notification the moment it happens.
 
-**Composition.** A named rule: a fully-qualified fn that receives the rule context and returns `nil` for "no notification" or `{:title .. :body ..}` to send one. Register it with `defrule!` from shared config. The rule reads the candidate strand's attributes and matches only the transition you care about.
+**Composition.** A named rule: a fully-qualified fn that receives the rule context and returns `nil` for "no notification" or `{:title .. :body ..}` to send one. Register it with `register!` from shared config. The rule reads the candidate strand's attributes and matches only the transition you care about.
 
 ```clojure
 (ns my.rules
@@ -95,7 +95,7 @@ Honest source: this repo's [`.skein/init.clj`](../.skein/init.clj) chime block a
                      (str "\n\n" err)))})))
 
 ;; register once from shared startup config
-(chime/defrule! :agent-failure 'my.rules/agent-failed)
+(chime/register! :agent-failure 'my.rules/agent-failed)
 (chime/rules)
 ```
 
@@ -112,7 +112,11 @@ Honest source: this repo's [`.skein/init.clj`](../.skein/init.clj) chime block a
 - **Chime deduplicates per `[rule strand]` while the rule keeps matching**, so a
   run that stays `failed` across many later mutations still notifies once. The
   mark clears when the rule stops matching, so a genuine recurrence alerts again.
-  You write the plain predicate; the engine handles "only once."
+  Registration seeds currently matching strands as the initial seen baseline,
+  so a weaver restart does not replay old failures. This also suppresses a
+  never-notified condition that became true while the weaver was down. A
+  concurrent mutation is ordered after registration and still notifies. You
+  write the plain predicate; the engine handles "only once."
 
 Honest source: this repo's `agent-failure-rule` and `hitl-checkpoint-ready-rule` in [`.skein/attention.clj`](../.skein/attention.clj), registered together in `register-chime-rules!`; the fire-once-per-transition behaviour is pinned by `registered-rules-fire-end-to-end` and `dedup-and-reset-seen` in [`test/skein/chime_test.clj`](../test/skein/chime_test.clj).
 
@@ -129,7 +133,7 @@ Honest source: this repo's `agent-failure-rule` and `hitl-checkpoint-ready-rule`
   "Workspace attention rules."
   (:require [clojure.string :as str]
             [skein.spools.chime :as chime]
-            [skein.spools.agent-run :as agent-run]))
+            [ct.spools.agent-run :as agent-run]))
 
 (defn interactive-session-running
   "Notify when an interactive agent-run session is ready for the human."
@@ -148,7 +152,7 @@ Honest source: this repo's `agent-failure-rule` and `hitl-checkpoint-ready-rule`
                        "\nAttach: no backend attach hint is configured for this run."
                        (str "\nAttach: " attach)))}))))
 
-(chime/defrule! :interactive-session-running 'my.rules/interactive-session-running)
+(chime/register! :interactive-session-running 'my.rules/interactive-session-running)
 ```
 
 **Why this shape.**
@@ -158,15 +162,22 @@ Honest source: this repo's `agent-failure-rule` and `hitl-checkpoint-ready-rule`
   gain agent-run-specific branching.
 - **The match is durable.** `agent-run/mode=interactive` and
   `agent-run/phase=running` are run attributes, so the rule still explains itself
-  after a restart. Chime's per-`[rule strand]` dedup means a long-running session
-  notifies once while it remains running.
+  after a restart. A session already running when the rule is registered becomes
+  part of the initial seen baseline; a session that starts afterward notifies
+  once while it remains running.
 - **The attach text comes from the same surface humans already use.**
   `agent-run/runs` is the Clojure side of `strand agent ps`; it performs the
   interactive liveness check and renders the backend's display-only `:attach`
   argv over the stored handle. If a backend has no attach template yet, the rule
   says no attach hint is configured instead of inventing a command.
 
-Honest source: agent-run's `run-summary` / `runs` implementation in [`spools/agent-run/src/skein/spools/agent_run.clj`](agent-run/src/skein/spools/agent_run.clj) renders `:attach` from the backend's display-only `:attach` op, and [`spools/delegation/README.md`](delegation/README.md) documents that `strand agent ps` carries `mode`, `backend`, `session`, and `attach` for interactive summaries.
+Honest source: agent-run's `run-summary` / `runs` implementation in
+[`agent_run.clj`][agent-run-source] renders `:attach` from the backend's display-only `:attach` op,
+and the external [`delegation/README.md`][delegation-contract] documents that `strand agent ps`
+carries `mode`, `backend`, `session`, and `attach` for interactive summaries.
+
+[agent-run-source]: https://github.com/codethread/agent-harness.spool/blob/d01e6ce6555d370dc5c9e4e0371cdabe10fab491/agent-run/src/ct/spools/agent_run.clj
+[delegation-contract]: https://github.com/codethread/agent-harness.spool/blob/d01e6ce6555d370dc5c9e4e0371cdabe10fab491/delegation/README.md
 
 ---
 
@@ -182,12 +193,12 @@ Honest source: agent-run's `run-summary` / `runs` implementation in [`spools/age
   [{:keys [strand ready-ids]}]
   (when (and (= "active" (:state strand))
              (= "checkpoint" (get-in strand [:attributes "workflow/role"]))
-             (= "true" (str (get-in strand [:attributes "workflow/hitl"])))
+             (= "human" (get-in strand [:attributes "workflow/checkpoint-kind"]))
              (contains? ready-ids (:id strand)))       ; ready *now*, not merely active
     {:title (str "HITL checkpoint ready: " (:title strand))
      :body  (str "Checkpoint " (:id strand) " is ready for human attention.")}))
 
-(chime/defrule! :hitl-checkpoint-ready 'my.rules/checkpoint-ready)
+(chime/register! :hitl-checkpoint-ready 'my.rules/checkpoint-ready)
 ```
 
 **Why this shape.**
@@ -214,11 +225,11 @@ Honest source: this repo's `hitl-checkpoint-ready-rule` and `parked-run-rule` in
 
 **Situation.** You expected a chime and heard nothing. Before suspecting the rule logic, you need to know whether the notifier ever ran, threw, or was simply never bound.
 
-**Composition.** Read `(chime/failures)`. Chime records notifier, process, and rule failures for the weaver lifetime instead of swallowing them — a fired rule with no notifier bound is a loud `:notifier-missing` failure, not a dropped event. A rule that throws is recorded and skipped rather than crashing the scan.
+**Composition.** Read `(chime/recent-failures)`. Chime records notifier, process, and rule failures for the weaver lifetime instead of swallowing them — a fired rule with no notifier bound is a loud `:notifier-missing` failure, not a dropped event. A rule that throws is recorded and skipped rather than crashing the scan.
 
 ```clojure
 ;; What has failed this weaver lifetime?
-(chime/failures)
+(chime/recent-failures)
 ;; e.g. {:kind :notifier-missing :title "Agent run failed: run a" ...}
 ;;      {:kind :rule :rule :my-rule :message "..."}
 
@@ -233,13 +244,13 @@ Honest source: this repo's `hitl-checkpoint-ready-rule` and `parked-run-rule` in
 
 - **A missing notifier fails loudly, on purpose.** Chime marks a strand seen only
   *after* the notifier process starts, so a missing or failing notifier never
-  swallows the alert — the event stays un-acknowledged and lands in `failures`.
-  When things go quiet, `failures` tells you whether the gap is "no notifier
-  bound" or "rule never matched."
+  swallows the alert — the event stays un-acknowledged and lands in
+  `recent-failures`. When things go quiet, `recent-failures` tells you whether
+  the gap is "no notifier bound" or "rule never matched."
 - **Keep rules cheap and loud.** A rule runs on every scan, so heavy work inside
   one taxes every mutation; and a rule that throws is recorded and skipped, so a
   buggy rule silently stops notifying while the rest keep working. Check
-  `failures` for `:rule` entries when one rule alone goes dark, and keep rule
+  `recent-failures` for `:rule` entries when one rule alone goes dark, and keep rule
   bodies to attribute reads and set lookups (the `:ready-ids` pattern above)
   rather than fresh graph queries.
 - **`reset-seen!` clears dedup, not rules.** If a rule is matching but not

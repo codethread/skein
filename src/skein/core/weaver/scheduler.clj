@@ -8,12 +8,11 @@
   close-on-stop hook, and never a module-level atom.
 
   Lifecycle:
-  - `rearm!` is the post-config entry point. `skein.core.weaver.runtime/start!`
-    calls it after selected startup files finish loading, and
-    `skein.core.weaver.runtime/reload-config!` calls it after config reload, so
+  - `rearm!` is the post-config entry point. Runtime startup and module resource
+    reconciliation call it after selected startup files finish loading, so
     handlers supplied by approved spools/config are resolvable before any timer
-    arms. `rearm!` cancels the in-memory timer, discards stale in-flight claims,
-    and rebuilds from durable pending rows.
+    arms. It cancels the in-memory timer, discards stale in-flight claims, and
+    rebuilds from durable pending rows.
   - Runtime stop closes the executor through the spool-state `:close-fn` before
     storage closes.
 
@@ -49,7 +48,8 @@
   Unresolvable handler symbols and handler exceptions are captured as failed
   fires in scheduler history and never propagate into the event worker, so one
   bad handler cannot kill the dispatch lane."
-  (:require [skein.core.db :as db])
+  (:require [skein.api.clock.alpha :as clock]
+            [skein.core.db :as db])
   (:import [java.time Instant]
            [java.util.concurrent ArrayBlockingQueue Executors ScheduledExecutorService
             ScheduledFuture ThreadFactory TimeUnit]))
@@ -59,7 +59,7 @@
 
   Bumping this reinitializes (and closes) any preserved state whose shape no
   longer matches after a reload, per SPEC-004.C95/C96."
-  2)
+  3)
 
 (def ^:private state-key ::state)
 
@@ -84,7 +84,7 @@
   `skein.core.weaver.runtime/now`: runtime requires this scheduler namespace, so
   a static require back would cycle."
   ^Instant [runtime]
-  ((deref (:clock runtime))))
+  (clock/now (deref (:clock runtime))))
 
 (defn- close-state!
   "Cancel the timer and shut the executor down, joining its thread."
@@ -112,6 +112,10 @@
         state {:executor (Executors/newSingleThreadScheduledExecutor factory)
                :timer (atom nil)
                :in-flight (atom #{})
+               ;; Durable rows are deliberately retained when their handler no
+               ;; longer names live approved code. rearm! clears this parking
+               ;; set after a repair so the same generation can deliver.
+               :parked-wakes (atom {})
                :dispatch-failures (atom [])
                :closed? (atom false)
                :lock (Object.)}]
@@ -132,6 +136,38 @@
   "Return recent transient (queue-full) dispatch failures, newest last."
   [runtime]
   @(:dispatch-failures (state runtime)))
+
+(defn- handler-available?
+  [handler]
+  (when-let [namespace (find-ns (symbol (namespace handler)))]
+    (let [resolved (ns-resolve namespace (symbol (name handler)))]
+      (and resolved (ifn? (if (var? resolved) @resolved resolved))))))
+
+(defn- orphaned-handler?
+  [runtime handler]
+  (some #(= (symbol (namespace handler)) (:namespace %))
+        (some-> runtime :namespace-load-status deref :residuals)))
+
+(defn wake-status
+  "Return the offline status projection for durable pending scheduler wakes.
+
+  A wake whose handler is absent or whose namespace is a load-ledger residual is
+  retained and reported as `:parked`; no status read loads code or changes the
+  durable row."
+  [runtime]
+  (let [parked @(:parked-wakes (state runtime))]
+    (mapv (fn [wake]
+            (let [handler (symbol (:handler wake))
+                  park-reason (or (get parked [(:key wake) (:wake_at wake)])
+                                  (when (or (orphaned-handler? runtime handler)
+                                            (not (handler-available? handler)))
+                                    :handler-unresolved))]
+              (assoc wake :status (if park-reason :parked :pending)
+                     :park/reason park-reason)))
+          (db/pending-wakes (:datasource runtime)))))
+
+(defn- park-wake! [st row reason]
+  (swap! (:parked-wakes st) assoc [(:key row) (:wake_at row)] reason))
 
 (defn- record-dispatch-failure! [state key message]
   (swap! (:dispatch-failures state)
@@ -157,7 +193,8 @@
     (reduce
      (fn [acc wake]
        (let [key (:key wake)]
-         (if (contains? @(:in-flight st) key)
+         (if (or (contains? @(:in-flight st) key)
+                 (contains? @(:parked-wakes st) [key (:wake_at wake)]))
            acc
            (do
              (swap! (:in-flight st) conj key)
@@ -234,7 +271,10 @@
           (reset! (:timer st) nil))
         (let [now-ms (.toEpochMilli (now-instant runtime))
               in-flight @(:in-flight st)
-              next (first (remove #(contains? in-flight (:key %)) (db/pending-wakes ds)))]
+              parked @(:parked-wakes st)
+              next (first (remove #(or (contains? in-flight (:key %))
+                                       (contains? parked [(:key %) (:wake_at %)]))
+                                  (db/pending-wakes ds)))]
           (when next
             (reset! (:timer st)
                     (.schedule ^ScheduledExecutorService (:executor st)
@@ -296,7 +336,8 @@
     ;; :lock is the dedicated per-state (Object.) monitor; false positive, see close-state!.
     #_{:splint/disable [lint/locking-object]}
     (locking (:lock st)
-      (reset! (:in-flight st) #{})))
+      (reset! (:in-flight st) #{})
+      (reset! (:parked-wakes st) {})))
   (register-pump! runtime)
   (arm! runtime))
 
@@ -326,6 +367,12 @@
           (not= (:scheduler/wake-at-millis envelope) (:wake_at row)) nil
           :else
           (let [handler-sym (symbol (:handler row))
+                _ (when (or (orphaned-handler? runtime handler-sym)
+                            (not (handler-available? handler-sym)))
+                    (park-wake! st row :handler-unresolved)
+                    (throw (ex-info "Scheduler wake handler is unavailable; wake parked"
+                                    {:scheduler/parked? true
+                                     :key key :handler handler-sym})))
                 resolved (try
                            (requiring-resolve handler-sym)
                            (catch Throwable t
@@ -352,7 +399,8 @@
         ;; generation is still pending, so the failure is visible without
         ;; crashing the lane.
         (when-let [current (db/get-pending-wake ds key)]
-          (when (= (:scheduler/wake-at-millis envelope) (:wake_at current))
+          (when (and (not (:scheduler/parked? (ex-data t)))
+                     (= (:scheduler/wake-at-millis envelope) (:wake_at current)))
             (try
               (db/fail-wake! ds current (or (ex-message t) (str (class t))))
               (catch Throwable _ nil)))))

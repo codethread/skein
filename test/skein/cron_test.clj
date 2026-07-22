@@ -1,16 +1,19 @@
 (ns skein.cron-test
   "Tests for the skein.spools.cron recurrence engine against a real weaver
   runtime: jobs register as durable `cron/<id>` scheduler wakes, a due wake
-  fires on the shared event lane, offloads its `:run!` to the execution executor,
-  reschedules the next wake, and records outcomes without stopping the cadence.
+  fires on the shared event lane, offloads its `:handler` to the execution
+  executor, reschedules the next wake, and records results without stopping the
+  cadence.
 
   Fires drive off a manual runtime clock and `skein.test.alpha/advance!`: the
   scheduler's own clock pump releases the due wake onto the event lane, so
-  `advance!` + `events/await-quiescent!` settles the lane and `cron/await-idle!`
-  joins the offloaded job body — no `Thread/sleep` or wall waits
+  `advance!` + `test-alpha/await-quiescent!` settles the lane and
+  `cron/await-quiescent!` joins the offloaded job body — no `Thread/sleep` or
+  wall waits
   (`PLAN-cron-on-scheduler-001.V3`). Cron registers no pump of its own."
   (:require [clojure.test :refer [deftest is testing]]
-            [skein.api.events.alpha :as events]
+            [skein.api.runtime.alpha :as runtime]
+            [skein.api.registry.alpha :as registry]
             [skein.api.scheduler.alpha :as scheduler]
             [skein.spools.cron :as cron]
             [skein.spools.test-support :as test-support]
@@ -23,11 +26,18 @@
 (defn fire-other [_runtime] :other)
 (defn fire-throw [_runtime] (throw (ex-info "boom" {:why :test})))
 
+(def ^:private blocking-started (atom (promise)))
+(def ^:private blocking-release (atom (promise)))
+
+(defn blocking-run [_runtime]
+  (deliver @blocking-started true)
+  @@blocking-release)
+
 (defn- with-cron [f]
   (test-support/with-runtime
     {:prefix "skein-cron"}
     (fn [rt _config-dir]
-      (test-alpha/set-clock! rt (constantly (Instant/ofEpochSecond 0)))
+      (test-alpha/set-clock! rt (test-alpha/manual-clock (Instant/ofEpochSecond 0)))
       (cron/install!)
       (f rt))))
 
@@ -38,22 +48,22 @@
 
 (defn- release-fire!
   "Advance the clock past a due `cron/<id>` wake and join both the event lane and
-  the offloaded job body, so a fired job's outcome is observable."
+  the offloaded job body, so a fired job's result is observable."
   [rt]
   (test-alpha/advance! rt (Duration/ofSeconds 2))
-  (events/await-quiescent! rt)
-  (cron/await-idle! rt))
+  (test-alpha/await-quiescent! rt)
+  (cron/await-quiescent! rt))
 
-(deftest register-persists-wake-lists-and-deregisters
+(deftest register-persists-wake-lists-and-unregisters
   (with-cron
     (fn [rt]
       ;; a one-hour interval keeps the first fire far out of the way
       (let [status (cron/register! rt {:id :slow
                                        :interval-ms (* 60 60 1000)
                                        :jitter-ms 0
-                                       :run! 'skein.cron-test/fire-ok})]
+                                       :handler 'skein.cron-test/fire-ok})]
         (is (= :slow (:id status)))
-        (is (= 'skein.cron-test/fire-ok (:run! status)))
+        (is (= 'skein.cron-test/fire-ok (:handler status)))
         (is (= [:slow] (mapv :id (cron/jobs rt))))
         ;; registration is a durable cron/<id> wake, the single timing view
         (let [wake (cron-wake rt "cron/slow")]
@@ -61,55 +71,83 @@
           (is (= 'skein.spools.cron/fire-wake (:handler wake)))
           (is (= {:job "slow"} (:payload wake)))
           (is (= (* 60 60 1000) (:wake_at wake)) "wake-at is now + interval (jitter 0)"))
-        (is (= {:deregistered :slow} (cron/deregister! rt :slow)))
+        (is (= {:unregistered :slow} (cron/unregister! rt :slow)))
         (is (= [] (cron/jobs rt)))
-        (is (nil? (cron-wake rt "cron/slow")) "deregister cancels the wake")
-        (is (= {:deregistered nil} (cron/deregister! rt :slow)))))))
+        (is (nil? (cron-wake rt "cron/slow")) "unregister cancels the wake")
+        (is (= {:unregistered nil} (cron/unregister! rt :slow)))))))
 
 (deftest register-preserves-or-replaces-pending-wake-by-config-tuple
   (with-cron
     (fn [rt]
       (cron/register! rt {:id :steady
                           :interval-ms 1000
-                          :run! 'skein.cron-test/fire-ok})
+                          :handler 'skein.cron-test/fire-ok})
       (let [first-wake-at (:wake_at (cron-wake rt "cron/steady"))]
-        (test-alpha/set-clock! rt (constantly (Instant/ofEpochMilli 10000)))
+        (test-alpha/set-clock! rt (test-alpha/manual-clock (Instant/ofEpochMilli 10000)))
         (cron/register! rt {:id :steady
                             :interval-ms 1000
                             :jitter-ms 0
-                            :run! 'skein.cron-test/fire-ok})
+                            :handler 'skein.cron-test/fire-ok})
         (is (= first-wake-at (:wake_at (cron-wake rt "cron/steady")))
-            "unchanged [interval jitter run!] preserves the pending countdown")
+            "unchanged [interval jitter handler] preserves the pending countdown")
         (cron/register! rt {:id :steady
                             :interval-ms 2000
                             :jitter-ms 0
-                            :run! 'skein.cron-test/fire-ok})
+                            :handler 'skein.cron-test/fire-ok})
         (is (= 12000 (:wake_at (cron-wake rt "cron/steady")))
             "changed interval resets wake-at from now")
-        (test-alpha/set-clock! rt (constantly (Instant/ofEpochMilli 30000)))
+        (test-alpha/set-clock! rt (test-alpha/manual-clock (Instant/ofEpochMilli 30000)))
         (cron/register! rt {:id :steady
                             :interval-ms 2000
                             :jitter-ms 10
-                            :run! 'skein.cron-test/fire-ok})
+                            :handler 'skein.cron-test/fire-ok})
         (is (<= 31990 (:wake_at (cron-wake rt "cron/steady")) 32010)
             "changed jitter replaces the pending wake from now")
-        (test-alpha/set-clock! rt (constantly (Instant/ofEpochMilli 40000)))
+        (test-alpha/set-clock! rt (test-alpha/manual-clock (Instant/ofEpochMilli 40000)))
         (cron/register! rt {:id :steady
                             :interval-ms 2000
                             :jitter-ms 0
-                            :run! 'skein.cron-test/fire-other})
+                            :handler 'skein.cron-test/fire-other})
         (is (= 42000 (:wake_at (cron-wake rt "cron/steady")))
-            "changed run! symbol resets wake-at from now"))
+            "changed handler symbol resets wake-at from now"))
       (scheduler/cancel! rt "cron/steady")
       (is (nil? (cron-wake rt "cron/steady")))
       (cron/register! rt {:id :steady
                           :interval-ms 3000
                           :jitter-ms 0
-                          :run! 'skein.cron-test/fire-other})
+                          :handler 'skein.cron-test/fire-other})
       (is (= 43000 (:wake_at (cron-wake rt "cron/steady")))
           "re-register with no pending wake arms a fresh one"))))
 
-(deftest fires-records-outcome-and-continues-cadence
+(deftest owner-reconciliation-preserves-reschedules-and-cancels-cron-wakes
+  (with-cron
+    (fn [rt]
+      (let [handle (#'cron/job-kinds rt)
+            kind :skein.spools.cron/jobs
+            owner :test/cron-owner
+            replace! (fn [entries]
+                       (registry/replace-owner! handle kind owner
+                                                {:layer :workspace :entries entries :overrides #{}}))]
+        (replace! {:owned {:id :owned :interval-ms 1000
+                           :handler 'skein.cron-test/fire-ok}})
+        (cron/reconcile {:runtime rt})
+        (let [first-wake (:wake_at (cron-wake rt "cron/owned"))]
+          (test-alpha/set-clock! rt (test-alpha/manual-clock (Instant/ofEpochMilli 5000)))
+          (cron/reconcile {:runtime rt})
+          (is (= first-wake (:wake_at (cron-wake rt "cron/owned")))
+              "an unchanged owner declaration preserves its pending wake")
+          (replace! {:owned {:id :owned :interval-ms 2000
+                             :handler 'skein.cron-test/fire-other}})
+          (cron/reconcile {:runtime rt})
+          (is (= 7000 (:wake_at (cron-wake rt "cron/owned")))
+              "a changed owner declaration reschedules exactly once")
+          (registry/remove-owner! handle kind owner)
+          (cron/reconcile {:runtime rt})
+          (is (nil? (cron-wake rt "cron/owned"))
+              "owner removal cancels the durable cron wake")
+          (is (empty? (cron/jobs rt))))))))
+
+(deftest fires-records-result-and-continues-cadence
   (with-cron
     (fn [rt]
       ;; seed the engine rng (white-box) so the jittered wake bounds are reproducible
@@ -117,10 +155,10 @@
       (cron/register! rt {:id :quick
                           :interval-ms 1000
                           :jitter-ms 100
-                          :run! 'skein.cron-test/fire-ok})
+                          :handler 'skein.cron-test/fire-ok})
       (release-fire! rt)
       (let [job (first (cron/jobs rt))]
-        (is (= :ok (:last-outcome job)))
+        (is (= :ok (:last-result job)))
         (is (string? (:last-fired-at job)))
         (is (nil? (:last-error job))))
       ;; cadence continues: the next cron/<id> wake is armed within jitter bounds
@@ -129,7 +167,7 @@
         (is (some? wake) "the next wake is pending after a fire")
         (is (<= (+ 2000 1000 -100) (:wake_at wake) (+ 2000 1000 100))
             "the next wake-at is now + interval within jitter bounds"))
-      (cron/deregister! rt :quick))))
+      (cron/unregister! rt :quick))))
 
 (deftest records-run-failure-without-stopping-cadence
   (with-cron
@@ -137,9 +175,9 @@
       (cron/register! rt {:id :boom
                           :interval-ms 1000
                           :jitter-ms 0
-                          :run! 'skein.cron-test/fire-throw})
+                          :handler 'skein.cron-test/fire-throw})
       (release-fire! rt)
-      (let [failure (last (cron/failures rt))]
+      (let [failure (last (cron/recent-failures rt))]
         (is (= :run (:kind failure)))
         (is (= :boom (:job failure)))
         (is (= "boom" (:message failure)))
@@ -152,7 +190,28 @@
       (let [wake (cron-wake rt "cron/boom")]
         (is (some? wake) "cadence continues past a run failure")
         (is (= 3000 (:wake_at wake)) "next wake-at is the fire instant + interval"))
-      (cron/deregister! rt :boom))))
+      (cron/unregister! rt :boom))))
+
+(deftest await-quiescent-uses-the-runtime-clock
+  (with-cron
+    (fn [rt]
+      (reset! blocking-started (promise))
+      (reset! blocking-release (promise))
+      (cron/register! rt {:id :blocked
+                          :interval-ms 1000
+                          :jitter-ms 0
+                          :handler 'skein.cron-test/blocking-run})
+      (test-alpha/advance! rt (Duration/ofSeconds 2))
+      (test-alpha/await-quiescent! rt)
+      (is (deref @blocking-started (test-support/await-budget-ms) false)
+          "the cron job is in flight before the await starts")
+      (let [timeout (is (thrown? clojure.lang.ExceptionInfo
+                                 (cron/await-quiescent! rt {:timeout-ms 5})))]
+        (is (= {:timeout-ms 5 :in-flight 1} (ex-data timeout)))
+        (is (= (Instant/ofEpochMilli 2005) (runtime/now rt))
+            "awaiting advanced the manual runtime clock instead of wall sleeping"))
+      (deliver @blocking-release :released)
+      (cron/await-quiescent! rt))))
 
 (deftest jitter-offset-stays-in-bounds
   (let [rng (Random. 42)
@@ -170,21 +229,21 @@
     (fn [rt]
       (is (thrown? Exception
                    (cron/register! rt {:id :bad :interval-ms 0
-                                       :run! 'skein.cron-test/fire-ok})))
+                                       :handler 'skein.cron-test/fire-ok})))
       (is (thrown? Exception
                    (cron/register! rt {:id :bad :interval-ms 1000 :jitter-ms -1
-                                       :run! 'skein.cron-test/fire-ok})))
+                                       :handler 'skein.cron-test/fire-ok})))
       (is (thrown? Exception
                    (cron/register! rt {:id :bad :interval-ms 1000
-                                       :run! 'not-qualified})))
+                                       :handler 'not-qualified})))
       (testing "a typo'd (unknown) key is rejected loudly, not silently dropped"
         (is (thrown? Exception
                      (cron/register! rt {:id :bad :interva-ms 1000
-                                         :run! 'skein.cron-test/fire-ok})))))))
+                                         :handler 'skein.cron-test/fire-ok})))))))
 
 (deftest state-shape-matches-declared-version
   ;; Drift alarm for cron's versioned spool-state: a key added to new-state
-  ;; without a state-version bump would survive reload! as a stale map and
+  ;; without a state-version bump would survive refresh as a stale map and
   ;; offload against a nil executor.
   (test-support/assert-state-shape
    ;; white-box read of the private new-state builder var, intentional here.

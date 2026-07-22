@@ -11,18 +11,39 @@
 
 (def parallel-namespaces
   "Test namespaces that are safe to run concurrently, one namespace per worker."
-  ['skein.core.db-test 'skein.core.query-compile-test 'skein.core.contract-props-test 'skein.core.specs-test 'skein.core.scheduler-test 'skein.plugin-test 'skein.relations-test 'skein.notes-test 'skein.vocab-test
-   'skein.spools.bobbin-test 'skein.spools.carder-test 'skein.spools.loom-test 'skein.spools.selvage-test 'skein.spools.text-search-test
-   'skein.guild-test 'skein.delegation-test 'skein.test.alpha-test 'skein.warm-test 'skein.api.cli.alpha-test
+  ['skein.core.db-test 'skein.core.query-compile-test 'skein.core.contract-props-test 'skein.core.specs-test 'skein.core.scheduler-test
+   'skein.core.weaver.owner-registry-test
+   ;; each test builds its own backing store — no shared state.
+   'skein.core.weaver.core-registry-test
+   ;; each test builds its own registries and unpublished runtimes — no shared state.
+   'skein.api.registry.alpha-test
+   'skein.plugin-test 'skein.relations-test 'skein.notes-test 'skein.vocab-test
+   'skein.spools.text-search-test
+   'skein.guild-test 'skein.test.alpha-test 'skein.warm-test 'skein.api.cli.alpha-test
+   'skein.source-file-test
+   ;; pure findings logic over its own temp-dir fixtures — no shared state.
+   'skein.quality.conventions-check-test
+   'skein.api.return-shape.alpha-test
+   'skein.api.clock.alpha-test
+   'skein.api.format.alpha-test
+   ;; drives its own unpublished runtime per test — no JVM-global state.
+   'skein.api.runtime.glossary.alpha-test
+   ;; drives its own unpublished runtime per test — no JVM-global state.
+   'skein.api.runtime.help-transform.alpha-test
+   'skein.api.graph.alpha-test
+   ;; drives its own unpublished runtime per test — no JVM-global state.
+   'skein.api.events.alpha-test
+   'skein.api.hooks.alpha-test
    'skein.alpha-test 'skein.core.client-test 'skein.spools.workflow-test
-   'skein.spools.batteries-test 'skein.roster-test 'skein.api.spool-test
+   'skein.spools.batteries-test 'skein.api.spool-test 'skein.config-ops-test
    'skein.macros.queries-test 'skein.macros.ops-test 'skein.macros.rules-test 'skein.macros.patterns-test
-   ;; pure extractor unit tests over fixture files plus one unpublished
-   ;; thread-bound runtime; no JVM-global or real-process state.
-   'skein.bench-metrics-test
    ;; large-attr load harness structural smoke: boots its own :publish? false
    ;; world and hand-SQL fixtures in temp dirs — no JVM-global or shared state.
    'skein.large-attr-benchmark-test
+   ;; one-shot cutover script (scripts/cutover): each test drives its own
+   ;; disposable weaver world and migrates it over a private datasource, so
+   ;; there is no JVM-global or shared-world state.
+   'skein.cutover.vocab-reset-test
    ;; each test drives its own unpublished runtime, so the event lane it awaits
    ;; is per-runtime with no JVM-global or shared-lane state — parallel-safe.
    'skein.events-quiescence-test
@@ -31,12 +52,14 @@
    ;; for the scheduler and cron timers, event-lane quiescence for the async
    ;; dispatch suites — so there is no JVM-global timer or shared-lane state.
    'skein.scheduler-runtime-test 'skein.api.scheduler.alpha-test 'skein.scheduler-e2e-test
-   'skein.cron-test 'skein.cron-e2e-test 'skein.executors.subagent-test 'skein.spools.executors.shell-test 'skein.chime-test
+   'skein.cron-test 'skein.cron-e2e-test 'skein.spools.executors.shell-test 'skein.chime-test
    'skein.weaver-test])
 
 (def serial-namespaces
   "JVM-global namespaces the parent still runs serially outside add-libs shards."
-  [;; ambient REPL connection atoms.
+  [;; Release-marker fixtures redefine source checkout resolution.
+   'skein.api.runtime.alpha-test
+   ;; ambient REPL connection atoms.
    'skein.repl-test
    ;; module-local bind! is process-global and loud-failure asserts no published runtime.
    'skein.userland-test
@@ -44,17 +67,15 @@
    'skein.weaver-publication-test
    ;; multiple published peer runtimes verify routing semantics.
    'skein.peers-test
-   ;; publishes an ambient runtime for the judge agent run and spawns real
-   ;; container-engine subprocesses on a spool executor; real-process,
-   ;; published-singleton reasoning keeps it off parent parallel load.
-   'skein.bench-test])
+   ;; globally redefines db transaction seams while checking API guards.
+   'skein.api.batch.alpha-test])
 
 (def add-libs-shards
   "Subprocess JVM shard groups for tests that mutate JVM-global tools.deps state."
   {;; Largest add-libs suite stands alone to balance wall time against parent work.
    "A" ['skein.spools-test]
-   ;; Agent-run-first within this JVM; runtime-deps intentionally poisons the basis, so it is last.
-   "B" ['skein.agent-run-test 'skein.runtime-deps-test]
+   ;; runtime-deps intentionally mutates JVM-global tools.deps state.
+   "B" ['skein.runtime-deps-test]
    ;; Medium add-libs suites share one JVM to amortize boot without exceeding shard A.
    ;; nvd-scan-test load-files .skein/nvd_scan.clj (which requires the cron
    ;; spool root via add-libs) just as config-test does, so it shares this
@@ -94,9 +115,9 @@
       (->> parallel-namespaces (mapv #(.submit pool ^Callable (fn [] (run-namespace :parent/parallel %)))) (mapv #(.get %)))
       (finally (.shutdown pool) (.awaitTermination pool 1 TimeUnit/MINUTES)))))
 
-(defn- print-result! [{:keys [group ns summary elapsed-ms output]}]
+(defn- print-result! [{:keys [group summary elapsed-ms output] ns-sym :ns}]
   (print output) (when-not (str/ends-with? output "\n") (println))
-  (println "Namespace summary:" ns (assoc summary :group group :elapsed-ms elapsed-ms)))
+  (println "Namespace summary:" ns-sym (assoc summary :group group :elapsed-ms elapsed-ms)))
 
 (defn- java-command [shard-id summary-file]
   (let [java-bin (str (System/getProperty "java.home") java.io.File/separator "bin" java.io.File/separator "java")

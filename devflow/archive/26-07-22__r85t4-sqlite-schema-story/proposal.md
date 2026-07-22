@@ -20,7 +20,7 @@ machinery. `skein.core.db/init!` validates an existing database through structur
 `PRAGMA table_info` and read `sqlite_master` SQL to detect the legacy `strand_edges` edge-type constraint. Together they reject the two schemas
 already migrated away from, then throw on mismatch with no forward path.
 
-The release `rapv5` will tighten TEN-000 into an alpha-to-alpha compatibility promise for `api.*`. Without a written schema story, the first release
+The release `rapv5` will tighten TEN-000@1 into an alpha-to-alpha compatibility promise for `api.*`. Without a written schema story, the first release
 that ships a structural change bricks every existing coordination world (kanban/devflow/delegation/notes) while the API surface stays nominally
 stable. The skew is asymmetric today:
 
@@ -54,7 +54,7 @@ is an implicit policy with a throw and no stamp or lasting forward path; this fe
   invocation belongs to planning when the first real migration exists.
 - **PROP-Sss-001.NG2:** No changes to attribute storage representation or the attribute-map contract (TEN-007). Attribute-level evolution remains the
   path for domain change and needs no schema ceremony.
-- **PROP-Sss-001.NG3:** No release/version scheme, changelog ritual, or TEN-000 rewording. That is `rapv5`, which depends on this card.
+- **PROP-Sss-001.NG3:** No release/version scheme, changelog ritual, or TEN-000@1 rewording. That is `rapv5`, which depends on this card.
 - **PROP-Sss-001.NG4:** No conflation with weaver config-generation or spool-state versioning (`:version`/`:migrate-fn` in
   `skein.api.runtime.alpha`). That is a different axis.
 - **PROP-Sss-001.NG5:** No backup/export tooling; workspaces stay plain SQLite files the user can copy.

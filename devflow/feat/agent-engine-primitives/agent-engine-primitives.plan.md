@@ -48,7 +48,7 @@ where it reads the served target (the `serves` edge, not `gate/step`). `xwhe7` s
   hard rule); a file split across two slices is sequential same-owner with a `depends-on`, never two parallel mutators.
   `agent_run.clj` (S2→S3) and `delegation.clj` (S4→S5) are each strictly serial; `delegation.clj` (S4) and the subagent
   executor (S6) are disjoint and parallel once the engine lands.
-- **PLAN-Aep-001.A4:** Direct rewrite, no shim (`PROP-Aep-001.NG1`, TEN-000). No dual-read: every reader is moved to the
+- **PLAN-Aep-001.A4:** Direct rewrite, no shim (`PROP-Aep-001.NG1`, TEN-000@1). No dual-read: every reader is moved to the
   `serves`/lineage encoding in the same landing, and queries are written so they never *misread* a historical strand
   (`PROP-Aep-001.C13`) — they never read both encodings live.
 - **PLAN-Aep-001.A5:** Focused gates during the sweep; the full locked suite only at acceptance. The authoritative

@@ -9,7 +9,8 @@
             [skein.core.weaver.config :as weaver-config]
             [skein.core.weaver.runtime :as weaver-runtime]
             [skein.core.db-test :as db-test]
-            [skein.repl :as repl]))
+            [skein.repl :as repl]
+            [skein.source-file :as source-file]))
 (defn test-world [config-dir]
   (weaver-config/world config-dir
                        (str config-dir "/state")
@@ -187,7 +188,7 @@
           (is (= "3" (first lines)))
           (is (= "\"ab\"" (second lines)))
           (is (str/includes? (nth lines 2) ":metadata"))
-          (is (str/includes? (nth lines 2) ":query-registry")))))))
+          (is (str/includes? (nth lines 2) ":query-store")))))))
 
 (deftest attach-stdin-preserves-out-and-value-order-per-form
   (with-runtime
@@ -239,21 +240,31 @@
     (fn [rt _]
       (let [out (java.io.StringWriter.)]
         (binding [*in* (java.io.StringReader.
-                        (str "(require '[skein.api.current.alpha :as current] "
-                             "'[skein.api.runtime.alpha :as runtime])\n"
-                             "(def rt (current/runtime))\n"
-                             "(runtime/approved rt)\n"
-                             "(runtime/syncs rt)\n"
-                             "(runtime/uses rt)\n"))
+                        (source-file/render-forms
+                         ['(require '[skein.api.current.alpha :as current]
+                                    '[skein.api.runtime.alpha :as runtime])
+                          '(def rt (current/runtime))
+                          '(runtime/approved rt)
+                          '(runtime/status rt)
+                          '(runtime/plan rt)]))
                   *out* out
                   *err* (java.io.StringWriter.)
                   *ns* (the-ns 'user)]
           (repl/-main "--stdin" (:config-dir (:metadata rt))))
-        (let [lines (str/split-lines (str out))]
+        (let [lines (str/split-lines (str out))
+              status (read-string (nth lines 3))
+              plan (read-string (nth lines 4))]
           (is (= 5 (count lines)))
-          (is (= {:spools {}} (read-string (nth lines 2))))
-          (is (= {:spools {}} (read-string (nth lines 3))))
-          (is (= {} (read-string (nth lines 4)))))))))
+          (is (= {:spools {} :families {}} (read-string (nth lines 2))))
+          (is (= {:modules {}
+                  :root/outcomes {}
+                  :pending-generation nil}
+                 (select-keys status [:modules :root/outcomes :pending-generation])))
+          (is (= {:status :unchanged :mode :full}
+                 (select-keys (:last-refresh status) [:status :mode])))
+          (is (= {:status :unchanged :mode :full :dry-run? true}
+                 (select-keys plan [:status :mode :dry-run?])))
+          (is (str/includes? (:caveat plan) "No registry publication")))))))
 
 (deftest query-helpers-use-daemon-backed-task-flow
   (with-runtime
@@ -334,6 +345,38 @@
                   (.delete query-file))))
             (finally
               (weaver-runtime/stop! fresh-rt))))))))
+
+(deftest burn-tombstone-reads-use-in-process-datasource
+  (with-runtime
+    (fn [_rt _db-file]
+      (reset-open-state!)
+      (repl/init!)
+      (let [design (:id (repl/strand! "Sketch model" {:priority "high"}))
+            docs (:id (repl/strand! "Write docs" {:owner "agent"}))]
+        (repl/update! docs {:edges [{:type "depends-on" :to design}]})
+        (repl/burn! docs)
+        (let [[tombstone :as history] (repl/burn-history docs)]
+          (is (= 1 (count history)))
+          (is (= docs (:strand_id tombstone)))
+          (is (= "Write docs" (:title tombstone)))
+          (is (= {:value "agent" :archived false} (get-in tombstone [:attributes :owner])))
+          (is (= [{:from docs :to design :type "depends-on" :attributes {}}]
+                 (:edges tombstone)))
+          (is (some? (:recorded_at tombstone))))
+        (is (= [] (repl/burn-history design)))
+        (is (= [docs] (mapv :strand_id (repl/recent-burns 10))))
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                              #"Read result limit must be a positive integer"
+                              (repl/recent-burns 0)))))))
+
+(deftest burn-tombstone-reads-require-in-process-runtime
+  (reset-open-state!)
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                        #"mill weaver repl"
+                        (repl/burn-history "anything")))
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                        #"mill weaver repl"
+                        (repl/recent-burns 5))))
 
 (deftest helpers-fail-loudly-when-daemon-becomes-unavailable
   (let [db-file (db-test/temp-db-file)

@@ -35,4 +35,4 @@ Dogfooding the shipped workflow/devflow spools end-to-end (driving a real featur
 ## PROP-Werg-001.P5 Open questions
 
 - **PROP-Werg-001.Q1:** Resolved at sign-off: auto-closing procedure joins changes done-semantics for the run; accepted because joins carry no work and their manual closure was pure ceremony.
-- **PROP-Werg-001.Q2:** Resolved at sign-off: mutation results change shape from vector to map (`{:ready [...] :done bool}`) — a breaking spool API change, acceptable under TEN-000 alpha with tests/docs updated in the same change.
+- **PROP-Werg-001.Q2:** Resolved at sign-off: mutation results change shape from vector to map (`{:ready [...] :done bool}`) — a breaking spool API change, acceptable under TEN-000@1 alpha with tests/docs updated in the same change.

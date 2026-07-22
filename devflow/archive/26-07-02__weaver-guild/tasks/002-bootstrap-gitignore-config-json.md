@@ -35,7 +35,7 @@ Fix the stale gitignore contract per DELTA-Cli-002.CC3: bootstrap-generated `.sk
 ## TASK-Guild-002.P4 Out of scope
 
 - **TASK-Guild-002.OS1:** Migrating other existing repos' generated
-  `.gitignore` files (user-owned, TEN-000).
+  `.gitignore` files (user-owned, TEN-000@1).
 - **TASK-Guild-002.OS2:** The `"name"` config key itself (task 1).
 
 ## TASK-Guild-002.P5 References

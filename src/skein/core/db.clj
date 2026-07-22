@@ -119,6 +119,9 @@
     (throw (ex-info message {:value value :explain (s/explain-str spec value)})))
   value)
 
+(defn- require-positive-limit! [limit]
+  (require-valid! ::specs/read-limit limit "Read result limit must be a positive integer"))
+
 (defn json-key
   "Render a map key as JSON object key text, preserving keyword/symbol namespaces.
 
@@ -181,8 +184,13 @@
        CHECK (json_valid(attributes))
      )"]
    ["CREATE INDEX IF NOT EXISTS idx_strand_edges_to ON strand_edges(to_strand_id, edge_type)"]
+   ["CREATE UNIQUE INDEX IF NOT EXISTS idx_strand_edges_single_serves
+       ON strand_edges(from_strand_id) WHERE edge_type = 'serves'"]
    ["CREATE TABLE IF NOT EXISTS acyclic_relations (
        relation TEXT PRIMARY KEY
+     )"]
+   ["CREATE TABLE IF NOT EXISTS immutable_keys (
+       key TEXT PRIMARY KEY
      )"]
    ["CREATE TABLE IF NOT EXISTS scheduler_wakes (
        key TEXT PRIMARY KEY,
@@ -208,11 +216,42 @@
        CHECK (status IN ('completed', 'cancelled', 'failed')),
        CHECK (json_valid(payload))
      )"]
-   ["CREATE INDEX IF NOT EXISTS idx_scheduler_history_status ON scheduler_history(status, id)"]])
+   ["CREATE INDEX IF NOT EXISTS idx_scheduler_history_status ON scheduler_history(status, id)"]
+   ["CREATE TABLE IF NOT EXISTS burn_history (
+       id INTEGER PRIMARY KEY AUTOINCREMENT,
+       strand_id TEXT NOT NULL,
+       title TEXT NOT NULL,
+       state TEXT NOT NULL,
+       created_at TEXT NOT NULL,
+       updated_at TEXT NOT NULL,
+       attributes TEXT NOT NULL DEFAULT '{}',
+       edges TEXT NOT NULL DEFAULT '[]',
+       recorded_at TEXT NOT NULL DEFAULT (datetime('now')),
+       CHECK (json_valid(attributes)),
+       CHECK (json_valid(edges))
+     )"]
+   ["CREATE INDEX IF NOT EXISTS idx_burn_history_strand ON burn_history(strand_id, id)"]])
 
 (def ^:private current-generation 1)
 
+;; Objects that arrived additively after the EAV-era core and flow into
+;; existing worlds via IF NOT EXISTS without a generation bump: pre-DDL
+;; screening permits their absence, everything else in the reference schema is
+;; generation-1 baseline. The next generation bump folds these into its
+;; baseline (SPEC-004.C91c/C91d).
+(def ^:private additive-schema-objects
+  #{[:index "idx_strand_edges_single_serves"]
+    [:table "acyclic_relations"]
+    [:table "immutable_keys"]
+    [:table "scheduler_wakes"]
+    [:index "idx_scheduler_wakes_wake_at"]
+    [:table "scheduler_history"]
+    [:index "idx_scheduler_history_status"]
+    [:table "burn_history"]
+    [:index "idx_burn_history_strand"]})
+
 (def ^:private shipped-acyclic-relations #{"depends-on" "parent-of" "supersedes" "serves" "notes"})
+(def ^:private shipped-immutable-keys #{"note/text" "note/at"})
 
 (defn- classify-generation
   "Classify startup from the stored generation, binary generation, and emptiness."
@@ -434,10 +473,35 @@
                      :found-generation found-generation
                      :expected-generation expected-generation}))))
 
-(declare bootstrap-acyclic-relation!)
+(defn- serving-targets [ds run-id]
+  (mapv :to_strand_id
+        (execute! ds ["SELECT to_strand_id
+                       FROM strand_edges
+                       WHERE from_strand_id = ? AND edge_type = 'serves'
+                       ORDER BY to_strand_id"
+                      run-id])))
+
+(defn- require-valid-existing-serves! [ds]
+  (when-let [run-id (:from_strand_id
+                     (execute-one! ds ["SELECT from_strand_id
+                                        FROM strand_edges
+                                        WHERE edge_type = 'serves'
+                                        GROUP BY from_strand_id
+                                        HAVING COUNT(*) > 1
+                                        ORDER BY from_strand_id
+                                        LIMIT 1"]))]
+    (let [targets (serving-targets ds run-id)]
+      (throw (ex-info (str "Run " run-id " has multiple outgoing serves targets: "
+                           (str/join ", " targets))
+                      {:run-id run-id
+                       :relation "serves"
+                       :existing-targets targets})))))
+
+(declare bootstrap-acyclic-relation! bootstrap-immutable-key! immutable-key?)
 
 (defn init!
-  "Initialize ds with the current schema and shipped acyclic relations.
+  "Initialize ds with the current schema, shipped acyclic relations, and
+  shipped immutable keys.
 
   Existing compatible unstamped schemas are adopted as generation 1. Schema
   mismatches and generation skew throw before initialization writes. The
@@ -446,9 +510,11 @@
   exercising generations and additive sets that cannot occur in production,
   where only the 1-arity is called."
   ([ds]
-   (init! ds schema-sql current-generation #{})
+   (init! ds schema-sql current-generation additive-schema-objects)
    (doseq [relation shipped-acyclic-relations]
      (bootstrap-acyclic-relation! ds relation))
+   (doseq [k shipped-immutable-keys]
+     (bootstrap-immutable-key! ds k))
    ds)
   ([ds schema-statements binary-generation additive-objects]
    (let [reference (reference-schema schema-statements)
@@ -470,6 +536,7 @@
        (:adopt :proceed)
        (do
          (validate-schema! ds reference :pre-ddl additive-objects found-generation binary-generation)
+         (require-valid-existing-serves! ds)
          (doseq [statement schema-statements]
            (execute! ds statement))
          (validate-schema! ds reference :full additive-objects found-generation binary-generation)
@@ -583,6 +650,54 @@
                       " FROM strands t WHERE t.id = ?")
                  strand-id]))
 
+(defn- throw-immutable-violation! [json-k strand-id existing attempted]
+  (throw (ex-info (str "Attribute key " json-k " is write-once and cannot be changed")
+                  {:key json-k :strand-id strand-id :existing existing :attempted attempted})))
+
+(defn- immutable-attribute-row [ds strand-id json-k]
+  (execute-one! ds ["SELECT value FROM attributes WHERE strand_id = ? AND key = ?" strand-id json-k]))
+
+(defn- guard-immutable-write!
+  "Reject a value-changing write to a registered immutable key.
+
+  Reads the existing row in the caller's transaction; a decoded value equal to
+  the decoded attempt passes (idempotent re-assert), so first writes and
+  identical carry-throughs stay legal while genuine changes throw."
+  [ds strand-id k v]
+  (let [json-k (json-key k)]
+    (when (immutable-key? ds json-k)
+      (when-let [row (immutable-attribute-row ds strand-id json-k)]
+        (let [existing (<-json (:value row))
+              attempted (<-json (attr-value->json v))]
+          (when-not (= existing attempted)
+            (throw-immutable-violation! json-k strand-id existing attempted)))))))
+
+(defn- guard-immutable-drop!
+  "Reject deleting or archiving a registered immutable key that has a stored row.
+
+  Attempted is nil to distinguish a removal from a value change."
+  [ds strand-id json-k]
+  (when (immutable-key? ds json-k)
+    (when-let [row (immutable-attribute-row ds strand-id json-k)]
+      (throw-immutable-violation! json-k strand-id (<-json (:value row)) nil))))
+
+(defn- guard-immutable-replace!
+  "Reject a full-map replace that drops or changes any registered immutable key.
+
+  Runs BEFORE the delete-all so existing rows are still visible; a key carried
+  through with its decoded value unchanged is legal, an absent or changed key
+  throws."
+  [ds strand-id attributes]
+  (let [new-by-json (into {} (map (fn [[k v]] [(json-key k) v])) (or attributes {}))]
+    (doseq [{:keys [key value]} (execute! ds ["SELECT key, value FROM attributes WHERE strand_id = ?" strand-id])]
+      (when (immutable-key? ds key)
+        (if (contains? new-by-json key)
+          (let [existing (<-json value)
+                attempted (<-json (attr-value->json (get new-by-json key)))]
+            (when-not (= existing attempted)
+              (throw-immutable-violation! key strand-id existing attempted)))
+          (throw-immutable-violation! key strand-id (<-json value) nil))))))
+
 (defn- write-attribute-rows!
   "Write attribute rows as fresh hot data.
 
@@ -590,6 +705,7 @@
   `archived = 0`; untouched archived keys remain cold."
   [ds strand-id attributes]
   (doseq [[k v] (sort-by (comp str key) attributes)]
+    (guard-immutable-write! ds strand-id k v)
     (execute! ds ["INSERT INTO attributes (strand_id, key, value)
                    VALUES (?, ?, json(?))
                    ON CONFLICT(strand_id, key) DO UPDATE
@@ -598,6 +714,7 @@
                   strand-id (json-key k) (attr-value->json v)])))
 
 (defn- replace-attribute-rows! [ds strand-id attributes]
+  (guard-immutable-replace! ds strand-id attributes)
   (execute! ds ["DELETE FROM attributes WHERE strand_id = ?" strand-id])
   (write-attribute-rows! ds strand-id (or attributes {})))
 
@@ -622,7 +739,9 @@
     (require-valid! ::specs/attributes patched "Attributes must be nil or a map that encodes to a JSON object")
     (doseq [[k v] attributes]
       (if (nil? v)
-        (execute! ds ["DELETE FROM attributes WHERE strand_id = ? AND key = ?" strand-id (json-key k)])
+        (do
+          (guard-immutable-drop! ds strand-id (json-key k))
+          (execute! ds ["DELETE FROM attributes WHERE strand_id = ? AND key = ?" strand-id (json-key k)]))
         (write-attribute-rows! ds strand-id {k (get patched k)})))))
 
 (def ^:private generic-states #{"active" "closed"})
@@ -784,6 +903,22 @@
       (require-existing-relation-acyclic! ds relation)
       (insert-acyclic-relation! ds relation))))
 
+(defn- immutable-key?
+  "Return true when key is declared write-once immutable in ds.
+
+  Key is the stored JSON object-key text (see `json-key`)."
+  [ds key]
+  (boolean (execute-one! ds ["SELECT 1 AS found FROM immutable_keys WHERE key = ?" key])))
+
+(defn- bootstrap-immutable-key!
+  "Seed key as write-once immutable, tolerating an already-present declaration."
+  [ds key]
+  (if (immutable-key? ds key)
+    {:key key :immutable true}
+    (do
+      (execute-one! ds ["INSERT INTO immutable_keys (key) VALUES (?) RETURNING key" key])
+      {:key key :immutable true})))
+
 (defn declare-acyclic-relation!
   "Declare relation acyclic before edges of that relation exist.
 
@@ -804,6 +939,26 @@
              (path-exists? ds type to from))
     (throw (ex-info "Strand edge would create a cycle" {:from from :to to :type type}))))
 
+(defn- require-single-serves-edge! [ds from to type]
+  (when (= "serves" type)
+    (let [targets (serving-targets ds from)]
+      (cond
+        (< 1 (count targets))
+        (throw (ex-info (str "Run " from " has multiple outgoing serves targets: "
+                             (str/join ", " targets))
+                        {:run-id from
+                         :relation type
+                         :existing-targets targets
+                         :attempted-target to}))
+
+        (and (seq targets) (not= to (first targets)))
+        (throw (ex-info (str "Run " from " already serves target " (first targets)
+                             "; cannot also serve " to)
+                        {:run-id from
+                         :relation type
+                         :existing-target (first targets)
+                         :attempted-target to}))))))
+
 (defn add-edge!
   "Upsert an edge row and return it.
 
@@ -811,6 +966,7 @@
   [ds {:keys [from to type attributes] :as edge}]
   (require-valid! ::specs/edge-input edge "Invalid edge")
   (require-existing-strand-ids! ds [from to] :edge)
+  (require-single-serves-edge! ds from to type)
   (require-acyclic-edge! ds from to type)
   (execute-one! ds
                 ["INSERT INTO strand_edges (from_strand_id, to_strand_id, edge_type, attributes)
@@ -838,6 +994,18 @@
                     AND edge_type = ?"
                  from to type]))
     row))
+
+(defn- remove-batch-edge!
+  "Delete the exact (from-id, to-id, type) edge and return its pre-delete row.
+
+  Fails loudly when a clean post-lock lookup finds no matching row — a wrong
+  direction or wrong relation type included — so a stale remover rereads instead
+  of silently succeeding (TEN-003). The submitted refs and resolved durable ids
+  are distinct values in the absence ex-data."
+  [tx {:keys [from to type from-id to-id]}]
+  (or (delete-edge! tx from-id to-id type)
+      (throw (ex-info "Batch edge remove found no matching edge"
+                      {:from from :to to :from-id from-id :to-id to-id :type type}))))
 
 (defn- set-strand-state-internal! [ds strand-id state]
   (require-updated-strand
@@ -1043,6 +1211,9 @@
         target (if archived? 1 0)
         changed (count (remove #(= target (:archived %)) rows))]
     (require-archive-keys-present! rows strand-id archive-keys)
+    (when archived?
+      (doseq [k archive-keys]
+        (guard-immutable-drop! tx strand-id k)))
     (when (seq archive-keys)
       (execute! tx (into [(str "UPDATE attributes
                                 SET archived = ?
@@ -1093,7 +1264,46 @@
     ds
     #(archive-attributes-in-transaction! % strand-id keys false))))
 
+(defn- capture-burn-tombstone!
+  "Record a burn_history tombstone for id when it still exists in tx.
+
+  Captures the strand's core row, its full attribute map (each value tagged
+  with its archived flag so archived keys stay distinguishable), and its
+  incident edges in both directions, then inserts one tombstone row. The
+  attribute map and edge vector are shaped to map onto the batch-mutation
+  payload's :strands and :edges entries so recovery is mechanical. Ids already
+  gone at capture time are skipped. Runs inside the caller's burn transaction,
+  so a failed insert propagates and aborts the burn."
+  [tx id]
+  ;; A missing row deletes nothing, so skipping it records no unrecorded burn:
+  ;; every strand that is actually deleted still has its tombstone captured.
+  (when-let [row (execute-one! tx [(str "SELECT " strand-columns " FROM strands WHERE id = ?") id])]
+    (let [attributes (reduce (fn [acc {:keys [key value archived]}]
+                               (assoc acc key {:value (<-json value) :archived (= 1 archived)}))
+                             {}
+                             (execute! tx ["SELECT key, value, archived
+                                            FROM attributes WHERE strand_id = ? ORDER BY key" id]))
+          edges (mapv (fn [{:keys [from_strand_id to_strand_id edge_type attributes]}]
+                        {:from from_strand_id
+                         :to to_strand_id
+                         :type edge_type
+                         :attributes (<-json attributes)})
+                      (execute! tx ["SELECT from_strand_id, to_strand_id, edge_type, attributes
+                                     FROM strand_edges
+                                     WHERE from_strand_id = ? OR to_strand_id = ?
+                                     ORDER BY from_strand_id, to_strand_id, edge_type" id id]))]
+      (execute-one! tx ["INSERT INTO burn_history
+                           (strand_id, title, state, created_at, updated_at, attributes, edges)
+                         VALUES (?, ?, ?, ?, ?, json(?), json(?))"
+                        id (:title row) (:state row) (:created_at row) (:updated_at row)
+                        (->json attributes) (json/write-str edges :key-fn json-key)]))))
+
 (defn- delete-strands! [ds ids]
+  ;; Capture every tombstone before deleting any strand: a delete cascades the
+  ;; incident edges, so interleaving capture and deletion would drop a shared
+  ;; edge from the later co-burned strand's tombstone.
+  (doseq [id ids]
+    (capture-burn-tombstone! ds id))
   (doseq [id ids]
     (execute! ds ["DELETE FROM strand_edges WHERE from_strand_id = ? OR to_strand_id = ?" id id])
     (execute! ds ["DELETE FROM strands WHERE id = ?" id])))
@@ -1111,9 +1321,40 @@
   [ds id]
   (burn-by-ids! ds [id]))
 
+(defn- decode-burn-history-row
+  "Decode one burn_history row's JSON attributes and edges into Clojure data."
+  [row]
+  (-> row
+      (update :attributes <-json)
+      (update :edges #(json/read-str % :key-fn keyword))))
+
+(defn burn-history-for-strand
+  "Return every burn tombstone recorded for burned strand-id, newest first.
+
+  Each tombstone is a keyword-keyed map with the burned strand's core fields,
+  its full attribute map (each value carried as {:value ... :archived ...} so
+  archived keys stay distinguishable), its incident edges, and recorded_at.
+  Attributes and edges are decoded from JSON."
+  [ds strand-id]
+  (mapv decode-burn-history-row
+        (execute! ds ["SELECT id, strand_id, title, state, created_at, updated_at, attributes, edges, recorded_at
+                       FROM burn_history WHERE strand_id = ? ORDER BY id DESC" strand-id])))
+
+(defn recent-burn-history
+  "Return the latest limit burn tombstones across all strands, newest first.
+
+  limit is required and must be a positive integer; there is no unbounded read.
+  Each tombstone is decoded to a keyword-keyed map as in burn-history-for-strand."
+  [ds limit]
+  (require-positive-limit! limit)
+  (mapv decode-burn-history-row
+        (execute! ds ["SELECT id, strand_id, title, state, created_at, updated_at, attributes, edges, recorded_at
+                       FROM burn_history ORDER BY id DESC LIMIT ?" limit])))
+
 (def ^:private batch-mutation-top-level-keys #{:refs :strands :edges :burn})
 (def ^:private batch-mutation-strand-keys #{:ref :title :state :attributes})
 (def ^:private batch-mutation-edge-keys #{:op :from :to :type :attributes})
+(def ^:private batch-mutation-edge-remove-keys #{:op :from :to :type})
 
 (defn- require-batch-ref! [ref context]
   (when-not (and (keyword? ref)
@@ -1188,8 +1429,9 @@
     (doseq [[idx edge] (map-indexed vector edges)]
       (when-not (map? edge)
         (throw (ex-info "Batch edge entry must be a map" {:index idx :edge edge})))
-      (require-no-unknown-keys! edge batch-mutation-edge-keys :batch-edge)
-      (when-not (= :upsert (:op edge))
+      (case (:op edge)
+        :upsert (require-no-unknown-keys! edge batch-mutation-edge-keys :batch-edge)
+        :remove (require-no-unknown-keys! edge batch-mutation-edge-remove-keys :batch-edge)
         (throw (ex-info "Unsupported batch edge operation" {:index idx :op (:op edge)})))
       (doseq [k [:from :to]]
         (when-not (contains? edge k)
@@ -1198,7 +1440,8 @@
       (when-not (s/valid? ::specs/edge-type (:type edge))
         (throw (ex-info "Batch edge :type must be a valid relation name"
                         {:index idx :edge edge})))
-      (require-json-object-encodable! (:attributes edge) :edge))
+      (when (= :upsert (:op edge))
+        (require-json-object-encodable! (:attributes edge) :edge)))
     {:refs refs :strands strands :edges edges :burn burn}))
 
 (defn ^:no-doc apply-batch-in-transaction!
@@ -1219,12 +1462,15 @@
           (throw (ex-info "Batch burn refs must name existing bound refs" {:ref ref}))))
       (when-let [ref (first (filter strand-refs burn-refs))]
         (throw (ex-info "Batch ref cannot be both mutated and burned" {:ref ref})))
-      (doseq [{:keys [from to]} edges]
+      (doseq [{:keys [op from to]} edges]
         (doseq [ref [from to]]
           (when-not (contains? known-refs ref)
             (throw (ex-info "Batch edge references unknown ref" {:ref ref})))
           (when (contains? burn-refs ref)
-            (throw (ex-info "Batch edge cannot reference a burned ref" {:ref ref})))))
+            (throw (ex-info "Batch edge cannot reference a burned ref" {:ref ref})))
+          (when (and (= :remove op) (not (contains? bound-refs ref)))
+            (throw (ex-info "Batch edge remove endpoints must be top-level pre-bound refs"
+                            {:ref ref :op op})))))
       (let [{final-refs :refs created-rows :rows}
             (reduce (fn [acc strand]
                       (if (contains? refs (:ref strand))
@@ -1245,15 +1491,27 @@
                          vec)
             edge-outcomes (mapv (fn [edge]
                                   (let [from-id (get final-refs (:from edge))
-                                        to-id (get final-refs (:to edge))]
-                                    {:op :upsert
-                                     :from (:from edge)
-                                     :to (:to edge)
-                                     :type (:type edge)
-                                     :edge (add-edge! tx {:from from-id
-                                                          :to to-id
-                                                          :type (:type edge)
-                                                          :attributes (:attributes edge)})}))
+                                        to-id (get final-refs (:to edge))
+                                        type (:type edge)
+                                        transition {:op (:op edge)
+                                                    :from (:from edge)
+                                                    :to (:to edge)
+                                                    :type type}]
+                                    (case (:op edge)
+                                      ;; Load the real pre-image before writing so a
+                                      ;; replacement upsert reports its actual :before.
+                                      :upsert (let [before (edge-row tx from-id to-id type)
+                                                    after (add-edge! tx {:from from-id
+                                                                         :to to-id
+                                                                         :type type
+                                                                         :attributes (:attributes edge)})]
+                                                (assoc transition :before before :after after))
+                                      :remove (let [before (remove-batch-edge! tx {:from (:from edge)
+                                                                                   :to (:to edge)
+                                                                                   :type type
+                                                                                   :from-id from-id
+                                                                                   :to-id to-id})]
+                                                (assoc transition :before before :after nil)))))
                                 edges)
             burn-ids (mapv final-refs burn)
             burned-rows (strands-by-ids tx burn-ids)]
@@ -1264,11 +1522,12 @@
          :burned (mapv (fn [ref id row] {:ref ref :id id :before row}) burn burn-ids burned-rows)
          :edges edge-outcomes}))))
 
-(defn apply-batch!
+(defn ^:no-doc apply-batch!
   "Apply a mixed batch mutation transaction.
 
-  Payload refs bind existing and newly-created strands, edges are upserted, and burns
-  delete strands after mutation validation succeeds."
+  Payload refs bind existing and newly-created strands, edges run ordered
+  `:upsert`/`:remove` operations, and burns delete strands after validation
+  succeeds."
   [ds payload]
   (jdbc/with-transaction [tx ds]
     (apply-batch-in-transaction! tx payload)))
@@ -1446,9 +1705,6 @@
    (query-strands ds query-def {}))
   ([ds query-def params]
    (query-strands ds query-def params)))
-
-(defn- require-positive-limit! [limit]
-  (require-valid! ::specs/read-limit limit "Read result limit must be a positive integer"))
 
 (defn- bounded-select!
   "Return selected rows, failing loudly when more than limit rows match."

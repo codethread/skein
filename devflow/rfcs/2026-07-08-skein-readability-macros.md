@@ -1,6 +1,6 @@
 # Readability macros for the .skein config surface
 
-**Document ID:** `RFC-020` **Status:** Accepted **Date:** 2026-07-08 **Related:** [Workflow ergonomics RFC-012](../archive/26-07-02__workflow-ergonomics/rfcs/2026-07-02-workflow-authoring-ergonomics.md) (deferred `defworkflow`), [`.skein/spools/macros`](../../.skein/spools/macros) (`defpattern` precedent), [TENETS](../TENETS.md), [PHILOSOPHY](../PHILOSOPHY.md), [writing shared spools](../../docs/writing-shared-spools.md)
+**Document ID:** `RFC-020` **Status:** Accepted **Date:** 2026-07-08 **Related:** [Workflow ergonomics RFC-012](../archive/26-07-02__workflow-ergonomics/rfcs/2026-07-02-workflow-authoring-ergonomics.md) (deferred `defworkflow`), [`.skein/spools/macros`](../../.skein/spools/macros) (`defpattern` precedent), [TENETS](../TENETS.md), [PHILOSOPHY](../PHILOSOPHY.md), [writing shared spools](../../docs/spools/writing-shared-spools.md)
 
 ## RFC-020.P1 Problem
 
@@ -26,7 +26,7 @@ One fact reframes the decision: `.skein` **already ships a grouping macro**. `sk
 
 ## RFC-020.P3 Non-goals
 
-- **RFC-020.NG1:** No change to `init.clj`'s `runtime/use!` activation model or its explicit ordering
+- **RFC-020.NG1:** No change to `init.clj`'s `runtime/module!` activation model or its explicit ordering
   comments — those encode load-order rationale a macro must not hide. Macro registration still runs only inside
   each module's `install!`, after required spools load.
 - **RFC-020.NG2:** No new CLI surface, op semantics, or arg-spec parser change. Generated `help` stays derived
@@ -88,7 +88,7 @@ Load-order constraints any macro layer must respect (from `init.clj` and the rec
   (`config`, `attention`) `require` them, exactly as `demo.clj` requires `skein.macros.patterns` today. Tier
   correctness: this is config-tier spool code that requires blessed `skein.api.*.alpha` registration APIs
   (the correct direction); it is **not** part of the shipped `src/skein/` tree, so it commits to no accretion
-  contract and stays freely evolvable (TEN-000). It is **not** `skein.userland.alpha` — userland is
+  contract and stays freely evolvable (TEN-000@1). It is **not** `skein.userland.alpha` — userland is
   downstream-only ergonomics that no `skein.*` namespace may require, and a registration macro that calls
   `skein.api.*` would invert that tier.
 - **RFC-020.REC3:** Do **not** promote to a shipped `skein.api.config-macros.alpha` yet (that is O5, tracked
