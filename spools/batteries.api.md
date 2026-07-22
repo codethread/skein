@@ -65,12 +65,12 @@ Return batteries' complete stable-owner CLI operation contribution.
   The classpath spool remains explicitly required by workspace startup; this
   function only supplies its declarative operation partition. Each entry is
   assembled into the canonical `::op-entry` shape (string key, `:name`, `:fn`,
-  provenance, deadline/hook class) exactly as `register-op!` would, so the module
+  provenance, and arg-spec node metadata) exactly as `register-op!` would, so the module
   publication path is equivalent to direct registration. Batteries ships no
   `help` op of its own — the built-in help op stays effective and batteries
   elects only the reference help transform (DELTA-Dtf-002.D1) — so the partition
   declares no overrides over the lower defaults layer.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/batteries/src/skein/spools/batteries.clj#L1488-L1505">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/batteries/src/skein/spools/batteries.clj#L1513-L1529">Source</a></sub></p>
 
 ## <a name="skein.spools.batteries/default-help-transform">`default-help-transform`</a>
 ``` clojure
@@ -92,7 +92,7 @@ Render a canonical help envelope (DELTA-Dtf-001.CC1) as readable text.
   branch is which envelope family this is — an envelope-shape choice, never a
   per-node-level one, so the recursive node renderer stays uniform at every depth
   (the forcing-function invariant, DELTA-Dtf-003.D1).
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/batteries/src/skein/spools/batteries.clj#L1385-L1403">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/batteries/src/skein/spools/batteries.clj#L1417-L1435">Source</a></sub></p>
 
 ## <a name="skein.spools.batteries/install!">`install!`</a>
 ``` clojure
@@ -112,7 +112,7 @@ Register the batteries core strand ops into a weaver runtime.
   The no-arg arity registers into the active runtime for legacy direct callers;
   the explicit-runtime arity is for tests and trusted callers. New startup
   configuration declares the `contribute`/`reconcile` module entry points.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/batteries/src/skein/spools/batteries.clj#L1432-L1458">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/batteries/src/skein/spools/batteries.clj#L1462-L1487">Source</a></sub></p>
 
 ## <a name="skein.spools.batteries/list-op">`list-op`</a>
 ``` clojure
@@ -198,7 +198,7 @@ Seed batteries' owned glossary outcomes as a runtime resource.
   publication does not run the direct-registration glossary-ref check, so
   publishing before this reconcile is safe; help resolves the referenced-term
   closure against the seeded outcomes.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/batteries/src/skein/spools/batteries.clj#L1507-L1520">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/batteries/src/skein/spools/batteries.clj#L1531-L1544">Source</a></sub></p>
 
 ## <a name="skein.spools.batteries/set-read-limit!">`set-read-limit!`</a>
 ``` clojure

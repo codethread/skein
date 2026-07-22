@@ -105,21 +105,34 @@
             (is (some? (:arg-spec entry))))))
       (testing "the separate spool-status op is retired (DELTA-Lhc-001.CC8)"
         (is (nil? (op-entry rt 'spool-status))))
-      (testing "hook classes match read/mutating intent"
-        (is (= :mutating (:hook-class (op-entry rt 'add))))
-        (is (= :mutating (:hook-class (op-entry rt 'update))))
-        (is (= :mutating (:hook-class (op-entry rt 'supersede))))
-        (is (= :mutating (:hook-class (op-entry rt 'burn))))
-        (is (= :mutating (:hook-class (op-entry rt 'weave))))
-        (is (= :read (:hook-class (op-entry rt 'show))))
-        (is (= :read (:hook-class (op-entry rt 'list))))
-        (is (= :read (:hook-class (op-entry rt 'ready))))
-        (is (= :read (:hook-class (op-entry rt 'subgraph))))
-        (is (= :read (:hook-class (op-entry rt 'query))))
-        (is (= :read (:hook-class (op-entry rt 'pattern))))
-        (is (= :mutating (:hook-class (op-entry rt 'note))))
-        (is (= :read (:hook-class (op-entry rt 'notes))))
-        (is (= :read (:hook-class (op-entry rt 'vocab)))))
+      (testing "flat leaves carry classes"
+        (doseq [[op-name hook-class] {'add :mutating
+                                      'update :mutating
+                                      'show :read
+                                      'supersede :mutating
+                                      'burn :mutating
+                                      'list :read
+                                      'ready :read
+                                      'subgraph :read
+                                      'weave :mutating
+                                      'note :mutating
+                                      'notes :read
+                                      'vocab :read}]
+          (let [entry (op-entry rt op-name)]
+            (is (= hook-class (get-in entry [:arg-spec :hook-class])))
+            (is (= :standard (get-in entry [:arg-spec :deadline-class]))))))
+      (testing "read subcommand leaves carry classes"
+        (doseq [op-name ['query 'pattern]
+                verb ["list" "explain"]]
+          (let [leaf (get-in (op-entry rt op-name) [:arg-spec :subcommands verb])]
+            (is (= :read (:hook-class leaf)))
+            (is (= :standard (:deadline-class leaf))))))
+      (testing "contribution preserves leaf classes without entry defaults"
+        (let [entry (get-in (batteries/contribute {}) [:ops :entries "add"])]
+          (is (= :mutating (get-in entry [:arg-spec :hook-class])))
+          (is (= :standard (get-in entry [:arg-spec :deadline-class])))
+          (is (nil? (:hook-class entry)))
+          (is (nil? (:deadline-class entry)))))
       (testing "spool authors classes single-source on its arg-spec leaves (MI7)"
         (let [subcommands (get-in (op-entry rt 'spool) [:arg-spec :subcommands])]
           (is (= {"about" [:read :standard]

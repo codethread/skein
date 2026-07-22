@@ -40,9 +40,7 @@ declare its module:
    :reconcile 'skein.spools.batteries/reconcile})
 ```
 
-The contribution owns every op below plus its glossary outcomes. Each op carries
-`{:doc … :arg-spec … :returns … :hook-class …}` metadata; owner-complete refresh replaces the
-whole batteries partition atomically.
+The contribution owns every op below plus its glossary outcomes. Each op carries `{:doc … :arg-spec … :returns …}` metadata; its invocable `:arg-spec` leaves carry `:hook-class` and `:deadline-class`. Owner-complete refresh replaces the whole batteries partition atomically.
 
 ## 2. Invocation and payloads
 
@@ -64,10 +62,7 @@ whole batteries partition atomically.
   - `weave --input :stdin` replaces reading raw stdin for `weave`.
 Loud rules (SPEC-003-D003.C2): a reference naming no attached payload fails `:missing-payload`; an
 attached payload that no reference consumed fails `:unused-payloads`.
-- **BAT-C3 (hook classes):** Each op declares a `:hook-class` used for
-  metadata-driven gating (SPEC-004-D003): `:mutating` for `add`, `update`,
-  `supersede`, `burn`, `note`, `weave`, `spool`; `:read` for `show`, `list`,
-  `ready`, `notes`, `subgraph`, `query`, `pattern`, `vocab`, `spool-status`.
+- **BAT-C3 (hook classes):** Each invocable arg-spec leaf declares `:hook-class` and `:deadline-class` for metadata-driven gating (SPEC-004-D003). The mutating leaves are `add`, `update`, `supersede`, `burn`, `note`, `weave`, and `spool add`/`spool bump`; the read leaves are `show`, `list`, `ready`, `notes`, `subgraph`, every `query` and `pattern` verb, `vocab`, and `spool about`/`spool status`. All batteries leaves use `:deadline-class :standard`.
   Mutating ops pass a request context
   `{:request/source :json-socket :request/operation <op-kw>}` so hooks and
   events observe the same data the old socket dispatch supplied.
