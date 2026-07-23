@@ -159,7 +159,9 @@ the queue must land atomically:
   `clojure -M:test skein.spools-test skein.config-test`
   + `clojure -M:smoke` against a disposable world with repo-local binaries.
 
-- **PLAN-Srs-001.PH3 (Go bootstrap — one seat, ~S; parallelizable with PH2):**
+- **PLAN-Srs-001.PH3 (Go bootstrap — one seat, ~S; parallel with PH1, and a
+  prerequisite of PH2's smoke gate — `clojure -M:smoke` builds and drives the
+  Go binaries):**
   Rewrite `DefaultInitCLJ` to declare batteries as a `:spools`-guarded
   `contribute`/`reconcile` module (still requiring `current`/`runtime` and
   capturing `(current/runtime)`), seed generated `spools.edn` with the batteries
