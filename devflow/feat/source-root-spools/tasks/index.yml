@@ -8,7 +8,7 @@ tasks:
     description: Batteries cutover and repo config migration
     task_file: tasks/002-batteries-cutover-and-repo-config.md
     status: pending
-    blocked_by: [1]
+    blocked_by: [1, 3]
   - id: 3
     description: Go bootstrap seeds batteries as an approved spool
     task_file: tasks/003-go-bootstrap-seeded-batteries.md

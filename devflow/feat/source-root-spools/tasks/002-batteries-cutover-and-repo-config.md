@@ -38,3 +38,4 @@ Decision (resolving the P7 subtlety at planning time): the ambient-JVM classpath
 - **TASK-Srs-002.REF2:** [SPEC-004-D006](../specs/daemon-runtime.delta.md), especially C1, C3, C5, and C7.
 - **TASK-Srs-002.REF3:** [SPEC-003-D006](../specs/repl-api.delta.md), clauses C0 and C1; [SPEC-002-D007.C1](../specs/cli.delta.md); [SPEC-005-D001.C1](../specs/alpha-surface.delta.md).
 - **TASK-Srs-002.REF4:** [Brief consumer sweep](../brief.md#scope), including repo config, smoke, `spools_test`, and `config_test`.
+- **TASK-Srs-002.REF5:** Blocked on Task 3 as well as Task 1: `clojure -M:smoke` builds and drives the Go `mill`/`strand` binaries (`dev/skein/smoke.clj` builds `cli/bin/*`), so the DW2 gate needs Task 3's seeded bootstrap in place.
