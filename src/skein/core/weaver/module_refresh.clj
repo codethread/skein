@@ -366,36 +366,60 @@
     (let [file (spool-sync/module-file runtime (:file declaration))]
       (with-loader #(load-module-file! runtime file {:file file})))))
 
+(defn- evaluate-image-module
+  "Evaluate a `:load :image` module: trust the already-loaded JVM image for its
+  `:ns` target with no source load and no contribution-collection scope. The
+  contribution always comes from the declared `:contribute` fn; the outcome
+  carries `:source/status :image` and no source stamp."
+  [runtime with-loader key declaration]
+  (let [ns-sym (:ns declaration)]
+    (when-not (find-ns ns-sym)
+      (fail! "Image module namespace is not loaded in the JVM image; load or require it before the module activates"
+             {:module/key key :ns ns-sym :load :image}))
+    (let [contribution (with-loader
+                         #(let [contribute-fn (resolve-module-fn!
+                                               key :contribute
+                                               (:contribute declaration))]
+                            (contribute-fn {:runtime runtime
+                                            :module/key key
+                                            :module/declaration declaration})))]
+      {:status :ready
+       :module/key key
+       :source/status :image
+       :contribution (normalize-contribution contribution)})))
+
 (defn- evaluate-module
   [runtime with-loader key declaration previous-contribution previous-source]
   (try
-    (let [context (collection-context runtime key declaration)
-          {:keys [return contribution]}
-          (module-graph/with-contribution-collection
-            context
-            #(load-source! runtime with-loader key declaration previous-source))
-          source-status (if (and (:ns declaration) (nil? (:file return)))
-                          :unchanged
-                          :loaded)
-          contribution (if-let [contribute (:contribute declaration)]
-                         (with-loader
-                           #(let [contribute-fn (resolve-module-fn!
-                                                 key :contribute contribute)]
-                              (contribute-fn {:runtime runtime
-                                              :module/key key
-                                              :module/declaration declaration})))
-                         (if (and (= :unchanged source-status)
-                                  (some? previous-contribution))
-                           previous-contribution
-                           contribution))
-          normalized (normalize-contribution contribution)]
-      {:status :ready
-       :module/key key
-       :source/status source-status
-       :source/result return
-       :source/stamp (when-let [ns-sym (:ns declaration)]
-                       (source-stamp (latest-source-binding runtime ns-sym)))
-       :contribution normalized})
+    (if (= :image (:load declaration))
+      (evaluate-image-module runtime with-loader key declaration)
+      (let [context (collection-context runtime key declaration)
+            {:keys [return contribution]}
+            (module-graph/with-contribution-collection
+              context
+              #(load-source! runtime with-loader key declaration previous-source))
+            source-status (if (and (:ns declaration) (nil? (:file return)))
+                            :unchanged
+                            :loaded)
+            contribution (if-let [contribute (:contribute declaration)]
+                           (with-loader
+                             #(let [contribute-fn (resolve-module-fn!
+                                                   key :contribute contribute)]
+                                (contribute-fn {:runtime runtime
+                                                :module/key key
+                                                :module/declaration declaration})))
+                           (if (and (= :unchanged source-status)
+                                    (some? previous-contribution))
+                             previous-contribution
+                             contribution))
+            normalized (normalize-contribution contribution)]
+        {:status :ready
+         :module/key key
+         :source/status source-status
+         :source/result return
+         :source/stamp (when-let [ns-sym (:ns declaration)]
+                         (source-stamp (latest-source-binding runtime ns-sym)))
+         :contribution normalized}))
     (catch Throwable throwable
       {:status :failed
        :module/key key

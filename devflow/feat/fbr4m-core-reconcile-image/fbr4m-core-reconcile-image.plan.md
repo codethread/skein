@@ -6,7 +6,7 @@
 **RFC:** none
 **Root specs:** [daemon-runtime.md](../../specs/daemon-runtime.md), [repl-api.md](../../specs/repl-api.md)
 **Feature specs:** [specs/daemon-runtime.delta.md](./specs/daemon-runtime.delta.md), [specs/repl-api.delta.md](./specs/repl-api.delta.md)
-**Status:** Draft
+**Status:** Reviewed
 **Last Updated:** 2026-07-23
 **Configuration identification:** Document IDs must be ordered as document type, short name, sequential id, then optional version. Prefix every nested point ID with the full document ID, for example `PLAN-Cri-001.P1`.
 
@@ -40,10 +40,13 @@ validated member of the closed module declaration grammar. See
   outcome shape).
 - **PLAN-Cri-001.A3 (contract text):** Insert SPEC-004.C46b (reconcile
   contract) beside C46 per DELTA-Cri-001.CC1; extend the C45/C46 grammar
-  language per DELTA-Cri-001.CC2; update SPEC-003 P5 helper prose and the P6
-  example per DELTA-Cri-002; extend the `module!` docstring (grammar + the
-  one-sentence reconcile contract) and the `::module-declaration` spec's
-  optional `:load` key. Mark both deltas Merged in the same branch.
+  language per DELTA-Cri-001.CC2; update SPEC-003 P5 helper prose per
+  DELTA-Cri-002 — the P6 example stays untouched (production `:spools`-guarded
+  declaration; image mode is the bare-runtime variant per ADR-003.P7); extend
+  the `module!` docstring (grammar + the one-sentence reconcile contract) and
+  the `::module-declaration` spec's optional `:load` key. The deltas' Merged
+  status becomes true in this same branch: the root-spec merges land in PH2
+  before review.
 - **PLAN-Cri-001.A4 (tests):** In `skein.weaver-test`: grammar refusal cases
   asserting ex-data (`:module/key`, offending value, allowed alternatives);
   image activation on a bare runtime publishing the `:contribute` contribution
@@ -52,7 +55,12 @@ validated member of the closed module declaration grammar. See
   absence of `:collection/reload?` in the source result — timing-independent);
   unloaded-namespace `:failed` outcome (asserting the actionable ex-data, with
   the top-level result `:partial`); `refresh! {:only}` over an image module
-  staying loadless; removal-path
+  staying loadless AND skipping reconcile on the unchanged contribution
+  (reconcile-call count unchanged); explicit `plan`/`status` assertions
+  (`:dry-run?` plan outcome and `module-status` both report `:source/status
+  :image`, the declaration keeps `:load :image` as data, and no
+  contribution-source stamp is recorded); a source-loading module redeclared
+  as `:load :image` dropping its previously recorded source stamp; removal-path
   reconcile receiving `:module/contribution :status :removed` and applied-path
   `:applied` (extend `module-reconcile` to record the received status);
   unchanged contribution skipping reconcile (already asserted — keep). In

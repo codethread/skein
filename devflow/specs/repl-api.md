@@ -128,7 +128,7 @@ Spool metadata and spool prerequisites are documentation, not REPL API grammar. 
 Helpers include:
 
 - `(runtime/approved runtime)` returns normalized approved config.
-- `(runtime/module! runtime key opts)` declares one owner under a stable keyword, with exactly one `:ns` or `:file` source, optional `:spools` and `:after` prerequisites, optional `:contribute` and `:reconcile` symbols, and optional `:required?` policy.
+- `(runtime/module! runtime key opts)` declares one owner under a stable keyword, with exactly one `:ns` or `:file` source, optional `:load :image` mode, optional `:spools` and `:after` prerequisites, optional `:contribute` and `:reconcile` symbols, and optional `:required?` policy. `:load :image` trusts the already-loaded JVM image for an `:ns` target: refresh performs no source load for that module, so it requires an explicit `:contribute` and accepts no `:file` target, refusing violations at declaration time with the module key, offending value, and allowed alternatives; an unloaded namespace is that module's failed outcome at evaluation (SPEC-004.C45/C46). A `:reconcile` fn receives the contribution status and branches: `:applied` ensures registrations and resources, `:removed` tears them down, and any other status — reachable only by direct call — fails loudly naming the status, the allowed set, the module, and the reconciler (SPEC-004.C46b).
 - `(runtime/collect-entry! kind-id entry-key value opts?)` collects one authoring-form registry entry for the module source being evaluated. Repeating a kind/key in one source evaluation replaces the earlier value deterministically, `{:override? true}` records explicit override intent, and outside contribution collection the form is passive. The collection context is scoped to the source form under evaluation, so this is the one lifecycle function taking no runtime argument; spool authoring macros (e.g. cron `defjob`) expand to it rather than to internal collection plumbing.
 - `(runtime/refresh! runtime)` re-reads the layered startup graph, acquires approved roots, reloads changed module source, publishes owner-complete contributions, and reconciles resources. Its targeted arity accepts `{:only [...]}`.
 - `(runtime/plan runtime)` returns the same joined intention shape without acquisition, publication, reconciliation, or coordinator-state mutation.
@@ -141,7 +141,9 @@ Helpers include:
 
 Module `:file` targets are selected-workspace relative and may not escape the
 workspace. Module `:ns` targets are ledger-loaded from the complete synchronized
-root closure, including roots reached through `:after` dependencies. Classpath
+root closure, including roots reached through `:after` dependencies — except a
+`:load :image` module, whose namespace is trusted from the live image and never
+source-loaded by refresh. Classpath
 modules for genuinely classpath-owned namespaces declare no `:spools`.
 `skein.spools.batteries`, like every synced spool, declares its approved root in
 `:spools`. A full refresh removes an owner by omission; targeted refresh includes

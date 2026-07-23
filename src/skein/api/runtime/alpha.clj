@@ -201,6 +201,7 @@
          #(not= (contains? % :ns) (contains? % :file))
          #(or (not (contains? % :ns)) (symbol? (:ns %)))
          #(or (not (contains? % :file)) (string? (:file %)))
+         #(or (not (contains? % :load)) (= :image (:load %)))
          #(vector? (:spools %))
          #(vector? (:after %))
          #(boolean? (:required? %))))
@@ -251,13 +252,28 @@
   "Declare one stable runtime module under keyword `key` for `runtime`.
 
   `opts` is closed to a source target (`:ns` synced namespace symbol, or
-  workspace-relative `:file` string — exactly one is required), optional
-  approved `:spools` root prerequisites, optional module-key `:after`
-  dependencies, an optional fully qualified `:contribute` symbol, an optional
-  fully qualified `:reconcile` symbol, and an optional boolean `:required?`.
-  When `:contribute` is omitted the module's contribution is the declaration
-  data collected from the authoring forms evaluated in its source, so a plain
-  file of authoring forms is a complete module (DELTA-OlrRepl-001.CC3).
+  workspace-relative `:file` string — exactly one is required), an optional
+  `:load :image` mode, optional approved `:spools` root prerequisites,
+  optional module-key `:after` dependencies, an optional fully qualified
+  `:contribute` symbol, an optional fully qualified `:reconcile` symbol, and
+  an optional boolean `:required?`. When `:contribute` is omitted the module's
+  contribution is the declaration data collected from the authoring forms
+  evaluated in its source, so a plain file of authoring forms is a complete
+  module (DELTA-OlrRepl-001.CC3).
+
+  `:load :image` (SPEC-004.C45/C46, ADR-003.P4) trusts the
+  already-loaded JVM image for the `:ns` target: refresh performs no source
+  load for that module, so it requires an explicit `:contribute` and accepts
+  no `:file` target — violations are refused at declaration time. A declared
+  namespace not loaded in the image is that module's `:failed` outcome at
+  evaluation. The outcome reports `:source/status :image` and carries no
+  source stamp.
+
+  A `:reconcile` fn receives the contribution status under
+  `[:module/contribution :status]` and branches: `:applied` ensures its live
+  resources and registrations exist, `:removed` tears them down, and any other
+  status — reachable only by direct call — fails loudly naming the status, the
+  allowed set, the module, and the reconciler (SPEC-004.C46b).
 
   During startup-file collection this only stages the declaration and performs
   no source load, publication, or reconcile. Outside collection it replaces the

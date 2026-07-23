@@ -261,7 +261,14 @@
                                         :spools [] :after [] :required? false}
                    :staged? true}))
     (is (s/valid? ::runtime/module-result applied-refresh-result))
-    (is (not (s/valid? ::runtime/module-result {:staged? false})))))
+    (is (not (s/valid? ::runtime/module-result {:staged? false}))))
+  (testing "module-declaration accepts only :image for the optional :load key"
+    (let [image-declaration {:ns 'skein.api.runtime.alpha-test :load :image
+                             :contribute 'skein.api.runtime.alpha-test/image-contribute
+                             :spools [] :after [] :required? false}]
+      (is (s/valid? ::runtime/module-declaration image-declaration))
+      (is (not (s/valid? ::runtime/module-declaration
+                         (assoc image-declaration :load :classpath)))))))
 
 (defn- write-module-source! [config-dir relative-path ns-sym body]
   (let [file (io/file config-dir relative-path)]
@@ -321,6 +328,41 @@
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"exactly one"
                                 (runtime/module! rt :bad {:file "modules/demo.clj"
                                                           :ns 'demo.ns}))))))))
+
+(defn image-contribute
+  "Return the image-module test contribution."
+  [_ctx]
+  {:queries {"image-q" [:= [:attr :k] :image]}})
+
+(deftest image-module-declaration-activates-and-validates
+  (with-started-runtime
+    nil
+    {}
+    (fn [rt _world]
+      (testing "an image declaration activates from the live image and validates"
+        (let [result (runtime/module! rt :image
+                                      {:ns 'skein.api.runtime.alpha-test
+                                       :load :image
+                                       :contribute 'skein.api.runtime.alpha-test/image-contribute})]
+          (is (= :applied (:status result)))
+          (is (s/valid? ::runtime/module-result result))
+          (is (= :image (get-in result [:modules :image :source/status])))
+          (is (= [:= [:attr :k] :image] (get (graph/queries rt) "image-q")))))
+      (testing "image grammar refusals throw from module! with actionable data"
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"requires an explicit :contribute"
+                              (runtime/module! rt :image-bad
+                                               {:ns 'skein.api.runtime.alpha-test
+                                                :load :image})))
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"accepts only :image"
+                              (runtime/module! rt :image-bad
+                                               {:ns 'skein.api.runtime.alpha-test
+                                                :load :classpath
+                                                :contribute 'skein.api.runtime.alpha-test/image-contribute})))
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"accepts only an :ns source target"
+                              (runtime/module! rt :image-bad
+                                               {:file "modules/demo.clj"
+                                                :load :image
+                                                :contribute 'skein.api.runtime.alpha-test/image-contribute})))))))
 
 (deftest reload-code-composes-code-reload-and-residual-classification
   (with-started-runtime

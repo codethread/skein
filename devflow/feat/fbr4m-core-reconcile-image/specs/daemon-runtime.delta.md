@@ -36,13 +36,19 @@ language admits the new key.
   value is `:image`. `:load :image` is valid only with an `:ns` source target
   and requires an explicit `:contribute` symbol; violations are refused at
   declaration time with the module key, the offending value, and the allowed
-  alternatives. An image-mode module performs no source load during collection,
+  alternatives. Concretely, each refusal's ex-data carries `:module/key` plus:
+  a bad `:load` value carries `:load` (the offending value) and `:allowed
+  #{:image}`; a `:file` target carries `:load :image`, the offending `:file`,
+  and `:allowed [:ns]`; a missing `:contribute` carries `:load :image` and
+  `:required :contribute`, with the message stating why (no source evaluation
+  happens, so no authoring-form collection can exist). An image-mode module performs no source load during collection,
   ever: evaluation requires its namespace to be already loaded in the JVM
   image, and reports an unloaded namespace as that module's `:failed` outcome
   — the same per-module evaluation-failure channel as a missing synced source;
   never a top-level `:refused`, never a throw out of `module!` — with error
-  data naming the module key, the offending namespace, and the allowed
-  alternative (the namespace must be loaded before an image module activates).
+  data carrying `:module/key`, the offending `:ns` value, and `:load :image`,
+  and a message stating the allowed alternative (the namespace must be loaded
+  or required before an image module activates).
   Its per-module outcome states `:source/status :image` and carries no source
   stamp. Declarations without `:load` keep the existing source-loading
   behavior unchanged.

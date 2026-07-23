@@ -9,10 +9,14 @@
 
 ## DELTA-Cri-002.P1 Summary
 
-SPEC-003 P5 describes the `module!` helper's closed declaration options and P6
-shows the example spool init. Both gain the `{:load :image}` grammar ADR-003.P4
-adopted, and the helper prose gains the one-sentence reconcile contract
-ADR-003.P6 formalized (normative text in SPEC-004.C46b via DELTA-Cri-001.CC1).
+SPEC-003 P5 describes the `module!` helper's closed declaration options. It
+gains the `{:load :image}` grammar ADR-003.P4 adopted, and the helper prose
+gains the one-sentence reconcile contract ADR-003.P6 formalized (normative
+text in SPEC-004.C46b via DELTA-Cri-001.CC1). The P6 example stays untouched:
+it shows a production `:spools`-guarded declaration, and image mode is the
+bare-runtime/test variant of the exported-base-declaration pattern
+(ADR-003.P7) — adding `:load :image` there would misdescribe production
+activation.
 
 ## DELTA-Cri-002.P2 Contract changes
 
@@ -27,7 +31,8 @@ ADR-003.P6 formalized (normative text in SPEC-004.C46b via DELTA-Cri-001.CC1).
 - **DELTA-Cri-002.CC2 (module `:ns` target paragraph):** The paragraph stating
   "Module `:ns` targets are ledger-loaded from the complete synchronized root
   closure" gains the image-mode exception: a `:load :image` module's namespace
-  is trusted from the live image and never source-loaded by refresh.
+  is trusted from the live image and never source-loaded by refresh. The P6
+  example is deliberately unchanged (see P1).
 
 ## DELTA-Cri-002.P3 Design decisions
 

@@ -10,7 +10,7 @@
             [clojure.string :as str]))
 
 (def ^:private declaration-keys
-  #{:ns :file :spools :after :contribute :reconcile :required?})
+  #{:ns :file :load :spools :after :contribute :reconcile :required?})
 
 (def ^:private startup-layer-rank
   {:init 0 :init-local 1 :direct 2})
@@ -58,7 +58,9 @@
 
   The key is independent of source identity. Options are closed, name exactly
   one `:ns` or workspace-relative `:file`, and carry normalized `:spools`,
-  `:after`, and `:required?` values."
+  `:after`, and `:required?` values. `:load :image` (the only accepted `:load`
+  value) trusts the already-loaded JVM image: it requires an `:ns` target and
+  an explicit `:contribute`, and refresh never source-loads that module."
   [key opts]
   (when-not (keyword? key)
     (fail! "Module key must be a keyword" {:module/key key}))
@@ -83,6 +85,18 @@
   (doseq [field [:contribute :reconcile]
           :when (contains? opts field)]
     (require-qualified-symbol! (name field) (get opts field)))
+  (when (contains? opts :load)
+    (when-not (= :image (:load opts))
+      (fail! "Module :load accepts only :image"
+             {:module/key key :load (:load opts) :allowed #{:image}}))
+    (when (contains? opts :file)
+      (fail! "Module :load :image accepts only an :ns source target"
+             {:module/key key :load :image :file (:file opts)
+              :allowed [:ns]}))
+    (when-not (contains? opts :contribute)
+      (fail! "Module :load :image requires an explicit :contribute (no source evaluation happens, so no authoring-form collection can exist)"
+             {:module/key key :load :image
+              :required :contribute})))
   (when (and (contains? opts :required?)
              (not (boolean? (:required? opts))))
     (fail! "Module :required? must be boolean"
