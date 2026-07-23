@@ -31,7 +31,7 @@
                "spools/chime/src" "skein/spools"
                "spools/cron/src" "skein/spools"
                "spools/workflow/src" "skein/spools"
-               "spools/text-search/src" "skein/spools"
+               "spools/unsafe-text-search/src" "skein/spools"
                "spools/guild/src" "skein/spools"}
         namespaces (sort (mapcat (fn [[root subdir]]
                                    (namespaces-under root subdir))

@@ -1,6 +1,6 @@
 
 -----
-# <a name="skein.spools.text-search">skein.spools.text-search</a>
+# <a name="skein.spools.unsafe-text-search">skein.spools.unsafe-text-search</a>
 
 
 UNSAFE: uses skein.core.db for substring search over strand titles and
@@ -33,7 +33,7 @@ UNSAFE: uses skein.core.db for substring search over strand titles and
   that breakage surfaces here and gets fixed here. An external spool that copies
   this pattern earns no such guarantee and owns its own breakage.
 
-  See `spools/text-search.md` for the full unsafe declaration and design
+  See `spools/unsafe-text-search.md` for the full unsafe declaration and design
   rationale. Every search substring is parameter-bound — user input is never
   spliced into SQL — and the op is read-only: it mutates no strands, edges, or
   state.
@@ -41,13 +41,13 @@ UNSAFE: uses skein.core.db for substring search over strand titles and
 
 
 
-## <a name="skein.spools.text-search/contribute">`contribute`</a>
+## <a name="skein.spools.unsafe-text-search/contribute">`contribute`</a>
 ``` clojure
 (contribute _ctx)
 ```
 Function.
 
-Return text-search's complete unsafe search-operation contribution.
+Return unsafe-text-search's complete unsafe search-operation contribution.
 
   The operation retains its documented direct `skein.core.db` dependency; only
   publication changes from eager registration to owner-complete declaration. The
@@ -56,9 +56,9 @@ Return text-search's complete unsafe search-operation contribution.
   because a blessed spool may not reach the weaver's internal op-entry plumbing
   (SPEC-003.C19a) — so the effective op registry stays string-keyed across the
   eager and module paths.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/text-search/src/skein/spools/text_search.clj#L230-L249">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/unsafe-text-search/src/skein/spools/unsafe_text_search.clj#L234-L253">Source</a></sub></p>
 
-## <a name="skein.spools.text-search/default-search-limit">`default-search-limit`</a>
+## <a name="skein.spools.unsafe-text-search/default-search-limit">`default-search-limit`</a>
 
 
 
@@ -72,9 +72,9 @@ Default row cap for `search`. Overflow fails loudly rather than truncating,
   governs the silently-truncating `list`/`ready` reads, and this op's cap is a
   different contract — it fails on overflow instead of truncating. A workspace
   that raises its read limit does not thereby widen `search`; pass `:limit`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/text-search/src/skein/spools/text_search.clj#L46-L56">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/unsafe-text-search/src/skein/spools/unsafe_text_search.clj#L47-L57">Source</a></sub></p>
 
-## <a name="skein.spools.text-search/install!">`install!`</a>
+## <a name="skein.spools.unsafe-text-search/install!">`install!`</a>
 ``` clojure
 (install!)
 ```
@@ -86,9 +86,9 @@ Install the UNSAFE `search` op into the active weaver.
   other shipped spools; the op handler and `search` itself take the runtime
   explicitly. Returns installation metadata carrying `:unsafe true` so callers
   can see what they activated.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/text-search/src/skein/spools/text_search.clj#L212-L228">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/unsafe-text-search/src/skein/spools/unsafe_text_search.clj#L216-L232">Source</a></sub></p>
 
-## <a name="skein.spools.text-search/search">`search`</a>
+## <a name="skein.spools.unsafe-text-search/search">`search`</a>
 ``` clojure
 (search runtime opts)
 ```
@@ -110,9 +110,9 @@ Return strand rows whose title or an attribute value contains `substring`.
   Read-only. Fails loudly (TEN-003) on malformed opts or overflow: `search`
   fetches one row past `:limit` and, if the result exceeds it, throws naming
   `--limit` and query-narrowing rather than silently truncating.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/text-search/src/skein/spools/text_search.clj#L128-L170">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/unsafe-text-search/src/skein/spools/unsafe_text_search.clj#L129-L171">Source</a></sub></p>
 
-## <a name="skein.spools.text-search/search-op">`search-op`</a>
+## <a name="skein.spools.unsafe-text-search/search-op">`search-op`</a>
 ``` clojure
 (search-op ctx)
 ```
@@ -122,4 +122,4 @@ Handle `strand search ...`, threading parsed args into `search`.
 
   The registered op handler; resolved by symbol at dispatch time, so it is public
   like the other spools' op handlers.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/text-search/src/skein/spools/text_search.clj#L172-L182">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/unsafe-text-search/src/skein/spools/unsafe_text_search.clj#L173-L184">Source</a></sub></p>

@@ -73,13 +73,13 @@
                   "an over-floor value was replaced by an omission descriptor")
               (is (seq (:sample-attribute-keys lean))))))
 
-        (testing "family (b) text-search LIKE spool is wired for hot and archived rows"
-          (let [hot (:text-search-hot residual)
-                archived (:text-search-archived residual)]
+        (testing "family (b) unsafe-text-search LIKE spool is wired for hot and archived rows"
+          (let [hot (:unsafe-text-search-hot residual)
+                archived (:unsafe-text-search-archived residual)]
             (is (well-formed-measurement? hot))
             (is (well-formed-measurement? archived))
-            (is (pos? (:rows hot)) "hot text-search matched the seeded corpus")
-            (is (contains? (:sample hot) :snippet) "text-search rows carry the matched snippet")
+            (is (pos? (:rows hot)) "hot unsafe-text-search matched the seeded corpus")
+            (is (contains? (:sample hot) :snippet) "unsafe-text-search rows carry the matched snippet")
             (is (false? (:archived? hot)))
             (is (true? (:archived? archived)))
             (is (>= (:rows archived) (:rows hot))

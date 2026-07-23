@@ -1,5 +1,6 @@
 (ns skein.quality.conventions-check-test
-  "Ratchet-edge coverage for the api-form check in `quality.api-form`.
+  "Ratchet-edge coverage for the `quality.api-form` and
+  `quality.spool-tiers` checks.
 
   The conversion cards each edit `quality.api-form/pending`, so the edges
   that keep that set honest are the behavior worth pinning: a converted
@@ -8,12 +9,20 @@
   pending module is exempt even when conformant (deleting the entry is
   the card's deliberate act, never forced by an unrelated cleanup); a
   stale entry is a finding; and the internal dependency rules hold for
-  every module, pending or not."
+  every module, pending or not.
+
+  The spool-tiers rules pin the unsafe-namespace convention: shipped
+  spool sources use `skein.core.*` only from unsafe-named namespaces
+  (SPEC-005.C5), an unsafe name that touches no internals is stale,
+  cross-spool unsafe requires from safe namespaces are findings, and
+  the `UNSAFE:` docstring lead agrees with the name in both
+  directions."
   (:require
    [clojure.java.io :as io]
    [clojure.string :as str]
    [clojure.test :refer [deftest is testing]]
-   [quality.api-form :as api-form])
+   [quality.api-form :as api-form]
+   [quality.spool-tiers :as spool-tiers])
   (:import
    [java.nio.file Files]
    [java.nio.file.attribute FileAttribute]))
@@ -133,3 +142,121 @@
                  :to 'skein.api.tidy.internal.validate
                  :filename "src/skein/api/other/internal/helpers.clj" :row 3}]
       (is (= 1 (count (api-form/findings {:namespace-usages [usage]} {} #{})))))))
+
+(defn- spool-file
+  "Source path for namespace `from-ns` inside spool `spool`."
+  [spool from-ns]
+  (str "spools/" spool "/src/"
+       (-> (str from-ns) (str/replace "-" "_") (str/replace "." "/")) ".clj"))
+
+(defn- spool-usage
+  "One kondo-shaped usage row from `from-ns` in spool `spool` to `to-ns`."
+  [spool from-ns to-ns row]
+  {:from from-ns :to to-ns :filename (spool-file spool from-ns) :row row})
+
+(defn- spool-ns-def
+  "One kondo-shaped namespace-definition row for `from-ns` in `spool`."
+  [spool from-ns doc]
+  (cond-> {:name from-ns :filename (spool-file spool from-ns) :row 1}
+    doc (assoc :doc doc)))
+
+(deftest core-usage-from-safe-namespace-is-a-finding
+  (testing "a require and a qualified var usage are each findings"
+    (let [findings (spool-tiers/findings
+                    {:namespace-usages [(spool-usage "tidy" 'skein.spools.tidy
+                                                     'skein.core.db 5)]
+                     :var-usages [(spool-usage "tidy" 'skein.spools.tidy
+                                               'skein.core.weaver.module-refresh
+                                               40)]}
+                    #{"tidy"})]
+      (is (= 2 (count findings)))
+      (is (every? #(re-find #"spools build on `skein.api" %) findings))))
+  (testing "absolute kondo filenames still hit the rule"
+    (let [usage (assoc (spool-usage "tidy" 'skein.spools.tidy 'skein.core.db 5)
+                       :filename "/abs/repo/spools/tidy/src/skein/spools/tidy.clj")]
+      (is (= 1 (count (spool-tiers/findings {:namespace-usages [usage]}
+                                            #{"tidy"})))))))
+
+(deftest core-usage-from-unsafe-named-namespace-is-permitted
+  (let [analysis {:namespace-definitions
+                  [(spool-ns-def "unsafe-tidy" 'skein.spools.unsafe-tidy
+                                 "UNSAFE: reads skein.core.db directly.")]
+                  :namespace-usages
+                  [(spool-usage "unsafe-tidy" 'skein.spools.unsafe-tidy
+                                'skein.core.db 5)]}]
+    (is (empty? (spool-tiers/findings analysis #{"unsafe-tidy"})))))
+
+(deftest unsafe-marker-matches-segments-not-substrings
+  (testing "a substring hit grants nothing"
+    (let [analysis {:namespace-usages
+                    [(spool-usage "tidy" 'skein.spools.notunsafe
+                                  'skein.core.db 5)]}]
+      (is (= 1 (count (spool-tiers/findings analysis #{"tidy"}))))))
+  (testing "a bare `unsafe` segment is a marker"
+    (is (spool-tiers/unsafe-ns? 'skein.spools.tidy.unsafe))
+    (is (not (spool-tiers/unsafe-ns? 'skein.spools.unsafely)))))
+
+(deftest core-usage-outside-shipped-spool-sources-is-out-of-scope
+  (let [engine {:from 'skein.core.weaver :to 'skein.core.db
+                :filename "src/skein/core/weaver.clj" :row 3}
+        test-use {:from 'skein.spools.tidy-test :to 'skein.core.db
+                  :filename "spools/tidy/test/skein/spools/tidy_test.clj" :row 3}
+        local-spool {:from 'skein.macros.rules :to 'skein.core.weaver.module-refresh
+                     :filename ".skein/spools/macros/src/skein/macros/rules.clj"
+                     :row 3}]
+    (is (empty? (spool-tiers/findings
+                 {:namespace-usages [engine test-use local-spool]}
+                 #{"tidy"})))))
+
+(deftest own-spool-unsafe-require-is-permitted-cross-spool-is-not
+  (let [defs [(spool-ns-def "tidy" 'skein.spools.tidy.unsafe-db
+                            "UNSAFE: reads skein.core.db directly.")
+              (spool-ns-def "tidy" 'skein.spools.tidy "Doc.")
+              (spool-ns-def "other" 'skein.spools.other "Doc.")]
+        core-use (spool-usage "tidy" 'skein.spools.tidy.unsafe-db
+                              'skein.core.db 5)
+        own-use (spool-usage "tidy" 'skein.spools.tidy
+                             'skein.spools.tidy.unsafe-db 3)
+        foreign-use (spool-usage "other" 'skein.spools.other
+                                 'skein.spools.tidy.unsafe-db 3)]
+    (testing "a safe ns wrapping its own spool's unsafe boundary is clean"
+      (is (empty? (spool-tiers/findings
+                   {:namespace-definitions defs
+                    :namespace-usages [core-use own-use]}
+                   #{"tidy" "other"}))))
+    (testing "a safe ns requiring another spool's unsafe ns is a finding"
+      (let [findings (spool-tiers/findings
+                      {:namespace-definitions defs
+                       :namespace-usages [core-use own-use foreign-use]}
+                      #{"tidy" "other"})]
+        (is (= 1 (count findings)))
+        (is (re-find #"from another spool" (first findings)))))))
+
+(deftest stale-unsafe-name-is-a-finding
+  (let [analysis {:namespace-definitions
+                  [(spool-ns-def "tidy" 'skein.spools.tidy.unsafe-db
+                                 "UNSAFE: reads skein.core.db directly.")]
+                  :namespace-usages
+                  [(spool-usage "tidy" 'skein.spools.tidy.unsafe-db
+                                'skein.api.graph.alpha 5)]}]
+    (is (= 1 (count (spool-tiers/findings analysis #{"tidy"}))))
+    (is (re-find #"drop the unsafe marker"
+                 (first (spool-tiers/findings analysis #{"tidy"}))))))
+
+(deftest unsafe-docstring-lead-agrees-with-the-name
+  (testing "unsafe-named ns without the UNSAFE: lead is a finding"
+    (let [analysis {:namespace-definitions
+                    [(spool-ns-def "tidy" 'skein.spools.tidy.unsafe-db "Doc.")]
+                    :namespace-usages
+                    [(spool-usage "tidy" 'skein.spools.tidy.unsafe-db
+                                  'skein.core.db 5)]}
+          findings (spool-tiers/findings analysis #{"tidy"})]
+      (is (= 1 (count findings)))
+      (is (re-find #"must lead with `UNSAFE:`" (first findings)))))
+  (testing "safe ns claiming UNSAFE: in its docstring is a finding"
+    (let [analysis {:namespace-definitions
+                    [(spool-ns-def "tidy" 'skein.spools.tidy
+                                   "UNSAFE: but the name says otherwise.")]}
+          findings (spool-tiers/findings analysis #{"tidy"})]
+      (is (= 1 (count findings)))
+      (is (re-find #"the marker is the name" (first findings))))))

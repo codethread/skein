@@ -778,26 +778,51 @@ expose it, and won't. When you reach past the contract anyway, do it in the open
 `unsafe` block: the capability stays available, the danger stays visible, and the next reader knows
 exactly what they're trusting.
 
-The worked reference is [`skein.spools.text-search`](../../spools/text-search.md): it requires
+The worked reference is [`skein.spools.unsafe-text-search`](../../spools/unsafe-text-search.md): it requires
 `skein.core.db` and runs SQL against the physical tables to search titles and attribute values,
 including archived rows the query language cannot see. It is a maintained example of rule-breaking,
-not a blessed path. If you must write one, follow the same three markers so the break is never
+not a blessed path. If you must write one, follow the same four markers so the break is never
 silent:
 
-1. **`UNSAFE:` docstring prefix.** The namespace docstring's first line begins
+1. **The unsafe namespace name.** The marker is the name: a namespace that
+   touches `skein.core.*` has a segment that is `unsafe` or starts with
+   `unsafe-` (`skein.spools.unsafe-text-search`, `ct.spools.foo.unsafe-db` —
+   segment match, never substring, and the segment is reserved: a namespace
+   that stays on the blessed tier may not use it). The name travels where
+   metadata cannot: every consumer's require line, stack traces, classpath
+   and file listings, and anything enumerating loaded namespaces sees the
+   bargain without reading a line of source. To keep most of a spool safe,
+   factor the core coupling into one unsafe-named boundary namespace; its
+   require block then *is* the coupling declaration. A safe namespace may
+   build on its **own spool's** unsafe boundary — the factoring is the point —
+   but never on another spool's: there is no cross-repo lockstep, so that
+   breakage contract cannot be wrapped away. Going unsafe later is a
+   compatibility break, and the rename is that break taking a new name.
+2. **`UNSAFE:` docstring prefix.** The namespace docstring's first line begins
    with `UNSAFE:` and names the internal namespaces it requires. A reader
    opening the source sees the bargain before the code.
-2. **A README/contract unsafe-declaration section.** The contract doc opens with
+3. **A README/contract unsafe-declaration section.** The contract doc opens with
    an **Unsafe declaration**: the exact internal namespaces required; why the
    blessed `api.*` surface cannot serve this; and the breakage contract —
    `skein.core.*` changes freely (TEN-000@1), so the spool may break on any
    upgrade and is maintained *in-repo, in lockstep* with the storage it reads.
-3. **In-repo lockstep maintenance.** An unsafe spool ships in this repo, beside
+4. **In-repo lockstep maintenance.** An unsafe spool ships in this repo, beside
    the internals it couples to, so a `skein.core.*` change and the spool's fix
    land together. An external spool that copies the pattern pins itself to
    internals that will move and owns its own breakage — say so, and don't
    distribute one.
 
-This convention is enforced by review today. The enforcement direction — a `register!`-level
-`:unsafe` flag and a lint spool that surfaces `skein.core.*`-requiring spool sources — is a tracked
-follow-up.
+A spool that ships or requires an unsafe namespace is **unsafe-carrying**, and its whole
+distribution unit inherits the breakage contract — encapsulation can hide a name one require-hop
+deep, but it cannot discharge upgrade breakage. A wholly unsafe spool therefore renames its
+directory and coordinate too (`unsafe-text-search`), so the contract is visible at the point of
+approval.
+
+For spools shipped in this repo, the tier line is machine-enforced: `make lint` fails on any
+`skein.core.*` usage from a safe-named namespace under `spools/*/src`, on a stale unsafe name that
+touches no internals, on a safe namespace requiring another spool's unsafe namespace, and on a
+docstring whose `UNSAFE:` lead disagrees with the name (`quality.spool-tiers`). External spools are
+held to the convention by review and this guide; the tracked follow-ups are consumer consent in
+`spools.edn` (`:allow-unsafe #{ns-sym ...}` on an entry, checked at activation — sound because
+spools have no transitive dependencies, so every classpath root has exactly one consent entry) and
+an author-side export of this lint for spool repos' own suites.

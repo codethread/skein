@@ -18,7 +18,7 @@
    ;; each test builds its own registries and unpublished runtimes — no shared state.
    'skein.api.registry.alpha-test
    'skein.plugin-test 'skein.relations-test 'skein.notes-test 'skein.vocab-test
-   'skein.spools.text-search-test
+   'skein.spools.unsafe-text-search-test
    'skein.guild-test 'skein.test.alpha-test 'skein.warm-test 'skein.api.cli.alpha-test
    'skein.source-file-test
    ;; pure findings logic over its own temp-dir fixtures — no shared state.

@@ -14,11 +14,11 @@
   Family (b) — residual paths (`PROP-LargeAttrScaling-001.F2`). Measures the
   *absolute* cost of the real shipped read paths — full-fidelity point read
   (`weaver/show`, archived rows included), lean list/`ready` assembly
-  (`weaver/list-lean`/`ready-lean`), and the text-search `LIKE` spool — through
-  actual `skein.core.db` / `skein.spools.text-search` code on a disposable
+  (`weaver/list-lean`/`ready-lean`), and the unsafe-text-search `LIKE` spool — through
+  actual `skein.core.db` / `skein.spools.unsafe-text-search` code on a disposable
   `:publish? false` world under `with-runtime-binding`, across the `F2` regimes:
   values straddling the 1024-byte lean floor, inlined payloads to MB scale,
-  populated archived-row volumes, and a text-search corpus.
+  populated archived-row volumes, and an unsafe-text-search corpus.
 
   Everything here is informational (`PLAN-LargeAttrScaling-001.A5`): this spike
   ships no storage change, so no scenario is merge-blocking. The only gate is the
@@ -35,7 +35,7 @@
             [skein.api.weaver.alpha :as weaver]
             [skein.core.db :as db]
             [skein.spools.test-support :as ts]
-            [skein.spools.text-search :as text-search])
+            [skein.spools.unsafe-text-search :as unsafe-text-search])
   (:import [java.sql Connection]
            [java.time Instant]
            [java.util Random]
@@ -717,7 +717,7 @@
 
 ;; ---------------------------------------------------------------------------
 ;; Family (b): F2 residual read paths through shipped skein.core.db /
-;; skein.spools.text-search on a disposable :publish? false runtime.
+;; skein.spools.unsafe-text-search on a disposable :publish? false runtime.
 ;; ---------------------------------------------------------------------------
 
 (defn- residual-attributes
@@ -727,7 +727,7 @@
   `:near-floor` value straddling the 1024-byte lean floor every
   `:near-floor-every`; an MB-scale `:mb-payload` on the first `:mb-payload-count`
   strands; and a distinctive `:corpus` needle on the fixed hot + archived text
-  bands so text-search has bounded matches at any `N`."
+  bands so unsafe-text-search has bounded matches at any `N`."
   [^Random rng idx opts]
   (let [{:keys [payload-every payload-bytes near-floor-bytes near-floor-every
                 mb-payload-bytes mb-payload-count corpus-hot-count
@@ -760,7 +760,7 @@
 (defn- residual-archived?
   "True when strand `idx` should carry archived rows.
 
-  The fixed needle-archived band is always archived so text-search `--archived`
+  The fixed needle-archived band is always archived so unsafe-text-search `--archived`
   has cold matches; a deterministic fraction of the remaining strands is archived
   for volume so the archived-included point read scans populated cold data."
   [idx opts]
@@ -860,7 +860,7 @@
            ;; id-ordered first row may be a fully-archived strand whose lean map is empty
            :sample-attribute-keys (some->> rows (map attribute-keys) (filter seq) first))))
 
-(defn- measure-text-search
+(defn- measure-unsafe-text-search
   "Text-search `LIKE` scan through the shipped spool.
 
   `archived?` selects the branch that also scans cold rows the query language
@@ -871,12 +871,12 @@
         limit (+ (:corpus-hot-count opts) (:corpus-archived-count opts) 50)
         result (volatile! nil)
         m (measure-workload
-           #(vreset! result (text-search/search rt (cond-> {:substring needle :limit limit}
-                                                     archived? (assoc :archived? true))))
+           #(vreset! result (unsafe-text-search/search rt (cond-> {:substring needle :limit limit}
+                                                            archived? (assoc :archived? true))))
            opts)
         rows @result]
     (assoc m
-           :scenario (if archived? :text-search-like-archived :text-search-like-hot)
+           :scenario (if archived? :unsafe-text-search-like-archived :unsafe-text-search-like-hot)
            :archived? (boolean archived?)
            :rows (count rows)
            :sample (first rows))))
@@ -895,8 +895,8 @@
          :point-read (measure-point-read rt seed opts)
          :lean-list (measure-lean-assembly rt :lean-list-assembly weaver/list-lean opts)
          :lean-ready (measure-lean-assembly rt :lean-ready-assembly weaver/ready-lean opts)
-         :text-search-hot (measure-text-search rt false opts)
-         :text-search-archived (measure-text-search rt true opts)}))))
+         :unsafe-text-search-hot (measure-unsafe-text-search rt false opts)
+         :unsafe-text-search-archived (measure-unsafe-text-search rt true opts)}))))
 
 ;; ---------------------------------------------------------------------------
 ;; Combined run + entrypoint

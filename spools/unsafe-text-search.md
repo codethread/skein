@@ -2,14 +2,14 @@
 
 > This is the **contract** doc: what `search` returns, its flags, and the
 > failure modes. Its companions are
-> [`text-search.cookbook.md`](./text-search.cookbook.md) — worked recipes — and
-> [`text-search.api.md`](./text-search.api.md) — generated fn signatures.
+> [`unsafe-text-search.cookbook.md`](./unsafe-text-search.cookbook.md) — worked recipes — and
+> [`unsafe-text-search.api.md`](./unsafe-text-search.api.md) — generated fn signatures.
 
 ## Unsafe declaration
 
 **This spool breaks the namespace-tier rules on purpose.** It is a maintained example of rule-breaking done in the open — the Clojure equivalent of a Rust `unsafe` block — not a path you should copy without understanding the cost. Read this section before you activate it.
 
-**Internal namespaces it requires.** `skein.spools.text-search` requires `skein.core.db` directly and runs SQL against the physical `strands` and `attributes` tables, and it reads the runtime's raw SQLite datasource (`(:datasource runtime)`). Both are `skein.core.*` internals with no compatibility promise. A blessed spool builds only on `skein.api.*.alpha`; this one reaches past that boundary.
+**Internal namespaces it requires.** `skein.spools.unsafe-text-search` requires `skein.core.db` directly and runs SQL against the physical `strands` and `attributes` tables, and it reads the runtime's raw SQLite datasource (`(:datasource runtime)`). Both are `skein.core.*` internals with no compatibility promise. A blessed spool builds only on `skein.api.*.alpha`; this one reaches past that boundary.
 
 **Why the blessed surface cannot serve this.** Two deliberate design choices close the door:
 
@@ -30,7 +30,7 @@ Neither is a gap waiting to be filled. Both are load-bearing invariants (TEN-004
 
 ## 1. Overview
 
-`skein.spools.text-search` registers one op, `search`: a `LIKE`-based substring search over strand titles and attribute values. Hot rows only by default; `--archived` opts the cold rows in. It mutates nothing.
+`skein.spools.unsafe-text-search` registers one op, `search`: a `LIKE`-based substring search over strand titles and attribute values. Hot rows only by default; `--archived` opts the cold rows in. It mutates nothing.
 
 Every search substring is a bound parameter — user input is escaped for `LIKE` metacharacters and never spliced into SQL. Because it reads the raw datasource, it requires an **in-process weaver runtime**: trusted startup config, the weaver's own REPL, or an in-process test runtime.
 
@@ -44,14 +44,14 @@ strand search "widget" --limit 200            # raise the row cap
 ```
 
 ```clojure
-(require '[skein.spools.text-search :as text-search]
+(require '[skein.spools.unsafe-text-search :as unsafe-text-search]
          '[skein.api.current.alpha :as current])
 
 (def rt (current/runtime))
 
-(text-search/search rt {:substring "retry backoff"})
-(text-search/search rt {:substring "backoff" :attr-key "note"})
-(text-search/search rt {:substring "secretword" :archived? true})
+(unsafe-text-search/search rt {:substring "retry backoff"})
+(unsafe-text-search/search rt {:substring "backoff" :attr-key "note"})
+(unsafe-text-search/search rt {:substring "secretword" :archived? true})
 ```
 
 ## 3. Surface
@@ -98,8 +98,8 @@ attribute key:
 ## 5. See also
 
 - [README.md](./README.md) — shipped spools index (this spool is marked UNSAFE).
-- [text-search.cookbook.md](./text-search.cookbook.md) — worked recipes.
+- [unsafe-text-search.cookbook.md](./unsafe-text-search.cookbook.md) — worked recipes.
 - [Writing shared spools](../docs/spools/writing-shared-spools.md#unsafe-spools) — the
   unsafe-spool convention this spool is the reference for.
-- `test/skein/spools/text_search_test.clj` — executable contract examples
+- `test/skein/spools/unsafe_text_search_test.clj` — executable contract examples
   against a real weaver runtime.

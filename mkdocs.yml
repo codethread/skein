@@ -102,9 +102,9 @@ nav:
           - Cookbook: spools/guild.cookbook.md
           - API: spools/guild.api.md
       - Text Search (UNSAFE):
-          - Contract: spools/text-search.md
-          - Cookbook: spools/text-search.cookbook.md
-          - API: spools/text-search.api.md
+          - Contract: spools/unsafe-text-search.md
+          - Cookbook: spools/unsafe-text-search.cookbook.md
+          - API: spools/unsafe-text-search.api.md
       - Kanban Board: spools/kanban.md
       - Shell Gate Executor:
           - Contract: spools/executors/shell.md

@@ -57,15 +57,15 @@
                   :after [:skein/spools-workflow]
                   :contribute 'skein.spools.executors.shell/contribute
                   :reconcile 'skein.spools.executors.shell/reconcile})
-;; UNSAFE spool: text-search reaches past the blessed api.* contract into
+;; UNSAFE spool: unsafe-text-search reaches past the blessed api.* contract into
 ;; skein.core.db to LIKE-search titles and attribute values, including archived
 ;; rows the query language cannot see. It is a maintained, in-the-open example of
-;; rule-breaking (see spools/text-search.md), activated here so it stays
+;; rule-breaking (see spools/unsafe-text-search.md), activated here so it stays
 ;; exercised. It contributes its query and needs no resource reconcile.
-(runtime/module! runtime :skein/spools-text-search
-                 {:ns 'skein.spools.text-search
-                  :spools ['skein.spools/text-search]
-                  :contribute 'skein.spools.text-search/contribute})
+(runtime/module! runtime :skein/spools-unsafe-text-search
+                 {:ns 'skein.spools.unsafe-text-search
+                  :spools ['skein.spools/unsafe-text-search]
+                  :contribute 'skein.spools.unsafe-text-search/contribute})
 ;; devflow is an external git-distributed spool: activation is gated on the
 ;; approved codethread/devflow coordinate (spools.edn pin or a developer's
 ;; spools.local.edn checkout), never on an incidental classpath copy. It still
