@@ -441,8 +441,10 @@
         (is (= {:reconciled :applied}
                (chime/reconcile {:runtime rt :module/contribution {:status :applied}})))
         (is (= [:phase-failed] (mapv :key (chime/rules)))))
-      (testing "any other contribution status is a noop"
-        (is (= {:reconciled :noop} (chime/reconcile {:runtime rt})))))))
+      (testing "any other contribution status fails loudly"
+        (is (thrown-with-msg?
+             clojure.lang.ExceptionInfo #"Unsupported module contribution status"
+             (chime/reconcile {:runtime rt})))))))
 
 (deftest module-activated-engine-fires-event-driven-notifications
   ;; Activation via runtime/module! — the production path, no install! —

@@ -416,11 +416,13 @@
   later reapplication re-baselines and republishes them. Every branch holds
   the visible-view monitor that scans, registration, and the mutation barrier
   share, so no mutation or event lane observes a half-applied transition. Any
-  other contribution status is a noop."
+  other contribution status fails loudly: the module kernel only reconciles
+  applied and removed outcomes, so anything else is a caller error."
   [{:keys [runtime] :as ctx}]
   (binding [*runtime* runtime]
-    (let [visible (rule-registry)]
-      (case (get-in ctx [:module/contribution :status])
+    (let [visible (rule-registry)
+          status (get-in ctx [:module/contribution :status])]
+      (case status
         :applied (locking visible
                    (hooks/register-hook! runtime :chime/registration-barrier
                                          mutation-hook-types
@@ -437,7 +439,8 @@
                    (hooks/unregister-hook! runtime :chime/registration-barrier)
                    (reconcile-rule-view! visible {})
                    {:reconciled :removed})
-        {:reconciled :noop}))))
+        (fail! "Unsupported module contribution status"
+               {:status status :allowed #{:applied :removed}})))))
 
 (defn install!
   "Install chime's mutation barrier and event handler into the active weaver.

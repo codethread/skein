@@ -39,7 +39,7 @@ Install chime's mutation barrier and event handler into the active weaver.
 
   Chime ships no rules and no notifier: trusted config supplies rules with
   `register!` and a notifier with `set-notifier!`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/chime/src/skein/spools/chime.clj#L442-L461">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/chime/src/skein/spools/chime.clj#L445-L464">Source</a></sub></p>
 
 ## <a name="skein.spools.chime/mutation-registration-barrier!">`mutation-registration-barrier!`</a>
 ``` clojure
@@ -121,8 +121,9 @@ Reconcile chime's engine and visible rule view for a module transition.
   later reapplication re-baselines and republishes them. Every branch holds
   the visible-view monitor that scans, registration, and the mutation barrier
   share, so no mutation or event lane observes a half-applied transition. Any
-  other contribution status is a noop.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/chime/src/skein/spools/chime.clj#L406-L440">Source</a></sub></p>
+  other contribution status fails loudly: the module kernel only reconciles
+  applied and removed outcomes, so anything else is a caller error.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/chime/src/skein/spools/chime.clj#L406-L443">Source</a></sub></p>
 
 ## <a name="skein.spools.chime/register!">`register!`</a>
 ``` clojure
