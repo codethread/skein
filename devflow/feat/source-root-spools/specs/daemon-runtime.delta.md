@@ -1,0 +1,43 @@
+# Weaver Runtime Delta: Source-root spool coordinates
+
+**Document ID:** `SPEC-004-D006` **Status:** Draft **Base Spec:** [Weaver Runtime](../../../specs/daemon-runtime.md) **Related proposal:** [`PROP-Srs-001`](../proposal.md) **Related brief:** [brief.md](../brief.md) (card `u4a24`) **Last Updated:** 2026-07-23
+
+## SPEC-004-D006.P1 Summary
+
+Add a third approved spool coordinate kind, `{:skein/source-root "spools/<name>"}`, resolved at sync time against the running weaver's mill-resolved skein source checkout, and make `skein.spools.batteries` an ordinary approved spool loaded through that kind. No spool ships on the source/base classpath any more: the SPEC-004.C50a batteries classpath exception is removed and its zero-config guarantee deliberately dropped, while the generic classpath-ownership machinery serving SPEC-004.C50 blessed namespaces stays. Code touched at module granularity: `skein.core.weaver.spool-sync` (kind parse/validate/resolve, sync outcomes, sync-diff), `skein.core.weaver.runtime` (promoted source-checkout locator authority), `skein.core.weaver.module-refresh` (drop batteries-specific classpath-exception handling only).
+
+## SPEC-004-D006.P2 Changed contracts
+
+### Approved coordinate kinds (SPEC-004.P9 / C42)
+
+- **SPEC-004-D006.C1** (amends `SPEC-004.C42`): `spools.edn` admits a third coordinate kind. A **source-root family** is exactly `{:skein/source-root path}` and has one root named by the family symbol (parallel to a local family). `path` is a relative checkout path with no leading `/`, `~`, or `..` segment; absolute paths, leading `~`, and `..` segments fail structural validation. Each root lib still has exactly one owning family, and mixing coordinate kinds within a family still fails during structural validation before any resolution. The approved-kind set is now closed at three: `:local/root`, sha-pinned `:git`, and `:skein/source-root`. Normalized approved config carries a `:kind :skein/source-root` coordinate alongside the existing local and git shapes.
+
+### Source acquisition boundary (SPEC-004.C48@2 / C49@2)
+
+- **SPEC-004-D006.C2** (amends `SPEC-004.C48@2` and `SPEC-004.C49@2`): shipped-source resolution is distinguished from git acquisition. Resolving a `:skein/source-root` coordinate locates an already-present directory in the running weaver's skein source checkout — no clone, fetch, submodule, sha pin, tag verification, or acquisition of any kind. C48@2's acquisition scope stays limited to explicitly approved sha-pinned git coordinates; source-root resolution never triggers acquisition. The source kinds admitted by C49@2 become three: approved local roots, approved sha-pinned git coordinates, and approved skein-source-root coordinates. Package registries, version ranges, dependency solving, and fetch-time code execution remain outside the contract.
+
+### Resolution authority (new SPEC-004.C50b)
+
+- **SPEC-004-D006.C3** (new clause `SPEC-004.C50b`): The mill-resolved skein source checkout that `SPEC-004.C50` already binds for blessed namespaces is the sole resolution authority for `:skein/source-root` coordinates. A single runtime-owned, specified source-checkout locator — the resource-derived locator promoted from private to a shared authority in the weaver runtime module — supplies the checkout root; resolution never reads cwd, config dir, or request/envelope state. Resolution fails loudly (TEN-003) when the checkout is unavailable or the classpath resource does not identify a readable file checkout. Each coordinate resolves beneath `<checkout>/spools`, and containment is enforced by canonical confinement after symlink resolution — not merely lexical rejection of `..`/absolute segments — so a symlink escaping `<checkout>/spools` fails rather than resolving. In-place source edits under the checkout remain governed by the existing fingerprint/generation rules (SPEC-004.C44c).
+
+### Sync resolution and outcomes (SPEC-004.C44 family)
+
+- **SPEC-004-D006.C4** (amends `SPEC-004.C44@sync-owns-resolution`): sync outcome maps carry the third kind. A source-root root's vetted source paths are added directly to the runtime's single spool `DynamicClassLoader`, exactly like a local root's vetted source paths and with no fetch or Maven acquisition of its own. Its outcome `:kind` is `:skein/source-root` carrying only the kind-relevant source field (the relative source-root path), never nil-stuffed cross-kind keys or manifest-derived data. The `:family`/`:lib`/`:coordinate` keys and the per-root `:loaded`/`:already-available` semantics are unchanged.
+
+- **SPEC-004-D006.C5** (`SPEC-004.C44c@sync-diff-classification` preserved and sharpened): the removed-root, repointed-root, and changed-source-fingerprint/loaded-namespace non-additive guards are preserved verbatim, and pending-generation recording/clearing (C44d) is unchanged. The classifier keys identity on the effective resolved root path, so rewriting a live world's coordinate kind or text is not itself a non-additive refusal when the canonical resolved root is unchanged. **Cutover:** in a generation where batteries is still on the immutable launch classpath, the newly synced source-root provider wins for module source resolution while classpath ownership persists; only a fresh weaver generation (mill-supervised restart) removes that classpath ownership. A weaver generation remains a process boundary.
+
+- **SPEC-004-D006.C6** (`SPEC-004.C44f@version-bump-guard` preserved): the Maven version-bump guard and its `:non-additive-sync-diff`/pending-generation behavior are unchanged. Source-root coordinates introduce no Maven baseline of their own; a source-root spool root's declared Maven `:deps` participate through the same shared universe resolution as any other kind.
+
+### Base classpath and batteries (SPEC-004.C50a replaced)
+
+- **SPEC-004-D006.C7** (replaces `SPEC-004.C50a`): No spool ships on the source/base classpath. The base strand command surface `skein.spools.batteries` is an ordinary approved spool: it is approved by a `{:skein/source-root "spools/batteries"}` coordinate in `spools.edn` and activated by a normal `:spools`-guarded `module!`, loading only through the approved path (SPEC-004.C42/.C44/.C45) like every other spool — the former bare top-level `require` and guardless `module!` are gone, and batteries source leaves the weaver's base classpath. `mill init` seeds that coordinate and module declaration by default; deleting the seeded entry is the supported, visible opt-out. The generic classpath-ownership machinery that loads and classifies `SPEC-004.C50` blessed namespaces (and inherited-JVM namespaces) from the launch classpath stays intact; only the batteries-specific classpath exception, its comments, and its tests are removed. The C50a "zero-config base surface" guarantee is deliberately traded for "`mill init` opts you in" (TEN-000@1, no migration shim): a hand-rolled `{:spools {}}` world without the seeded entry has no batteries ops.
+
+### Spool-root `deps.edn` policy (SPEC-004.C94a family)
+
+- **SPEC-004-D006.C8** (amends `SPEC-004.C94a@spool-contract`): a source-root spool root's `deps.edn` top-level `:deps` is allowed exactly as for the `:git` and `:local` kinds and for entries sourced from either `spools.edn` or `spools.local.edn`. C94a.2 policy validation and C94a.3 shared-universe Maven resolution apply to source-root roots unchanged.
+
+- **SPEC-004-D006.C9** (amends `SPEC-004.C94a.1@spool-contract`): `:skein/source-root` joins `:git/url`, `:git/sha`, and `:local/root` in the set of source-bearing tools.deps coordinate keys that are **not** allowed inside a spool root's `deps.edn :deps`. Every `:deps` entry must still be a Maven coordinate map containing `:mvn/version`; the allowed refinement keys (`:exclusions`, `:classifier`, `:extension`) are unchanged.
+
+## SPEC-004-D006.P3 Unchanged
+
+`SPEC-004.C44a`/`C44b`/`C44d`/`C44e`, git acquisition (`C91`/`C92`/`C93`), `SPEC-004.C50` blessed-namespace loading (beyond the added `C50b` resolution authority), and all classpath classification and base/inherited ledger machinery for blessed and inherited namespaces are unchanged. `skein.macros/macros {:local/root "spools/macros"}` and other genuinely workspace-local `:local/root` entries keep their existing semantics.
