@@ -15,7 +15,7 @@ Groom the board: scan it with the read surface below, then act (or report) per t
 
 All output is JSON — pipe to `jq`.
 
-- `strand kanban board` — the primary dump: one snapshot grouped by lane (`pending`, `claimed`, `in_review`, `epics`, `needs-review`; closed collapsed to a count). Titles, ids, priorities, epic parents — no bodies.
+- `strand kanban board` — the primary dump: one snapshot grouped by lane (`refinement`, `pending`, `claimed`, `in_review`, `epics`, `needs-review`; closed collapsed to a count). Titles, ids, priorities, epic parents — no bodies.
 - `strand kanban-tree [--all true]` — full epic → feature → task hierarchy **including card bodies** and derived task status. Use when grooming needs the card text, not just titles. `--all true` includes closed.
 - `strand kanban card <id>` — one card's resume view (body, tasks, notes). Depth on demand.
 - `strand kanban next` — highest-priority (p1 first) oldest pending feature.
@@ -25,6 +25,8 @@ All output is JSON — pipe to `jq`.
 ### Scan recipes
 
 ```sh
+set -o pipefail   # every recipe pipes strand into jq — a masked upstream failure must not read as an empty backlog
+
 # backlog at a glance, priority-sorted
 strand kanban board | jq -r '.pending[] | [.priority, .id, (.epic // "-"), .title] | @tsv' | sort
 
@@ -56,7 +58,7 @@ Exact flags: `strand help kanban`.
 ## Constraints
 
 - Grooming never claims, reviews, or finishes-as-done cards — lane movement beyond `promote` belongs to whoever works the card. In particular, never claim a card just to make it abandonable.
-- Mutate nothing until the scan reads have succeeded: a failed or truncated `kanban board`/`kanban-tree` read (non-zero exit, jq parse error, missing lane keys) aborts grooming with a report, never an "empty backlog" verdict.
+- Mutate nothing until the scan reads have succeeded: run recipes with `set -o pipefail`, and treat a failed or truncated `kanban board`/`kanban-tree` read (non-zero pipeline exit, jq parse error, missing lane keys) as an abort — report which command failed, never an "empty backlog" verdict.
 - Mutate only through `strand kanban ...` ops, never raw `strand update` against card strands.
 - If the guidance below is report-only (e.g. "just tell me what's stale"), make no mutations.
 
