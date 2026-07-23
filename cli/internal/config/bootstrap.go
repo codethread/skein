@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	DefaultInitCLJ        = "(require '[skein.api.current.alpha :as current]\n         '[skein.api.runtime.alpha :as runtime])\n\n(def runtime (current/runtime))\n\n;; batteries ships on the classpath (:paths), not a synced spool root, so it\n;; declares no :spools and a fresh world needs zero sync approval. Require it so\n;; the module source load classifies it as classpath-owned; contribute publishes\n;; its CLI ops and reconcile seeds the glossary outcomes they reference.\n(require 'skein.spools.batteries)\n(runtime/module! runtime :skein/spools-batteries\n                 {:ns 'skein.spools.batteries\n                  :contribute 'skein.spools.batteries/contribute\n                  :reconcile 'skein.spools.batteries/reconcile})\n"
+	DefaultInitCLJ        = "(require '[skein.api.current.alpha :as current]\n         '[skein.api.runtime.alpha :as runtime])\n\n(def runtime (current/runtime))\n\n;; batteries is approved as a shipped source-root spool by default. The module\n;; guard keeps source loading behind that visible approval; contribute publishes\n;; its CLI ops and reconcile seeds the glossary outcomes they reference.\n(runtime/module! runtime :skein/spools-batteries\n                 {:ns 'skein.spools.batteries\n                  :spools ['skein.spools/batteries]\n                  :contribute 'skein.spools.batteries/contribute\n                  :reconcile 'skein.spools.batteries/reconcile})\n"
 	DefaultSkeinGitignore = "config.local.json\ninit.local.clj\nspools.local.edn\nstate/\ndata/\nweaver.*\n*.sqlite\n*.sqlite-*\n"
 )
 
@@ -40,7 +40,7 @@ func bootstrapWorld(cwd, configDir, source string, injectGuidance bool) (World, 
 	} else if err != nil {
 		return World{}, err
 	}
-	if err := writeMissing(filepath.Join(world.ConfigDir, "spools.edn"), "{:spools {}}\n"); err != nil {
+	if err := writeMissing(filepath.Join(world.ConfigDir, "spools.edn"), "{:spools {skein.spools/batteries {:skein/source-root \"spools/batteries\"}}}\n"); err != nil {
 		return World{}, err
 	}
 	if err := writeMissing(filepath.Join(world.ConfigDir, "init.clj"), DefaultInitCLJ); err != nil {
