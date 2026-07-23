@@ -1,0 +1,100 @@
+# One spool activation path: the module lifecycle, and the retirement of `install!`
+
+**Document ID:** `ADR-003`
+**Status:** Accepted
+**Date:** 2026-07-23
+**Upholds:** [`TEN-000@1`](../TENETS.md) (alpha software: remove, never shim); [`TEN-003`](../TENETS.md) (FAIL LOUDLY); [`TEN-004`](../TENETS.md) (Less is More).
+**Related:** the owner-scoped-live-refresh design record — `PROP-Olr-001`, `DELTA-OlrRepl-001`, `DELTA-OlrDrt-001`, tasks 001–026 — archived at [`devflow/archive/26-07-22__owner-scoped-live-refresh/`](../archive/26-07-22__owner-scoped-live-refresh/); [SPEC-003 repl-api](../specs/repl-api.md) (C23, C23a); [SPEC-004 daemon-runtime](../specs/daemon-runtime.md) (C74a); [ADR-002](0002-no-inline-module-lifecycle-macro.md); the chime engine parity fix (commit `2af05d7`, `PROP-Chp-001`); epic strand `waq0l`.
+
+> This ADR is the governing record for retiring the legacy imperative spool `install!` entry points. It transcribes the decisions the owner-scoped-live-refresh (OLR) record already made — so no later feature re-litigates them from an archive — and settles the four decision points the retirement adds: singleton engine registration (A), image-module activation (B), what the removal completes (C), and the reconcile contract (D).
+
+## ADR-003.P1 Context
+
+A spool activates by declaring a module: `(runtime/module! runtime key opts)` names a source target, and the coordinator collects its contribution, publishes it through the owner-partitioned registry kernel, and runs its `:reconcile` for live effects. That is how production activates every spool today (`.skein/init.clj`).
+
+`install!` is the predecessor: an imperative function per spool that registered everything by direct mutation. At the time of this decision it survives only where nobody looked — as test fixtures. The census (epic `waq0l`, investigation 2026-07-23): 7 in-tree definitions (batteries, workflow, executors.shell, guild, chime, cron, unsafe-text-search), 28 call sites all under `test/`, roughly 76 fixture executions per suite run, zero production callers. Three sibling repos carry the same pattern (devflow.spool, kanban.spool, dresser.spool; agent-harness.spool already had its installers removed by OLR F17).
+
+The split had a real cost beyond clutter. Tests exercised `install!` while production ran modules, so nothing covered the module path end to end, and that gap concealed a live production bug: chime's module lifecycle registered neither its `:chime/registration-barrier` hook nor its `:chime/engine` event handler, so event-driven chime notifications were dead in the canonical world until commit `2af05d7` fixed it. One activation path is the structural fix for that class of bug: when tests and production share the path, the path is covered.
+
+## ADR-003.P2 Constraints already decided — do not re-litigate
+
+The OLR record closed the following. Each entry cites its source; the archive holds the full text and rationale.
+
+- One intent-level `refresh!` plus the advanced `reload-code!` seam; the old lifecycle (`sync!`, `reload!`, `use!`, …) removed with no aliases or forwarding vars (PROP-Olr-001.G2/G9; DELTA-OlrRepl-001.CC2, D1).
+- Owner-complete declarative partitions: a refresh replaces one owner's complete contribution including deletions; live resource handles are never declaration data — domains reconcile them separately (PROP-Olr-001.G3; DELTA-OlrDrt-001.D1). Rejected: clear-and-replay, per-key upsert, resources-as-declarations.
+- Direct/REPL registration stays an imperative sharp tool: additive, owner-carrying, top precedence layer (defaults < spools < workspace < direct/REPL), outside the refresh contract (PROP-Olr-001.G8; DELTA-OlrRepl-001.CC10; DELTA-OlrDrt-001.CC3; SPEC-003.C23). The blind probe's "a REPL form is a one-entry sync of a `:repl` source" was considered and not adopted. `register-op!` and its kin are not module machinery.
+- Open kinds through `skein.api.registry.alpha`; one publication kernel; no generic resource or effect callbacks in the kernel — domains do lifecycle work around publication through their own APIs (DELTA-OlrDrt-001.D5; DELTA-OlrRepl-001.CC13; SPEC-003.C23a).
+- Module keys with `:after` ordering retained; content-identical staged contributions skip publication and reconcile; `refresh! {:only …}` is an optimization, not a distinct correctness mechanism (DELTA-OlrDrt-001.D4).
+- Effective registries are the only blessed routing surface; retraction is real because dispatch consults them, not because code unloads (DELTA-OlrDrt-001.CC18).
+- Collection scope is target-only, on first load and every re-collection alike; authoring forms evaluated from any other namespace refuse loudly; multi-namespace families use an explicit `:contribute` fn or per-namespace modules with `:after` edges (DELTA-OlrRepl-001.CC3 as amended; gate riders R1/R2 in note `s9dp0`). All 7 in-tree spools already declare explicit `:contribute`.
+- Hooks and event handlers are contribution kinds (`:hooks`/`:events` backends in `module_publication.clj`), but singleton registrations may stay reconcile-owned (gate-2 ruling, note `mtl40`; TASK-Olr-008.MI4). Decision A below builds on this.
+- Classpath ownership is structural: a namespace already present when a runtime creates its spool loader belongs to the base classpath, never to a synced root (DELTA-OlrDrt-001.CC12). This is why a bare test runtime can `module!`-activate spools from the `:test` classpath, and the design basis for decision B.
+- Imperative `module!` declarations do not survive a full `refresh!` — full-graph recollection from startup files removes them (rider R5, executed-verified). Consequences for tests are in P7.
+
+## ADR-003.P3 Decision A — singleton registrations stay reconcile-owned
+
+**Question.** Chime's engine is one event handler and one pre-commit hook, process-wide. Should the module register them as contributed `:hooks`/`:events` entries (declarative, removal-by-omission for free) or from `:reconcile` (live-resource management, the shell executor precedent)?
+
+**Decision: reconcile-owned.** The chime parity fix (`2af05d7`, merged into SPEC-004.C74a) registers the hook and handler when the contribution is applied and unregisters them when the module is removed, mirroring `skein.spools.executors.shell`. The gate-2 ruling (`mtl40`) had already blessed this: singletons may stay reconcile. TASK-Olr-008.MI4 deliberately kept chime's handler and hook as identity-stable live state; the bug was that their registration never moved off `install!`, not the reconcile-ownership choice itself.
+
+**Rule of thumb for future spools.** Registration is a singleton live resource — reconcile-owned, branching per decision D — when it is one identity-stable, process-wide handle whose continuity matters across refresh generations: an engine's event handler, a mutation-barrier hook, a notifier. Registration is contribution data when the entries are per-key, enumerable, and homogeneous, and shadowing or removal-by-omission is meaningful: ops, queries, patterns, rules, vocabulary, and domain kinds. When in doubt, ask whether removing one entry by omitting it from the next contribution is a sensible operation; if the "entry" only makes sense as all-or-nothing alongside the module itself, it is a resource.
+
+**Rejected: contributed `:hooks`/`:events` entries for chime.** Canon-compatible (the kinds exist), and removal-by-omission is attractive. But identity-stable singletons gain nothing from per-entry declarativity: the strengths of the contribution path — shadowing, per-key replacement, removal-by-omission over an enumerable set — are meaningless for a set whose only members appear and disappear with the module itself, and reconcile already owns exactly that boundary. The smaller change that matches the shell precedent won.
+
+## ADR-003.P4 Decision B — image-module activation joins the declaration grammar
+
+**Question.** Converting test fixtures from `install!` to `module!` costs ~49ms per fresh runtime against ~6ms, because activation reloads the module's classpath source even though the namespace is already loaded in the JVM image (no unchanged-stamp fast path exists for classpath bindings). Measured across ~76 fixture activations: about +2.4s per suite run, 13–14% on the 7 affected namespaces focused. Accept the permanent tax, or amend the declaration grammar with an image-trusting load mode?
+
+**Decision: adopt the grammar amendment** (working name `{:load :image}`; the core feature owns the final spelling). Constraints, all of which fail loudly per TEN-003:
+
+- Valid only with an `:ns` target — combined with `:file` it is refused; the declared namespace must already be loaded in the JVM image, else refusal.
+- Requires an explicit `:contribute` symbol: no source evaluation happens, so no authoring-form collection can happen; a `:load :image` declaration without `:contribute` is refused at declaration time.
+- Every refusal carries the failing declaration's module key and offending value plus the allowed alternatives — which target kinds are accepted, that the namespace must be loaded first, that `:contribute` is required — per TEN-003's message discipline. A refusal a caller cannot act on from its own text is a defect in the core feature, not an acceptable stub.
+- No source load during collection, ever, for that module. Every declaration without `:load :image` keeps today's source-loading behavior unchanged.
+- `plan`/`status` state the module as image-owned with no source stamp, in the honest-caveat style of DELTA-OlrRepl-001.CC14. The declaration stays printable data (CC3); ADR-002's closed-grammar reasoning is why this ships as one more validated key, not a macro or a side channel.
+
+The mechanism is precedented, not invented: the coordinator's `load-source!` already has a no-reachable-source arm (`module_refresh.clj:358–362`) that trusts the live image and reports an unchanged source, and DELTA-OlrDrt-001.CC12 already classifies classpath ownership structurally. The amendment makes that behavior declarable instead of reachable only when source discovery fails.
+
+This is a grammar change to a deliberately closed opts map, so it ships as a root-spec delta (SPEC-003 territory) in the core feature, not silently.
+
+**Rejected: JVM-wide source stamps.** A shared unchanged-stamp fast path would need byte-exact load provenance for classpath sources — evidence of exactly which bytes the JVM loaded — which does not exist; per-runtime stamps cannot help fresh fixtures, which are the entire cost. Deferred outright; no partial version is worth building.
+
+**Rejected: accept the tax.** ~+2.4s per suite run is small but permanent and multiplies across every future converted fixture in-tree and in sibling repos. A bounded grammar addition with loud failure modes beats a recurring cost with no expiry.
+
+## ADR-003.P5 Decision C — deleting installers completes PROP-Olr-001.G9/S7
+
+This is a record, not a new direction. PROP-Olr-001.G9 chose TEN-000@1 removal of the old lifecycle over aliases and shims, and S7 replaced the `remember-*`/`forget-*`/`install-*` workarounds with owner-aware declaration collection. The OLR feature already executed that for the peer spools: F17 removed peer installers (ruling `mtl40`, commit trail in notes `q9cnu`/`cqtni`), and peer test fixtures converted to module activation (note `rjn81`).
+
+The in-tree reference-spool installers survived by explicit deferral, not oversight or reversal: the OLR docs task declared them "Out of scope and deliberately untouched" (PLAN-Olr-001.DN25) so that task could hold its no-code-changes constraint, and Task-16's cutover sweep matched the old lifecycle vars (`sync!`, `reload!`, `use!` and kin), never spool-level `install!` functions. Nothing in the record decided the installers should remain. Epic `waq0l` executes the deferred removal: deleting the 7 in-tree installers and the sibling repos' remaining installers finishes what G9/S7 started. No new authorization is needed beyond this record; TEN-000@1 covers the removal, and each sibling release record names the exported-fn deletion explicitly (the NG6 precedent from the OLR peer releases).
+
+## ADR-003.P6 Decision D — reconcile branches on contribution status
+
+**Question.** DELTA-OlrRepl-001.CC6 gives every reconcile fn a context carrying `:module/contribution`, whose `:status` says whether this module's contribution was applied or removed in the refresh. Nothing formalized what a reconciler must do with it, and two of three first-party patterns got it wrong: shell branches correctly (`:applied` registers, `:removed` unregisters); batteries re-registers its glossary outcomes unconditionally, so removal trips the duplicate check and degrades to `:partial`; chime, before `2af05d7`, had no registration at all.
+
+**Decision: formalize the branch as the documented reconcile contract.** The coordinator invokes reconcile only for `:applied` and `:removed` contribution statuses; an unchanged contribution skips reconcile entirely (`module_refresh.clj` `reconcile-one` guards on exactly that set). The contract: a reconcile fn branches on the status it receives — on `:applied`, ensure live resources and registrations exist; on `:removed`, tear them down — and a status outside that set (possible only when the fn is called directly, outside the coordinator) fails loudly rather than guessing, as chime's reconciler already does — naming the received status, the allowed `:applied`/`:removed` set, and the module and reconciler it happened in, so both direct-call misuse and a future coordinator regression are diagnosable from the error alone. Running registration effects on a `:removed` contribution is a defect by definition, and an unconditional-effects reconciler is wrong even when it happens to pass on the applied path. The contract lands as spec text (a delta against SPEC-003's reconcile clauses descending from DELTA-OlrRepl-001.CC6, and/or SPEC-004) plus the `skein.api.runtime.alpha/module!` docstring, shipped by the core feature (card `fbr4m`).
+
+Enforcement follows "prose guides, code decides", with CC13 as the boundary: the kernel gets no generic teardown callbacks. The core feature judges the cheapest honest enforcement — at minimum a coordinator-level test proving a removal-path reconcile receives `:removed`, preferably a loud degraded outcome when a reconciler visibly re-registers on removal. The parity-bug class this closes is exactly the one that hid the chime outage.
+
+## ADR-003.P7 Conversion conventions
+
+The remaining epic features convert every `install!` fixture to module activation. These conventions are inherited from the gate riders (note `s9dp0`, as amended by `mtl40`) and the OLR peer conversions; they are binding for the conversions and the default for future test design.
+
+- **Per-fixture `module!` is fine; full-refresh tests re-declare.** Rider R5: a full `refresh!` recollects the module graph from startup files and removes imperative declarations. Fixtures that never full-refresh are unaffected; a test that runs full `refresh!` declares its modules in startup files or re-declares after.
+- **Classpath activation and root approval do not mix.** The `:test` alias puts workflow, chime, and cron sources on the base classpath. A test that `module!`-activates those namespaces from the classpath must not also approve a real spool root providing the same namespaces: the unledgered-residual and `:non-additive-sync-diff` refusals that follow are correct behavior, not flakes. Conversion tests that genuinely sync roots use freshly generated namespaces in disposable roots (current suite practice). The original rider R6 spoke of a hardcoded classpath-owner whitelist; `mtl40` ruled that language stale once structural classpath ownership (CC12) shipped — the convention above is the surviving form.
+- **Activate `:workflow` before executor modules.** The kernel refuses a contribution naming an undeclared kind (`:skein.spools.workflow/executor`); the OLR peer conversions hit this and the refusal is correct (note `4q8cg`). Order fixture activation with `:after` edges or explicit sequencing.
+- **The exported-base-declaration pattern.** Production and bare-test declarations cannot be byte-identical: production carries `:spools` root guards, which fail `module-root-problem` on unapproved roots in bare runtimes. The pattern: each spool exports its base declaration as data; production `init.clj` assocs the `:spools` guards onto it; tests pass the base datum (plus `:load :image` where decision B applies). One source of truth, two honest variants.
+- **Guild's fallback name needs a runtime-state setter.** `install!` took an optional fallback guild name held in runtime-owned state; module reconcile resets it and reads runtime metadata. Tests of the fallback behavior get an exported runtime-state setter instead of keeping an installer alive for one argument.
+
+## ADR-003.P8 Consequences
+
+- The core feature (`fbr4m`) ships decision B's grammar delta and decision D's contract text and enforcement.
+- The in-tree feature (`rrvnn`) deletes the 7 installers, converts the 28 call sites, and regenerates the affected docs (7 `spools/*.api.md`, prose in `guild.md` and `unsafe-text-search.md`). It also moves P7's operational guidance — fixture activation rules and the exported-base-declaration pattern — into the maintained guides (`docs/spools/testing.md`, and `docs/spools/writing-shared-spools.md` where it touches spool authors), linking back here for rationale, so the discoverable authoring surface cannot drift from an ADR-only record.
+- The sibling features (`9snqu`, `kst0n`) delete or redesign the remaining peer installers — dresser's `install!` still does real work and gets a genuine `:contribute`/`:reconcile` redesign, not a deletion — and release with the explicit-break record per P5. Sibling suites hard-code `../skein-src` (note `5bae1`), so skein-src lands first.
+- The cutover feature (`rtnfv`) bumps pins, refreshes the canonical world, and verifies chime live.
+- After the epic: `defn install!` appears nowhere in skein-src `spools/` or sibling `src/`; the module lifecycle is the one activation path for production, tests, and REPL alike.
+
+## ADR-003.P9 Revisit when
+
+- If `{:load :image}`'s explicit-`:contribute` requirement becomes the common friction — many spools authoring contribution fns solely to satisfy image mode — revisit whether collection can honestly serve image-owned namespaces. Do not revisit by relaxing the loud failures.
+- If a future domain genuinely needs kernel-level teardown hooks, that is a `registry.alpha` kind-policy discussion (per CC13's boundary), not a reason to add callbacks to the publication kernel.
+- If byte-exact classpath load provenance ever exists (a JVM or tooling change), the JVM-wide source-stamp fast path rejected in P4 becomes worth re-evaluating.
