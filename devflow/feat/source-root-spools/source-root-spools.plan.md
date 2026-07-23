@@ -118,17 +118,23 @@ the queue must land atomically:
   `spool_sync` (key-set, `::coordinate` branch, `normalize-shared-family`
   emission, `kind-shaped-root?`, `approved-spools` resolution beneath
   `<checkout>/spools` with canonical-containment/symlink confinement,
-  `spool-source-fields` arm) and the sync outcome/diff paths; reword the generic
-  `module_refresh` batteries-naming docstrings. New focused test namespace
-  covering: structural validation (reject absolute/`~`/`..`, mixed-kind family),
-  resolution + canonical containment (symlink escaping `<checkout>/spools`
-  fails), loud failure when the checkout/resource is unavailable, kind-neutral
-  same-root identity in `non-additive-diff`, and the C44c cutover classification
-  (launch-classpath generation → synced provider wins; only a fresh generation
-  removes classpath ownership). Owns `spool_sync.clj`, `runtime.clj`,
+  `spool-source-fields` arm) and the sync outcome/diff paths; extend
+  `rejected-spool-deps-keys` (spool_sync policy table) so `:skein/source-root`
+  is rejected loudly inside a spool-root `deps.edn :deps` (C94a.1); reword the
+  generic `module_refresh` batteries-naming docstrings. New focused test
+  namespace covering: structural validation (reject absolute/`~`/`..`,
+  mixed-kind family), resolution + canonical containment (symlink escaping
+  `<checkout>/spools` fails), loud failure when the checkout/resource is
+  unavailable, the C94a.1 deps-key rejection, a no-acquisition regression
+  (source-root resolution never invokes git materialization —
+  `materialize-families` stays `:git`-only), kind-neutral same-root identity in
+  `non-additive-diff`, and synced-provider-wins classification over the
+  intentional test-classpath overlap. PH1 does NOT assert fresh-generation
+  classpath-ownership absence — the ambient test JVM cannot prove it (P7); that
+  assertion is owned by the PH5 e2e smoke. Owns `spool_sync.clj`, `runtime.clj`,
   `access.clj`, `module_refresh.clj`, and its new test file only — must NOT touch
   `spools_test.clj`/`config_test.clj`/`deps.edn` (PH2 owns those). Gate: cold
-  `clojure -M:test` over the new ns + `spools_test`.
+  `clojure -M:test <new fully-qualified ns> skein.spools-test`.
 
 - **PLAN-Srs-001.PH2 (batteries cutover + repo config — one atomic seat, ~M):**
   Remove `spools/batteries/src` from base `deps.edn :paths`; add it to `:test`
@@ -142,9 +148,15 @@ the queue must land atomically:
   `.skein/init.clj` batteries module to a `:spools`-guarded `module!` and delete
   the bare `(require 'skein.spools.batteries)`; reword the `module_adapters.clj`
   docstring. Update `smoke.clj` fixtures and the `spools_test`/`config_test`
-  batteries-specific assertions (see P7 for the classpath-ownership subtlety).
+  batteries-specific assertions. Decision (resolving the P7 subtlety at
+  planning time): the ambient-JVM classpath-ownership assertion in
+  `spools_test` (~1983–1995) is KEPT but reworded as a test-tooling artifact of
+  the `:test` alias extra-path (per SPEC-004-D006.C7); synced-provider and
+  fresh-generation-absence behavior are asserted only from disposable worlds
+  (PH5 e2e smoke), never the ambient `:test` classpath.
   This is one slice: the classpath removal and the coordinate/guard must land
-  together or gates go red. Gate: cold `clojure -M:test spools_test config_test`
+  together or gates go red. Gate: cold
+  `clojure -M:test skein.spools-test skein.config-test`
   + `clojure -M:smoke` against a disposable world with repo-local binaries.
 
 - **PLAN-Srs-001.PH3 (Go bootstrap — one seat, ~S; parallelizable with PH2):**
@@ -156,22 +168,32 @@ the queue must land atomically:
   `(cd cli && go test ./...)`.
 
 - **PLAN-Srs-001.PH4 (specs + docs fold — one or more file-disjoint seats,
-  ~M–L):** Promote the three deltas into `daemon-runtime.md`/`repl-api.md`/
-  `cli.md` (C50a replaced by C50b + the batteries-as-ordinary-spool contract,
-  C42/C44/C48@2/C49@2/C94a/C94a.1/C63/C14a amendments); replace the
+  ~M–L):** Promote the four deltas into `daemon-runtime.md`/`repl-api.md`/
+  `cli.md`/`alpha-surface.md` (C50a replaced by C50b + the
+  batteries-as-ordinary-spool contract, C42/C44/C48@2/C49@2/C94a/C94a.1/C63
+  amendments plus the SPEC-003.C62-adjacent classpath-module prose, C14a, and
+  the SPEC-005 reference-spool tier carve-out removal, SPEC-005-D001); replace the
   `spools/README.md` "Classpath exception: batteries" section with the
   shipped-spool coordinate story; rewrite `spools/batteries.md`,
   `spools/batteries/README.md`, and the batteries ns/`contribute` docstrings,
   then `make api-docs` to regen `spools/batteries.api.md`; sweep
   `docs/spools/customisation.md`, `docs/spools/testing.md`,
   `docs/spools/writing-shared-spools.md`, `docs/reference.md`,
-  `spools/chime/README.md`, `spools/cron/README.md`. Depends on PH1–PH3 landing
+  `spools/chime/README.md`, `spools/cron/README.md`. If PH4 splits into
+  sibling seats, one seat solely owns the delta→root-spec promotion (the
+  contractual part), and the seat that touches batteries docstrings also owns
+  the `make api-docs` regeneration of `spools/batteries.api.md` (generated
+  output follows its source). Depends on PH1–PH3 landing
   the behavior. Gate: `make docs-check` + `make api-docs` clean.
 
 - **PLAN-Srs-001.PH5 (acceptance — coordinator-owned):** Full validation set
-  (P6) plus the end-to-end fresh-repo smoke, then land via the landing workflow.
-  The sibling-repo `.skein` sweeps (proposal G4/S6) are separate repos landed to
-  their own mains — coordinator follow-ups, not tasks in this plan (P8).
+  (P6) plus the end-to-end fresh-repo smoke (which owns the fresh-generation
+  classpath-ownership-absence and synced-provider assertions PH1/PH2 cannot
+  prove from the ambient test JVM), then land via the landing workflow.
+  The sibling-repo `.skein` sweeps (proposal G4/S6) are separate repos landed
+  to their own mains, tracked as kanban tasks under card `u4a24`; feature
+  finish (`kanban finish u4a24`) is blocked until those tasks close, so PH5
+  cannot silently complete with PROP-Srs-001.S6 undone (P8).
 
 ## PLAN-Srs-001.P6 Validation strategy
 
@@ -187,9 +209,9 @@ the queue must land atomically:
 - **End-to-end fresh-repo smoke (PH5):** with binaries rebuilt from the branch
   (`make build`) — `mktemp -d` a repo, `git init`, `./bin/mill init`, start a
   weaver in that disposable world, confirm `strand help` shows the batteries op
-  surface via the seeded coordinate, and `strand` sync status shows the batteries
-  root resolved through the `:skein/source-root` coordinate (not a classpath
-  provider). Every weaver experiment uses a disposable `--workspace` world; the
+  surface via the seeded coordinate, and `strand spool status` shows the
+  batteries root resolved through the `:skein/source-root` coordinate (not a
+  classpath provider). Every weaver experiment uses a disposable `--workspace` world; the
   canonical `.skein` world is never touched by tests.
 
 ## PLAN-Srs-001.P7 Risks
@@ -210,17 +232,17 @@ the queue must land atomically:
   `spools/batteries/src` to `:reflect-check :extra-paths`. `make reflect-check`
   is a zero-findings gate, so missing this reddens acceptance. `:format`/`:lint`/
   `:splint` already list batteries explicitly and are unaffected.
-- **Test-JVM classpath vs synced-coordinate ownership (PH2 decision point).**
+- **Test-JVM classpath vs synced-coordinate ownership (decided — see PH2).**
   Keeping `spools/batteries/src` on `:test :extra-paths` (for batteries_test)
   means the `:test` JVM still sees batteries as base-classpath, so
   `loaded-namespace-status` in that JVM still classifies an un-synced batteries as
   `:base-classpath`. The `spools_test` classpath-ownership assertion (~1983–1995)
   and the honest post-cutover behavior (batteries loads through a synced
   coordinate, provider wins) therefore cannot both be proven from the ambient
-  `:test` classpath — the synced-batteries behavior must be validated from a
-  disposable world / the PH5 e2e smoke, and PH2 must decide whether to drop
-  batteries from that assertion or reframe it against a synced world. Flagged, not
-  resolved; the PH2 task carries this as its trickiest call.
+  `:test` classpath — the synced-batteries behavior is validated from a
+  disposable world / the PH5 e2e smoke, and PH2 keeps the ambient-JVM
+  assertion reworded as a test-tooling artifact (decision recorded in PH2 and
+  reflected in SPEC-004-D006.C7).
 - **Doc/spec drift under parallelism.** PH4 fans across many disjoint doc files;
   the delta→root-spec promotion (C50a replacement, C50b addition, C94a.1) is the
   contractual part and should be one reviewer's responsibility even if the
@@ -234,7 +256,7 @@ the queue must land atomically:
 
 ## PLAN-Srs-001.P8 Task context
 
-Workers receive: the three deltas as the binding contract; the brief's decision
+Workers receive: the four deltas as the binding contract; the brief's decision
 record and consumer sweep; TEN-000@1 (breaking, no migration) and TEN-003 (loud
 failure) as the license; and the file-ownership boundaries in P5 (PH1 owns the
 core namespaces + its own new test file and must not touch `deps.edn`/
@@ -244,13 +266,17 @@ tasks never share a file. The staging rule is absolute: disposable `--workspace`
 worlds and repo-local `./bin` binaries from `make build` for every runtime
 experiment; never restart or refresh the canonical weaver; kill by PID only.
 
-**Coordinator-owned follow-ups (not tasks in this plan):** the sibling-repo
-`.skein` sweeps (proposal G4/S6) — each sibling repo's `..` local roots that
-resolve to spools shipped in the skein checkout migrate to `:skein/source-root`
-and land to that repo's own main, worked in that repo's checkout; any sibling
-`..` root naming something else is surfaced to the user with a recommendation
-(git pin or relocation), not converted. These depend on this branch landing so
-the migrated coordinate resolves.
+**Coordinator-owned follow-ups (tracked as kanban tasks under card `u4a24`,
+blocking feature finish):** the sibling-repo `.skein` sweeps (proposal G4/S6) —
+each sibling repo's `..` (or `~`) local roots that resolve to spools shipped in
+the skein checkout migrate to `:skein/source-root` and land to that repo's own
+main, worked in that repo's checkout; any sibling `..` root naming something
+else is surfaced to the user with a recommendation (git pin or relocation), not
+converted. Survey of 2026-07-23: `devflow.spool` (guild, workflow via
+`../../skein-src/`; its own `codethread/devflow {:local/root ".."}` stays —
+repo-internal and portable), `kanban.spool` (guild), `dresser.spool` (guild),
+`notes` (workflow via `~/dev/projects/skein-src/...`). These depend on this
+branch landing so the migrated coordinate resolves.
 
 ## PLAN-Srs-001.P9 Developer Notes
 
