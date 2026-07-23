@@ -33,8 +33,8 @@ strand kanban board | jq -r '.pending[] | [.priority, .id, (.epic // "-"), .titl
 # refinement lane (cards not yet promoted) — same shape; the lane key is always present, so a missing key fails the pipe
 strand kanban board | jq -r '.refinement[] | [.priority, .id, .title] | @tsv'
 
-# grep bodies across the whole open board
-strand kanban-tree | jq -r '.cards[] | "\(.id)\t\(.attributes["kanban/lane"])\t\(.title)\n\(.attributes.body // "")"' | grep -i <term>
+# search titles+bodies across the whole open board — match inside jq, so zero hits exits 0 and only real read failures trip pipefail
+strand kanban-tree | jq -r --arg re '<term>' '.cards[] | select((.title + " " + (.attributes.body // "")) | test($re; "i")) | [.id, .attributes["kanban/lane"], .title] | @tsv'
 ```
 
 ### Grooming ops (mutations)
