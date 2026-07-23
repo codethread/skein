@@ -120,12 +120,7 @@ A spool that passes tier-2 tests can still fail tier 3 — missing `deps.edn` pa
 load-order problems in the module source, or reliance on your test JVM classpath. Tier 3 exists to catch
 exactly that.
 
-The Skein checkout on that classpath carries the blessed `skein.api.*.alpha` namespaces — including
-the spool-authoring helpers `skein.api.spool.alpha` and `skein.api.format.alpha`, which are
-libraries, not spools — plus one classpath-shipped spool, `skein.spools.batteries`. Your spool, and
-every other reference spool Skein ships, loads only through the approved-root flow above; a direct
-`require` for anything but those blessed namespaces and `batteries` never proves the weaver can load
-it.
+The Skein checkout on that classpath carries the blessed `skein.api.*.alpha` namespaces, including the spool-authoring helpers `skein.api.spool.alpha` and `skein.api.format.alpha`. They are libraries, not spools. No spool ships on the production weaver classpath: batteries and every other reference spool load through the approved-root flow above. This repository's own `:test` alias deliberately adds batteries source to the test JVM classpath so its unit tests can require the namespace directly. That test-tooling artifact does not prove a weaver can load batteries; runtime tests still use its approved `{:skein/source-root "spools/batteries"}` coordinate and guarded module.
 
 ## Testing the real spool workflow
 

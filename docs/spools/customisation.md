@@ -27,12 +27,7 @@ repo-local `.skein` workspace:
   spools/            -> optional local spools
 ```
 
-When absent, `mill init` creates the shared half: `config.json` with the alpha format marker, `spools.edn` as
-`{:spools {}}`, `init.clj` with the default below, and the `spools/` directory. It also adds a `.gitignore`
-ignoring the personal overlays (`config.local.json`, `init.local.clj`, `spools.local.edn`). The overlays are yours to add
-when you want them: each shared file has a gitignored personal counterpart, so shared config is committed and
-reviewed while personal config stays on your machine. Explicit `--workspace` bootstrap works the same way on
-the selected directory, preserving whatever already exists.
+When absent, `mill init` creates the shared half: `config.json` with the alpha format marker, `spools.edn` with the seeded batteries source-root coordinate shown below, `init.clj` with its guarded module, and the `spools/` directory. It also adds a `.gitignore` ignoring the personal overlays (`config.local.json`, `init.local.clj`, `spools.local.edn`). The overlays are yours to add when you want them: each shared file has a gitignored personal counterpart, so shared config is committed and reviewed while personal config stays on your machine. Explicit `--workspace` bootstrap works the same way on the selected directory, preserving whatever already exists.
 
 ## A private repo-local workspace
 
@@ -57,19 +52,26 @@ The weaver loads startup files in order: `init.clj`, then `init.local.clj`. Miss
 failing files fail loudly with file context. The generated `init.clj` is intentionally small:
 
 ```clojure
+;; spools.edn
+{:spools
+ {skein.spools/batteries {:skein/source-root "spools/batteries"}}}
+```
+
+```clojure
 ;; init.clj
 (require '[skein.api.current.alpha :as current]
          '[skein.api.runtime.alpha :as runtime])
 
 (def runtime (current/runtime))
 
-;; Batteries ships on the classpath, so it has no :spools prerequisite.
-(require 'skein.spools.batteries)
 (runtime/module! runtime :skein/spools-batteries
   {:ns 'skein.spools.batteries
+   :spools ['skein.spools/batteries]
    :contribute 'skein.spools.batteries/contribute
    :reconcile 'skein.spools.batteries/reconcile})
 ```
+
+The source-root coordinate is relative to the mill-selected Skein checkout, so bootstrap persists no absolute checkout path. Delete the seeded entry to opt out of batteries; the guarded module then publishes no batteries ops.
 
 `skein.api.runtime.alpha` is a privileged built-in runtime loader/config helper namespace shipped with Skein —
 not an ordinary user spool, which is why loader/config helpers do not live under `skein.spools.*`.

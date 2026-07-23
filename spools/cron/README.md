@@ -21,9 +21,7 @@ job table, an in-flight latch, the failure log, and a jitter RNG. That state
 lives on the active runtime through `skein.api.runtime.alpha/spool-state`, so
 separate runtimes in one JVM do not share jobs or failures.
 
-Cron itself spawns no external processes and ships no jobs. Because real jobs
-often escalate capability, cron is an approved local-root spool rather than a
-shipped classpath spool.
+Cron itself spawns no external processes and ships no jobs. Because real jobs often escalate capability, cron stays behind explicit spool approval. Its shipped source loads through `:skein/source-root`, not the production classpath.
 
 For recipes, see the [cookbook](../cron.cookbook.md): registering
 interval+jitter jobs, keeping job startup out of broad config tests,
@@ -31,12 +29,11 @@ coordinating many weavers, inspecting status, and testing offloaded jobs.
 
 ## Dependency information
 
-Cron has no spool prerequisites. Approve the local root from the selected
-workspace's `spools.edn`:
+Cron has no spool prerequisites. Approve the shipped root from the selected workspace's `spools.edn`:
 
 ```clojure
 ;; spools.edn
-{:spools {skein.spools/cron {:local/root "../spools/cron"}}}
+{:spools {skein.spools/cron {:skein/source-root "spools/cron"}}}
 ```
 
 ## Activation

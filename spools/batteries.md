@@ -29,16 +29,24 @@ This doc is the standing contract. It is written against the old public-CLI clau
 deliberate differences are explicit; §5 is the clause-by-clause map. Stable ids here use the `BAT-`
 prefix.
 
-Because batteries ships on the weaver classpath, it needs no `spools.edn` approval. Require it and
-declare its module:
+`mill init` approves batteries as a shipped source-root spool:
 
 ```clojure
-(require '[skein.spools.batteries])
+{:spools
+ {skein.spools/batteries {:skein/source-root "spools/batteries"}}}
+```
+
+Its generated `init.clj` activates the approved root through the ordinary guarded module path:
+
+```clojure
 (runtime/module! runtime :skein/spools-batteries
   {:ns 'skein.spools.batteries
+   :spools ['skein.spools/batteries]
    :contribute 'skein.spools.batteries/contribute
    :reconcile 'skein.spools.batteries/reconcile})
 ```
+
+The relative coordinate resolves against the mill-selected Skein checkout and persists no absolute checkout path. Delete the seeded `spools.edn` entry to opt out; a workspace without it has no batteries ops.
 
 The contribution owns every op below plus its glossary outcomes. Each op carries `{:doc … :arg-spec … :returns …}` metadata; its invocable `:arg-spec` leaves carry `:hook-class` and `:deadline-class`. Owner-complete refresh replaces the whole batteries partition atomically.
 
