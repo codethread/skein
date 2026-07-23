@@ -1,7 +1,7 @@
 (ns quality.conventions-check
   "Enforce repo-wide Clojure conventions that prose alone cannot hold.
 
-  Four checks, all held at zero findings:
+  Five checks, all held at zero findings:
   - every namespace carries a docstring;
   - no local binding is named after a clojure.core macro (a local named
     `fn` shadows the macro and turns later thunks into eager calls; rename
@@ -12,13 +12,18 @@
     cannot silently strand a tested form until weaver-side eval;
   - converted `skein.api.*` modules keep the v1 form contract
     (SPEC-003.C19a); the check and its shrinking `pending` ratchet live
-    in `quality.api-form`."
+    in `quality.api-form`;
+  - shipped spool sources use `skein.core.*` only from unsafe-named
+    namespaces (SPEC-005.C5) — spools are userland code building on
+    `skein.api.*.alpha`, and the designed exception is nominal; the
+    unsafe-namespace convention's rules live in `quality.spool-tiers`."
   (:require [clj-kondo.core :as kondo]
             [clojure.java.io :as io]
             [clojure.string :as str]
             [clojure.tools.reader :as reader]
             [clojure.tools.reader.reader-types :as reader-types]
-            [quality.api-form :as api-form]))
+            [quality.api-form :as api-form]
+            [quality.spool-tiers :as spool-tiers]))
 
 (def ^:private source-roots
   ;; Everything lintable: engine, batteries, local-root spools, trusted
@@ -27,7 +32,7 @@
   ["src"
    "spools/batteries/src"
    "spools/workflow/src"
-   "spools/text-search/src"
+   "spools/unsafe-text-search/src"
    "spools/guild/src"
    "spools/chime/src"
    "spools/cron/src"
@@ -146,7 +151,8 @@
                          "` shadows the clojure.core macro; rename on destructure"
                          " (e.g. `{" local "-sym :" local "}`)"))
                   (embedded-require-findings)
-                  (api-form/check analysis))]
+                  (api-form/check analysis)
+                  (spool-tiers/check analysis))]
     (if (seq findings)
       (do (binding [*out* *err*]
             (doseq [f findings] (println f))

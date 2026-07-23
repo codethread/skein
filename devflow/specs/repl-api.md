@@ -129,6 +129,7 @@ Helpers include:
 
 - `(runtime/approved runtime)` returns normalized approved config.
 - `(runtime/module! runtime key opts)` declares one owner under a stable keyword, with exactly one `:ns` or `:file` source, optional `:spools` and `:after` prerequisites, optional `:contribute` and `:reconcile` symbols, and optional `:required?` policy.
+- `(runtime/collect-entry! kind-id entry-key value opts?)` collects one authoring-form registry entry for the module source being evaluated. Repeating a kind/key in one source evaluation replaces the earlier value deterministically, `{:override? true}` records explicit override intent, and outside contribution collection the form is passive. The collection context is scoped to the source form under evaluation, so this is the one lifecycle function taking no runtime argument; spool authoring macros (e.g. cron `defjob`) expand to it rather than to internal collection plumbing.
 - `(runtime/refresh! runtime)` re-reads the layered startup graph, acquires approved roots, reloads changed module source, publishes owner-complete contributions, and reconciles resources. Its targeted arity accepts `{:only [...]}`.
 - `(runtime/plan runtime)` returns the same joined intention shape without acquisition, publication, reconciliation, or coordinator-state mutation.
 - `(runtime/status runtime)` returns the offline joined graph, contribution, module, resource, root, loaded-code, residual, conflict, pending-generation, and last-refresh state.

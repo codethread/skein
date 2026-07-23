@@ -7,7 +7,7 @@
   [{:name "batteries" :source "spools/batteries/src/skein/spools/batteries.clj" :outfile "spools/batteries.api.md"}
    {:name "workflow" :source "spools/workflow/src/skein/spools/workflow.clj" :outfile "spools/workflow.api.md"}
    {:name "guild" :source "spools/guild/src/skein/spools/guild.clj" :outfile "spools/guild.api.md"}
-   {:name "text-search" :source "spools/text-search/src/skein/spools/text_search.clj" :outfile "spools/text-search.api.md"}
+   {:name "unsafe-text-search" :source "spools/unsafe-text-search/src/skein/spools/unsafe_text_search.clj" :outfile "spools/unsafe-text-search.api.md"}
    {:name "shell" :source "spools/workflow/src/skein/spools/executors/shell.clj" :outfile "spools/executors/shell.api.md"}
    {:name "chime" :source "spools/chime/src/skein/spools/chime.clj" :outfile "spools/chime.api.md"}
    {:name "cron" :source "spools/cron/src/skein/spools/cron.clj" :outfile "spools/cron.api.md"}])

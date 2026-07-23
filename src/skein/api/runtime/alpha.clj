@@ -8,7 +8,8 @@
   The module reads as the live-image lifecycle: read the approved/declared
   config (`approved`, `declared`, `release-marker`), edit the primary
   `spools.edn` (`upsert-spool-entry!`, `remove-spool-entry!`), declare stable
-  modules (`module!`), reconcile the running image against them (`refresh!`,
+  modules (`module!`), collect authoring-form entries from module sources
+  (`collect-entry!`), reconcile the running image against them (`refresh!`,
   with `plan` its effect-free dry-run), inspect the joined offline picture
   (`status`), reach for the advanced code-only seam (`reload-code!`), and serve
   runtime-owned state and time to trusted spools (`spool-state`, `clock`, `now`).
@@ -271,6 +272,28 @@
 (s/fdef module!
   :args (s/cat :runtime map? :key ::module-key :opts map?)
   :ret ::module-result)
+
+(defn collect-entry!
+  "Collect one authoring-form registry entry for the module source being
+  evaluated.
+
+  Repeating the same `kind-id`/`entry-key` in one source evaluation replaces
+  the earlier value deterministically; `{:override? true}` records explicit
+  override intent. Outside contribution collection the form is passive, so a
+  code-only source reload defines Vars without publishing declarations. The
+  collection context is scoped to the source form under evaluation, not to a
+  runtime, so this is the one lifecycle function taking no runtime argument.
+  Malformed kinds and options fail loudly; returns `value`."
+  ([kind-id entry-key value]
+   (weaver-runtime/collect-module-entry! kind-id entry-key value))
+  ([kind-id entry-key value opts]
+   (weaver-runtime/collect-module-entry! kind-id entry-key value opts)))
+
+(s/fdef collect-entry!
+  :args (s/or :entry (s/cat :kind-id keyword? :entry-key any? :value any?)
+              :entry-opts (s/cat :kind-id keyword? :entry-key any?
+                                 :value any? :opts map?))
+  :ret any?)
 
 (defn refresh!
   "Reconcile `runtime`'s live image against its declared module graph.

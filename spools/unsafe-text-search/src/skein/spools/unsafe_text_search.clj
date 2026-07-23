@@ -1,4 +1,4 @@
-(ns skein.spools.text-search
+(ns skein.spools.unsafe-text-search
   "UNSAFE: uses skein.core.db for substring search over strand titles and
   attribute values, including archived rows the query language cannot see.
 
@@ -29,13 +29,14 @@
   that breakage surfaces here and gets fixed here. An external spool that copies
   this pattern earns no such guarantee and owns its own breakage.
 
-  See `spools/text-search.md` for the full unsafe declaration and design
+  See `spools/unsafe-text-search.md` for the full unsafe declaration and design
   rationale. Every search substring is parameter-bound — user input is never
   spliced into SQL — and the op is read-only: it mutates no strands, edges, or
   state."
   (:require [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [skein.api.current.alpha :as current]
+            [skein.api.format.alpha :as format-alpha]
             [skein.api.weaver.alpha :as weaver]
             ;; UNSAFE: physical-table access. A blessed spool builds on
             ;; skein.api.*.alpha only; this one reaches past the contract on
@@ -60,21 +61,21 @@
 
 (s/def ::substring non-blank-string?)
 (s/def ::archived? boolean?)
-(s/def :skein.spools.text-search.search/attr-key non-blank-string?)
+(s/def :skein.spools.unsafe-text-search.search/attr-key non-blank-string?)
 (s/def ::limit pos-int?)
 (s/def ::search-opts
   (s/keys :req-un [::substring]
-          :opt-un [::archived? :skein.spools.text-search.search/attr-key ::limit]))
+          :opt-un [::archived? :skein.spools.unsafe-text-search.search/attr-key ::limit]))
 (s/def ::id string?)
 (s/def ::title string?)
-(s/def :skein.spools.text-search.result/attr-key (s/nilable string?))
+(s/def :skein.spools.unsafe-text-search.result/attr-key (s/nilable string?))
 (s/def ::snippet string?)
 (s/def ::result-row
-  (s/keys :req-un [::id ::title :skein.spools.text-search.result/attr-key ::snippet]))
+  (s/keys :req-un [::id ::title :skein.spools.unsafe-text-search.result/attr-key ::snippet]))
 
 (defn- require-search-opts! [opts]
   (when-not (s/valid? ::search-opts opts)
-    (fail! "text-search opts are invalid"
+    (fail! "unsafe-text-search opts are invalid"
            {:opts opts
             :explain (s/explain-str ::search-opts opts)}))
   opts)
@@ -82,7 +83,7 @@
 (defn- require-result-rows! [rows]
   (doseq [row rows]
     (when-not (s/valid? ::result-row row)
-      (fail! "text-search result row is invalid"
+      (fail! "unsafe-text-search result row is invalid"
              {:row row
               :explain (s/explain-str ::result-row row)})))
   rows)
@@ -94,7 +95,7 @@
   promise; a blessed spool would never touch it."
   [runtime]
   (or (:datasource runtime)
-      (fail! "text-search could not resolve a datasource from the runtime"
+      (fail! "unsafe-text-search could not resolve a datasource from the runtime"
              {:runtime-keys (vec (keys runtime))})))
 
 (defn- like-escape
@@ -158,7 +159,7 @@
         sql (str "SELECT id, title, attr_key, snippet FROM (" inner ") ORDER BY id, attr_key LIMIT ?")
         rows (db/execute! ds (into [sql] (conj params capped)))]
     (when (> (count rows) limit)
-      (fail! (str "text-search matched more than the --limit of " limit
+      (fail! (str "unsafe-text-search matched more than the --limit of " limit
                   " rows; narrow the query (scope with --attr-key or a more specific substring) "
                   "or raise --limit — results are capped, never truncated")
              {:reason :overflow :limit limit}))
@@ -177,7 +178,8 @@
   [ctx]
   (let [{:keys [substring archived attr-key limit]} (:op/args ctx)]
     (search (:op/runtime ctx)
-            (cond-> {:substring substring :archived? (boolean archived)}
+            (cond-> {:substring substring}
+              (some? archived) (assoc :archived? archived)
               attr-key (assoc :attr-key attr-key)
               limit (assoc :limit limit)))))
 
@@ -193,9 +195,11 @@
            :attr-key {:type :string
                       :doc "Scope the attribute-value search to one attribute key (skips the title branch)."}
            :limit {:type :int
-                   :doc (str "Row cap (default " default-search-limit "); overflow fails loudly rather than "
-                             "truncating. Search does not consult batteries' set-read-limit! — that "
-                             "runtime-owned cap governs list/ready, not this op.")}}
+                   :doc (str "Row cap (default " default-search-limit "). "
+                             (format-alpha/reflow
+                              "|Overflow fails loudly rather than truncating. Search does not
+                               |consult batteries' set-read-limit! — that runtime-owned cap
+                               |governs list/ready, not this op."))}}
    :positionals [{:name :substring :type :string :required? true
                   :doc "Substring to search for, matched literally."}]
    :hook-class :read
@@ -219,16 +223,16 @@
   []
   (let [rt (current/runtime)]
     {:installed true
-     :namespace 'skein.spools.text-search
+     :namespace 'skein.spools.unsafe-text-search
      :unsafe true
      :ops [(weaver/register-op! rt 'search
                                 {:doc search-doc
                                  :arg-spec search-arg-spec
                                  :returns search-return}
-                                'skein.spools.text-search/search-op)]}))
+                                'skein.spools.unsafe-text-search/search-op)]}))
 
 (defn contribute
-  "Return text-search's complete unsafe search-operation contribution.
+  "Return unsafe-text-search's complete unsafe search-operation contribution.
 
   The operation retains its documented direct `skein.core.db` dependency; only
   publication changes from eager registration to owner-complete declaration. The
@@ -239,11 +243,11 @@
   eager and module paths."
   [_ctx]
   {:ops {:entries {"search" {:name "search"
-                             :fn 'skein.spools.text-search/search-op
+                             :fn 'skein.spools.unsafe-text-search/search-op
                              :stream? false
                              ;; Classes live on the arg-spec leaf; duplicating them
                              ;; here would make registration metadata invalid.
-                             :provenance 'skein.spools.text-search
+                             :provenance 'skein.spools.unsafe-text-search
                              :doc search-doc
                              :arg-spec search-arg-spec
                              :returns search-return}}}})

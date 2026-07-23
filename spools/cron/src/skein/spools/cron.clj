@@ -29,7 +29,6 @@
             [skein.api.registry.alpha :as registry]
             [skein.api.runtime.alpha :as runtime]
             [skein.api.scheduler.alpha :as scheduler]
-            [skein.core.weaver.module-refresh :as module-refresh]
             [skein.api.spool.alpha :refer [fail! poll-until! reject-unknown-keys!
                                            require-valid!]])
   (:import [java.time Instant]
@@ -357,7 +356,7 @@
   `register!`. The macro performs no scheduling itself; cron's reconciler
   applies the complete effective declaration after publication."
   [id job]
-  `(module-refresh/collect-entry! ~job-kind ~id (assoc ~job :id ~id)))
+  `(runtime/collect-entry! ~job-kind ~id (assoc ~job :id ~id)))
 
 (defn contribute
   "Materialize cron's job-kind registry handle for dependent module contributions.

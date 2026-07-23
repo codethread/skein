@@ -8,7 +8,7 @@
                                        ct.spools/bench "bench"}}
           skein.spools/batteries {:skein/source-root "spools/batteries"}
           skein.spools/workflow {:skein/source-root "spools/workflow"}
-          skein.spools/text-search {:skein/source-root "spools/text-search"}
+          skein.spools/unsafe-text-search {:skein/source-root "spools/unsafe-text-search"}
           skein.spools/chime {:skein/source-root "spools/chime"}
           skein.spools/cron {:skein/source-root "spools/cron"}
           skein.macros/macros {:local/root "spools/macros"}
