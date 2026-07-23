@@ -9,6 +9,7 @@
   (:require [clojure.java.io :as io]
             [clojure.set :as set]
             [clojure.tools.namespace.parse :as ns-parse]
+            [skein.core.format :as format]
             [skein.core.weaver.dispatch :as dispatch]
             [skein.core.weaver.module-graph :as module-graph]
             [skein.core.weaver.module-publication :as publication]
@@ -374,7 +375,9 @@
   [runtime with-loader key declaration]
   (let [ns-sym (:ns declaration)]
     (when-not (find-ns ns-sym)
-      (fail! "Image module namespace is not loaded in the JVM image; load or require it before the module activates"
+      (fail! (format/reflow
+              "|Image module namespace is not loaded in the JVM image; load or
+               |require it before the module activates")
              {:module/key key :ns ns-sym :load :image}))
     (let [contribution (with-loader
                          #(let [contribute-fn (resolve-module-fn!

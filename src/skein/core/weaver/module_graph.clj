@@ -7,7 +7,8 @@
   perform source loads, registry publication, or resource reconciliation."
   (:require [clojure.java.io :as io]
             [clojure.set :as set]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [skein.core.format :as format]))
 
 (def ^:private declaration-keys
   #{:ns :file :load :spools :after :contribute :reconcile :required?})
@@ -94,7 +95,9 @@
              {:module/key key :load :image :file (:file opts)
               :allowed [:ns]}))
     (when-not (contains? opts :contribute)
-      (fail! "Module :load :image requires an explicit :contribute (no source evaluation happens, so no authoring-form collection can exist)"
+      (fail! (format/reflow
+              "|Module :load :image requires an explicit :contribute (no source
+               |evaluation happens, so no authoring-form collection can exist)")
              {:module/key key :load :image
               :required :contribute})))
   (when (and (contains? opts :required?)

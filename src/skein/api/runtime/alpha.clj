@@ -27,13 +27,15 @@
             [skein.api.spool.alpha :refer [require-valid!]]
             [skein.core.specs :as specs]
             [skein.core.weaver.access :as access]
+            [skein.core.weaver.module-graph :as module-graph]
             [skein.core.weaver.runtime :as weaver-runtime]
             [skein.core.weaver.spool-sync :as spool-sync]))
 
 (declare running-release-marker spools-file
          validate-approved-result! validate-declared-result!
          validate-refresh-opts! validate-refresh-result! validate-plan-result!
-         validate-status-result! validate-module-result! validate-reload-code-result!
+         validate-status-result! validate-module-opts! validate-module-result!
+         validate-reload-code-result!
          families-requiring
          validate-spool-state-opts! versioned-value reinit-mismatched-state)
 
@@ -193,9 +195,31 @@
 (s/def ::module-key keyword?)
 (s/def ::root-lib symbol?)
 
-;; The declaration grammar's authority is `module!`'s docstring and the
-;; coordinator's `normalize-declaration`; this result shape only asserts the
-;; normalized declaration carries exactly one source target and policy vectors.
+;; `::module-opts` is the named public input grammar `module!` consults; the
+;; coordinator's `normalize-declaration` stays the normalizer and the authority
+;; for actionable per-field error prose, so `validate-module-opts!` routes a
+;; spec-invalid input through it and treats any disagreement as loud drift.
+(s/def ::module-opts
+  (s/and map?
+         #(every? #{:ns :file :load :spools :after :contribute :reconcile
+                    :required?}
+                  (keys %))
+         #(not= (contains? % :ns) (contains? % :file))
+         #(or (not (contains? % :ns)) (symbol? (:ns %)))
+         #(or (not (contains? % :file)) (string? (:file %)))
+         #(or (not (contains? % :load)) (= :image (:load %)))
+         #(or (not (contains? % :load)) (contains? % :contribute))
+         #(or (not (contains? % :load)) (not (contains? % :file)))
+         #(or (not (contains? % :contribute)) (qualified-symbol? (:contribute %)))
+         #(or (not (contains? % :reconcile)) (qualified-symbol? (:reconcile %)))
+         #(or (not (contains? % :spools))
+              (and (coll? (:spools %)) (every? symbol? (:spools %))))
+         #(or (not (contains? % :after))
+              (and (coll? (:after %)) (every? keyword? (:after %))))
+         #(or (not (contains? % :required?)) (boolean? (:required? %)))))
+
+;; This result shape only asserts the normalized declaration carries exactly
+;; one source target and policy vectors; `::module-opts` owns the input grammar.
 (s/def ::module-declaration
   (s/and map?
          #(not= (contains? % :ns) (contains? % :file))
@@ -251,8 +275,9 @@
 (defn module!
   "Declare one stable runtime module under keyword `key` for `runtime`.
 
-  `opts` is closed to a source target (`:ns` synced namespace symbol, or
-  workspace-relative `:file` string — exactly one is required), an optional
+  `opts` conforms to `::module-opts`: it is closed to a source target (`:ns`
+  namespace symbol — synced for ordinary source-loading declarations — or
+  workspace-relative `:file` string; exactly one is required), an optional
   `:load :image` mode, optional approved `:spools` root prerequisites,
   optional module-key `:after` dependencies, an optional fully qualified
   `:contribute` symbol, an optional fully qualified `:reconcile` symbol, and
@@ -283,32 +308,51 @@
   fail loudly. The staged or refreshed result conforms to `::module-result`."
   [runtime key opts]
   (require-valid! ::module-key key "module! key must be a keyword")
+  (validate-module-opts! key opts)
   (validate-module-result! (weaver-runtime/declare-module! runtime key opts)))
 
 (s/fdef module!
-  :args (s/cat :runtime map? :key ::module-key :opts map?)
+  :args (s/cat :runtime map? :key ::module-key :opts ::module-opts)
   :ret ::module-result)
+
+(s/def ::contribution-kind keyword?)
+(s/def ::collect-entry-opts
+  (s/and map?
+         #(every? #{:override?} (keys %))
+         #(or (not (contains? % :override?)) (boolean? (:override? %)))))
 
 (defn collect-entry!
   "Collect one authoring-form registry entry for the module source being
   evaluated.
 
-  Repeating the same `kind-id`/`entry-key` in one source evaluation replaces
-  the earlier value deterministically; `{:override? true}` records explicit
-  override intent. Outside contribution collection the form is passive, so a
-  code-only source reload defines Vars without publishing declarations. The
-  collection context is scoped to the source form under evaluation, not to a
-  runtime, so this is the one lifecycle function taking no runtime argument.
-  Malformed kinds and options fail loudly; returns `value`."
+  `kind-id` conforms to `::contribution-kind` and `opts` to
+  `::collect-entry-opts` (closed to boolean `:override?`); `entry-key` and
+  `value` are deliberately unconstrained here because their shapes belong to
+  the registry kind that owns them. Repeating the same `kind-id`/`entry-key`
+  in one source evaluation replaces the earlier value deterministically;
+  `{:override? true}` records explicit override intent. Outside contribution
+  collection the form is passive, so a code-only source reload defines Vars
+  without publishing declarations. The collection context is scoped to the
+  source form under evaluation, not to a runtime, so this is the one lifecycle
+  function taking no runtime argument. Malformed kinds and options fail
+  loudly; returns `value`."
   ([kind-id entry-key value]
+   (require-valid! ::contribution-kind kind-id
+                   "collect-entry! kind-id must be a keyword")
    (weaver-runtime/collect-module-entry! kind-id entry-key value))
   ([kind-id entry-key value opts]
+   (require-valid! ::contribution-kind kind-id
+                   "collect-entry! kind-id must be a keyword")
+   (require-valid! ::collect-entry-opts opts
+                   "collect-entry! opts are closed to a boolean :override?")
    (weaver-runtime/collect-module-entry! kind-id entry-key value opts)))
 
 (s/fdef collect-entry!
-  :args (s/or :entry (s/cat :kind-id keyword? :entry-key any? :value any?)
-              :entry-opts (s/cat :kind-id keyword? :entry-key any?
-                                 :value any? :opts map?))
+  :args (s/or :entry (s/cat :kind-id ::contribution-kind
+                            :entry-key any? :value any?)
+              :entry-opts (s/cat :kind-id ::contribution-kind
+                                 :entry-key any? :value any?
+                                 :opts ::collect-entry-opts))
   :ret any?)
 
 (defn refresh!
@@ -571,6 +615,21 @@
 (defn- validate-status-result! [result]
   (require-valid! ::status-result result "runtime status result has an invalid shape")
   result)
+
+(defn- validate-module-opts!
+  "Validate public module! opts against the named `::module-opts` grammar.
+
+  A spec-invalid input is routed through the coordinator's
+  `normalize-declaration`, which owns the actionable per-field error prose;
+  normalization is pure, so the probe has no effect. When the parser accepts
+  what the named spec rejects the two have drifted, and that disagreement
+  fails loudly here with the spec explain data."
+  [key opts]
+  (when-not (s/valid? ::module-opts opts)
+    (module-graph/normalize-declaration key opts)
+    (require-valid! ::module-opts opts
+                    "module! opts do not match the module declaration grammar"))
+  opts)
 
 (defn- validate-module-result! [result]
   (require-valid! ::module-result result "runtime module result has an invalid shape")

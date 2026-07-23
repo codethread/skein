@@ -268,7 +268,25 @@
                              :spools [] :after [] :required? false}]
       (is (s/valid? ::runtime/module-declaration image-declaration))
       (is (not (s/valid? ::runtime/module-declaration
-                         (assoc image-declaration :load :classpath)))))))
+                         (assoc image-declaration :load :classpath))))))
+  (testing "module-opts names the public input grammar module! consults"
+    (let [image-opts {:ns 'skein.api.runtime.alpha-test :load :image
+                      :contribute 'skein.api.runtime.alpha-test/image-contribute}]
+      (is (s/valid? ::runtime/module-opts image-opts))
+      (is (s/valid? ::runtime/module-opts {:file "modules/demo.clj"}))
+      (is (not (s/valid? ::runtime/module-opts (dissoc image-opts :contribute))))
+      (is (not (s/valid? ::runtime/module-opts
+                         (assoc image-opts :file "modules/demo.clj"))))
+      (is (not (s/valid? ::runtime/module-opts (assoc image-opts :load :classpath))))
+      (is (not (s/valid? ::runtime/module-opts (assoc image-opts :unknown 1))))
+      (is (not (s/valid? ::runtime/module-opts {:ns 'demo.ns :file "modules/demo.clj"})))
+      (is (not (s/valid? ::runtime/module-opts
+                         {:ns 'demo.ns :contribute 'unqualified})))))
+  (testing "collect-entry opts are closed to a boolean :override?"
+    (is (s/valid? ::runtime/collect-entry-opts {}))
+    (is (s/valid? ::runtime/collect-entry-opts {:override? true}))
+    (is (not (s/valid? ::runtime/collect-entry-opts {:override? :yes})))
+    (is (not (s/valid? ::runtime/collect-entry-opts {:unknown true})))))
 
 (defn- write-module-source! [config-dir relative-path ns-sym body]
   (let [file (io/file config-dir relative-path)]
