@@ -6,10 +6,11 @@
                                :roots {ct.spools/agent-run "agent-run"
                                        ct.spools/delegation "delegation"
                                        ct.spools/bench "bench"}}
-          skein.spools/workflow {:local/root "../spools/workflow"}
-          skein.spools/text-search {:local/root "../spools/text-search"}
-          skein.spools/chime {:local/root "../spools/chime"}
-          skein.spools/cron {:local/root "../spools/cron"}
+          skein.spools/batteries {:skein/source-root "spools/batteries"}
+          skein.spools/workflow {:skein/source-root "spools/workflow"}
+          skein.spools/text-search {:skein/source-root "spools/text-search"}
+          skein.spools/chime {:skein/source-root "spools/chime"}
+          skein.spools/cron {:skein/source-root "spools/cron"}
           skein.macros/macros {:local/root "spools/macros"}
           codethread/devflow {:git/url "https://github.com/codethread/devflow.spool.git"
                               :git/sha "b966e540624a19c547093b6f2468fa3bb5d71103"

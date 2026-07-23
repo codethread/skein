@@ -26,14 +26,13 @@
 
 (def runtime (current/runtime))
 
-;; batteries is the one classpath spool: its source ships on deps.edn :paths
-;; rather than a synced spool root, so it declares no :spools and a fresh world
-;; needs zero sync approval. Require it so the module source load classifies it as
-;; classpath-owned; `contribute` publishes its CLI op partition and `reconcile`
-;; seeds the batteries-owned glossary outcomes those ops reference.
-(require 'skein.spools.batteries)
+;; Batteries is approved as a shipped source-root spool by default. The module
+;; guard keeps source loading behind that visible approval; `contribute`
+;; publishes its CLI op partition and `reconcile` seeds the batteries-owned
+;; glossary outcomes those ops reference.
 (runtime/module! runtime :skein/spools-batteries
                  {:ns 'skein.spools.batteries
+                  :spools ['skein.spools/batteries]
                   :contribute 'skein.spools.batteries/contribute
                   :reconcile 'skein.spools.batteries/reconcile})
 ;; This repo elects the batteries reference help transform after batteries loads.

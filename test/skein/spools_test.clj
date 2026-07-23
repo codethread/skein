@@ -1980,9 +1980,13 @@
           (is (= #{lib-a lib-b} (set (map :root-lib (:providers conflict)))))
           (is (= :pending (get-in (sync-state rt) [:pending-generation :status]))))))))
 
-(deftest loaded-namespace-status-separates-classpath-ownership
+(deftest loaded-namespace-status-separates-test-classpath-ownership
   (with-runtime
     (fn [rt _config-dir]
+      ;; Direct requires remain legitimate in tests. Batteries and workflow are
+      ;; visible here because the :test alias adds their source paths; their
+      ;; base-classpath classification is a test-tooling artifact, not shipped
+      ;; production ownership.
       (require 'skein.spools.batteries)
       (require 'skein.spools.workflow)
       (let [bindings (into {} (map (juxt :namespace identity))
