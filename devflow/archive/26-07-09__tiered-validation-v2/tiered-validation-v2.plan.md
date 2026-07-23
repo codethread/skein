@@ -9,8 +9,8 @@ shipped seams this builds on carry
 [RFC-Dtt-001](../../archive/26-07-09__deterministic-test-time/rfcs/2026-07-09-deterministic-test-time.md)
 **Root specs:** [REPL API](../../specs/repl-api.md) <!-- test.alpha vocabulary; SPEC-003.C28 -->
 **Feature specs:** [specs/repl-api.delta.md](./specs/repl-api.delta.md)
-**Status:** Active
-**Last Updated:** 2026-07-09
+**Status:** Shipped
+**Last Updated:** 2026-07-23
 
 ## PLAN-Ttv-001.P1 Goal and scope
 

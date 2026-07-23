@@ -6,8 +6,8 @@
 **RFC:** none
 **Root specs:** [daemon-runtime.md](../../specs/daemon-runtime.md)
 **Feature specs:** [specs/daemon-runtime.delta.md](./specs/daemon-runtime.delta.md)
-**Status:** Active
-**Last Updated:** 2026-07-19
+**Status:** Shipped
+**Last Updated:** 2026-07-23
 
 ## PLAN-Rsf-001.P1 Goal and scope
 

@@ -5,7 +5,7 @@
 **Related RFCs:** None
 **Related root specs:** None
 **Related brief:** [brief.md](./brief.md) (scope is the contract)
-**Related feature:** [`devflow/feat/unify-spool-classpath/`](../unify-spool-classpath/) — this gate was extracted from
+**Related feature:** [`devflow/feat/unify-spool-classpath/`](../26-07-11__unify-spool-classpath/) — this gate was extracted from
 that work, which moved `skein.spools.workflow` off Skein's main classpath and thereby broke `devflow.spool`'s
 standalone suite.
 **Kanban:** card `yhqfh` (p2).

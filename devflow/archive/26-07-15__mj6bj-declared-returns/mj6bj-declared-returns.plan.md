@@ -12,8 +12,8 @@
 [specs/daemon-runtime.delta.md](./specs/daemon-runtime.delta.md),
 [specs/repl-api.delta.md](./specs/repl-api.delta.md),
 [specs/alpha-surface.delta.md](./specs/alpha-surface.delta.md)
-**Status:** Draft
-**Last Updated:** 2026-07-14
+**Status:** Shipped
+**Last Updated:** 2026-07-23
 
 ## PLAN-Dcr-001.P1 Goal and scope
 

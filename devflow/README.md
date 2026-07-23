@@ -18,8 +18,7 @@ Root specs are canonical for shipped behavior:
 
 ## Active features
 
-- `tz0ki-discovery-tiers` — reworks the discovery surface around one canonical, versioned, fractal help envelope (`help`/`about`/`prime` meta-verbs, a runtime glossary of named failure outcomes, a config-electable default help transform with a `--json` raw floor, and a trailing-`--help` grammar). Contracts promoted into `cli.md` (SPEC-002.C39/C44–C47), `daemon-runtime.md` (SPEC-004.C106–C112), and `repl-api.md` (SPEC-003.C66–C69); awaiting finish/archive.
-- `8wwjk-leaf-hook-class` — promotes mandatory per-leaf hook and deadline classes, recursive arity-N subcommands, recursive return routing, and deep help slicing into the root specs; adoption work remains in the feature tasks.
+`devflow/feat/` holds only planned-but-unbuilt work; a feature folder appears here when planning starts and moves to `archive/` once its spec deltas merge into the root specs. Currently empty — in-flight work lives on the kanban board and as devflow runs in `.skein`.
 
 ## Archived features
 
@@ -73,4 +72,51 @@ Default `rg` searches skip `archive/`; use `rg --no-ignore devflow/archive` when
 - `26-07-05__agent-panels` — shipped shuttle session continuation (`:resume` harness splice over captured session ids, `retry --fresh`, persistence-friendly harness defaults that never require persistence) and the panel primitive (seats × blackboard × turn wiring × synthesis compiled from spec'd data; turn-as-run barriers), with `review!`/`council!` as presets — cross-vendor councils, per-seat continuity, poll-loop prompts deleted.
 - `26-07-05__weaver-scheduler` — shipped the weaver-owned scheduler primitive: durable `wake-at` records in dedicated SQLite tables, startup/reload re-arming, fully-qualified-symbol handler resolution, at-least-once serialized async dispatch, and data-first introspection.
 - `26-07-09__deterministic-test-time` — shipped two test-time control seams — a runtime-owned clock component (`skein.api.runtime.alpha/now` read, `skein.test.alpha/set-clock!`/`advance!` controls, and a clock-pump registry `advance!` drives) and an `skein.test.alpha/await-quiescent!` event-lane settle primitive — collapsed the scheduler onto the shared runtime clock, migrated the timer/event serial suites onto the seams, and graduated them from the serial island to the parallel batch.
+- `26-07-06__attr-scaling-ship-now` — shipped the immediate attribute-scaling measures: L0a SQLite pragmas and L1 lean read paths, staged ahead of the EAV storage change.
+- `26-07-06__fix-land-signoff-details` — shipped land sign-off input discoverability (SPEC-002.C39a): reviewers see what a sign-off decision needs before deciding.
+- `26-07-07__eav-attr-storage` — shipped EAV attribute row storage under the map contract, with the `archived` cold tier, partial hot indexes, and the merge-blocking benchmark gate.
+- `26-07-08__skein-readability-macros` — shipped the RFC-020 readability macros for the scan-first `.skein` config surface.
+- `26-07-08__workflow-shell-gates` — shipped shell-command workflow gates: a mechanical done-signal executor beside the subagent gate, with the SPEC-005 gate contracts.
+- `26-07-09__agent-engine-primitives` — shipped the agent-run engine primitives: the serves relation and run lineage promoted into the runtime and alpha-surface specs.
+- `26-07-09__agent-layer-rename` — shipped the agent-layer rename splitting the pure shuttle engine from the agent-run spool vocabulary (SPEC-005.C3/C4).
+- `26-07-09__harness-alias-registries` — shipped the harness/alias registry split across the shuttle, treadle, and agents spool contracts.
+- `26-07-09__tiered-validation-v2` — shipped tiered test validation v2: warm-iteration vs cold-gate discipline over the RFC-016 concurrency model.
+- `26-07-10__cron-on-scheduler` — shipped cron schedules on the weaver scheduler primitive (SPEC-004.C101/C102).
+- `26-07-10__note-primitive` — shipped the core note primitive: append-only attributed notes on strands with the note/* vocabulary.
+- `26-07-10__notes-writer-task-tier` — shipped the writer-task tier for notes so delegated workers append notes without broader mutation rights.
+- `26-07-10__run-usage` — shipped cost, token, and wall-time capture as first-class data on agent-run records, feeding the feature-costs rollup.
+- `26-07-10__vocab-registry` — shipped the attribute vocabulary registry (`skein.api.vocab.alpha`): versioned declare!/reads with core and spool seeds.
+- `26-07-11__large-attr-scaling` — completed the large-attribute scaling spike: committed measurement harness, baseline assessment, and a verdict staging future work; no spec deltas by design.
+- `26-07-11__pin-sync-guard` — shipped the test-only guard that pinned-spool sync behavior cannot regress silently.
+- `26-07-11__spool-hot-reload` — shipped spool hot reload through the runtime workspace helpers (SPEC-003.C17–C19).
+- `26-07-11__spool-suite-ci-gate` — shipped the pinned external spool suite CI gate (`make spool-suite-gate`).
+- `26-07-11__sync-retained-root-guard` — shipped the sync retained-root guard refusing removal of loaded local roots (SPEC-004.C42/C43/C46).
+- `26-07-11__unify-spool-classpath` — shipped the unified spool classloader model across sync, activation, and reload (SPEC-004.C41–C50a).
+- `26-07-12__3pqk1-generation-migration-docs` — shipped the weaver-generation, drain-or-retry, and one-time migration-restart documentation.
+- `26-07-12__burn-tombstones` — shipped burn tombstones: every burn atomically records what it deleted, hand-recoverable from the REPL.
+- `26-07-12__c5kss-sync-owns-resolution` — shipped sync-owned stateless per-call tools.deps resolution, deleting the add-libs path and its global state.
+- `26-07-12__w92pn-sync-diff-classification` — shipped sync diff classification: additive changes apply in-JVM, non-additive changes record a pending generation (SPEC-004.C44).
+- `26-07-12__ypy3h-version-bump-guard` — shipped the version-bump guard refusing in-JVM application when a resolved Maven coordinate changes for a loaded root.
+- `26-07-13__immutable-keys` — shipped immutable attribute keys: declared keys reject mutation after first write.
+- `26-07-13__storage-safety-docs` — shipped the storage-safety documentation sweep across the tombstone and immutable-key contracts.
+- `26-07-14__fanout-cap` — shipped the delegation fan-out cap bounding concurrent agent runs (SPEC-004.C95/C97).
+- `26-07-14__fix-land-ci-startup-poll` — shipped the land-workflow fix polling CI through workflow startup instead of racing it.
+- `26-07-14__stealth-init` — shipped stealth local workspace initialization: personal Skein use without asking the repository to adopt `.skein` config (SPEC-002.C14b).
+- `26-07-15__igs0o-spool-org-prefix` — shipped the org-prefix convention documentation for external spool source namespaces (SPEC-003.C19).
+- `26-07-15__imzou-style-guide-lens` — shipped the advisory style-guide lens seat in the change-review roster.
+- `26-07-15__m5u47-kanban-note-docs` — shipped kanban note payload-reference documentation aligned with the core note attribution model.
+- `26-07-15__mj6bj-declared-returns` — shipped declared `:returns` schemas on weaver op declarations, rendered through help (SPEC-004.C63a/C63b).
+- `26-07-15__uson2-cli-style-guide` — shipped the spool CLI style guide and shared arg-spec fragments.
+- `26-07-17__obppr-worker-contract` — shipped the workspace-configurable delegation worker contract, replacing the hardcoded injected prompt.
+- `26-07-18__b8vld-cut-views` — executed the decision to cut the views namespace before v1 (zero first-party consumers); removal and spec renumbering landed.
+- `26-07-18__g1men-v1-api-format` — shipped the v1 tightening of `skein.api.format.alpha`, a worked example of the SPEC-003.C19a form contract.
+- `26-07-18__wr9ui-v1-api-return-shape` — shipped the v1 tightening of `skein.api.return-shape.alpha` under the same form contract.
+- `26-07-19__reload-preflight` — shipped the reload preflight: `preflight-approved-sync!` reports what a sync would do before it mutates (SPEC-004.C46/C96).
+- `26-07-19__reload-spool-fingerprint` — shipped approved-spool generation fingerprints so reload detects drifted spool source (SPEC-004.C46/C44d).
+- `26-07-21__5hzoe-agent-run-clock` — shipped agent-run awaits migrated onto the clock-aware `poll-until!` seam.
+- `26-07-21__clock-aware-polling` — shipped clock-aware polling primitives on the runtime clock, replacing wall-clock sleeps (SPEC-003.C1a/C5a/C28a).
+- `26-07-21__tz0ki-discovery-tiers` — shipped the discovery-tier factoring: one canonical versioned fractal help envelope, `help`/`about`/`prime` meta-verbs, a runtime glossary of named failure outcomes, and the config-electable help transform with the `--json` raw floor (SPEC-002.C39/C44–C47, SPEC-003.C66–C69, SPEC-004.C106–C112).
+- `26-07-21__xijst-edge-removal` — shipped the public edge-removal primitive so spools no longer work around upsert-only `api/update`.
+- `26-07-22__8wwjk-leaf-hook-class` — shipped mandatory per-leaf hook and deadline classes, recursive arity-N subcommands, recursive return routing, and deep help slicing (SPEC-004.C63a/C64/C65).
+- `26-07-22__owner-scoped-live-refresh` — shipped owner-scoped live refresh so a coordinator refreshes only runtime state it owns (SPEC-003/004/005 deltas merged).
 - `26-07-22__r85t4-sqlite-schema-story` — shipped the SQLite schema-generation contract: `PRAGMA user_version` stamping with adoption of unstamped worlds, a canonical two-mode structural validator behind `init!`, diagnostic refusals in both skew directions, and the maintained forward-migration ladder contract (SPEC-004.C91b–C91d) with executable ladder machinery deferred to the first real generation bump.

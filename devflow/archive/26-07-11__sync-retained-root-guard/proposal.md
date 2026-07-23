@@ -2,7 +2,7 @@
 
 **Document ID:** `PROP-srr-001` **Last Updated:** 2026-07-11 **Related RFCs:** None. **Related brief:**
 [brief.md](./brief.md) (scope is the contract) **Kanban:** card `pn7wh` (p2). **Extracted from:**
-[`unify-spool-classpath`](../unify-spool-classpath/proposal.md) (`PROP-usc-001`), the "own the spool classpath"
+[`unify-spool-classpath`](../26-07-11__unify-spool-classpath/proposal.md) (`PROP-usc-001`), the "own the spool classpath"
 concern — this card is the mitigation; the classloader redesign is that card's. **Related root specs:**
 [Weaver Runtime](../../specs/daemon-runtime.md) (SPEC-004, the `spools.edn` allowlist and `sync!` semantics),
 [Alpha Surface](../../specs/alpha-surface.md) — SPEC-005.C2 marks `skein.api.runtime.alpha` as blessed API; its
