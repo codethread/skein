@@ -138,6 +138,23 @@
                    (io/file (config-dir runtime) expanded-path))]
     (.getCanonicalPath resolved)))
 
+(defn source-checkout-root
+  "Return the running weaver's mill-resolved skein source checkout root File.
+
+  The sole resolution authority for `:skein/source-root` coordinates
+  (SPEC-004.C50b): it delegates to the runtime module's resource-derived
+  locator, never reading cwd, the config dir, or request/envelope state. Fails
+  loudly (TEN-003) when the checkout is unavailable or its classpath resource
+  does not identify a readable file checkout, so a source-root coordinate can
+  never resolve against a missing or unreadable checkout."
+  ^java.io.File []
+  (let [^java.io.File checkout (weaver-runtime/source-checkout-root)]
+    (when-not (and checkout (.isDirectory checkout) (.canRead checkout))
+      (throw (ex-info "Skein source checkout is unavailable for source-root resolution"
+                      {:reason :source-checkout-unavailable
+                       :checkout (some-> checkout .getPath)})))
+    checkout))
+
 (defn cache-base
   "Return Skein's cache base for git-backed spool materialization."
   []

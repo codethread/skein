@@ -59,6 +59,8 @@
   "JVM-global namespaces the parent still runs serially outside add-libs shards."
   [;; Release-marker fixtures redefine source checkout resolution.
    'skein.api.runtime.alpha-test
+   ;; source-root fixtures redefine the JVM-global source-checkout locator.
+   'skein.source-root-spools-test
    ;; ambient REPL connection atoms.
    'skein.repl-test
    ;; module-local bind! is process-global and loud-failure asserts no published runtime.

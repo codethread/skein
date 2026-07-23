@@ -285,9 +285,9 @@
 (defn- classpath-source-file
   "Return the on-disk source path a classpath-owned namespace loaded from, or nil
   when its source is not a reachable file (a packaged jar resource, or an
-  inherited-JVM binding with no recorded source URL). A classpath spool such as
-  batteries lives on `deps.edn :paths`, not a synced root, so its source is
-  resolved from the classpath binding's recorded resource URL rather than from
+  inherited-JVM binding with no recorded source URL). A classpath-owned namespace
+  lives on `deps.edn :paths`, not a synced root, so its source is resolved from
+  the classpath binding's recorded resource URL rather than from
   `synced-namespace-file`, which searches only synced roots."
   [classpath-binding]
   (when-let [source (:source classpath-binding)]
@@ -300,7 +300,7 @@
 (defn- ns-source-file
   "Resolve the on-disk source path for a module `:ns` target.
 
-  A synced provider wins; a classpath spool (no synced provider, e.g. batteries)
+  A synced provider wins; a classpath-owned namespace with no synced provider
   falls back to its classpath binding's source file. Returns nil when neither is
   reachable, so callers stay non-throwing over classpath-only namespaces."
   [runtime ns-sym]

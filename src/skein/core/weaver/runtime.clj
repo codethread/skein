@@ -449,7 +449,15 @@
        (not (zero? (:exit data)))
        (boolean (re-find #"(?i)not a git repository" (or (:stderr data) "")))))
 
-(defn- source-checkout-root
+(defn source-checkout-root
+  "Return the running weaver's mill-resolved skein source checkout root, or nil.
+
+  The resource-derived source-checkout authority (SPEC-004.C50b): it locates the
+  checkout from this module's own classpath resource, never from cwd, the config
+  directory, or request/envelope state. Returns nil when the resource is not a
+  `file:` checkout resource; throws only when a located git checkout reports no
+  toplevel. Callers that require a checkout (source-root coordinate resolution)
+  wrap this and fail loudly on nil; the release-marker path tolerates nil."
   ([] (source-checkout-root (io/resource "skein/core/weaver/runtime.clj")))
   ([^java.net.URL url]
    (when (and url (= "file" (.getProtocol url)))
