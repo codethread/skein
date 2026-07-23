@@ -139,7 +139,7 @@ Job execution failures are recorded, not swallowed (TEN-003): a job whose
 
 ## See also
 
-- [`../README.md`](../README.md) — shipped and approved local-root spool index.
+- [`../README.md`](../README.md) — the spool index.
 - [`../chime/README.md`](../chime/README.md) — the sibling notification engine
   this spool mirrors for local-root layout, runtime-owned state, and loud failure
   recording.
