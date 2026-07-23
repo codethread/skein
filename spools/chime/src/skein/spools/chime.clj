@@ -384,30 +384,60 @@
     (rule-kinds))
   {})
 
-(defn reconcile
-  "Baseline changed effective rules, then make the complete view visible.
+(defn- reconcile-rule-view!
+  "Baseline changed rules in `effective`, then publish it as the visible view.
 
-  Publication has already validated every owner partition. This second phase is
-  deliberately serialized with scans and mutation pre-commit hooks: a changed
-  or restored rule receives its baseline before the event lane can observe it.
-  Removed rules lose their seen entries at the same time (MI2/MI3)."
-  [{:keys [runtime]}]
+  The caller holds the visible-view monitor. Rules absent from `effective`
+  lose their seen entries at the same time, so a rule that later returns is
+  baselined and re-armed rather than notifying retroactively (MI2/MI3)."
+  [visible effective]
+  (let [before @visible
+        changed (->> effective
+                     (keep (fn [[rule-key rule]]
+                             (when (not= rule (get before rule-key)) rule)))
+                     vec)
+        removed (into #{} (remove (set (keys effective))) (keys before))]
+    (doseq [rule changed] (baseline-rule! rule))
+    (when (seq removed)
+      (swap! (seen-notifications)
+             #(into #{} (remove (fn [[rule-key _]] (contains? removed rule-key))) %)))
+    (reset! visible effective)))
+
+(defn reconcile
+  "Reconcile chime's engine and visible rule view for a module transition.
+
+  Publication has already validated every owner partition. On an applied
+  contribution: register the mutation-barrier pre-commit hook and the
+  `:chime/engine` event handler, then baseline changed effective rules and
+  publish the complete view — repeats stay idempotent because duplicate hook
+  and handler keys replace prior entries (SPEC-004.C65/C76). On removal:
+  unregister both, then publish an empty visible view; direct `register!`
+  rules survive under the repl owner, so deactivation is view-level and a
+  later reapplication re-baselines and republishes them. Every branch holds
+  the visible-view monitor that scans, registration, and the mutation barrier
+  share, so no mutation or event lane observes a half-applied transition. Any
+  other contribution status is a noop."
+  [{:keys [runtime] :as ctx}]
   (binding [*runtime* runtime]
-    (let [visible (rule-registry)
-          effective (registry/effective (rule-kinds) rule-kind)]
-      (locking visible
-        (let [before @visible
-              changed (->> effective
-                           (keep (fn [[rule-key rule]]
-                                   (when (not= rule (get before rule-key)) rule)))
-                           vec)
-              removed (into #{} (remove (set (keys effective))) (keys before))]
-          (doseq [rule changed] (baseline-rule! rule))
-          (when (seq removed)
-            (swap! (seen-notifications)
-                   #(into #{} (remove (fn [[rule-key _]] (contains? removed rule-key))) %)))
-          (reset! visible effective)))))
-  {:reconciled :chime})
+    (let [visible (rule-registry)]
+      (case (get-in ctx [:module/contribution :status])
+        :applied (locking visible
+                   (hooks/register-hook! runtime :chime/registration-barrier
+                                         mutation-hook-types
+                                         'skein.spools.chime/mutation-registration-barrier!
+                                         {:order Long/MAX_VALUE :spool "chime"})
+                   (events/register-handler! runtime :chime/engine event-types
+                                             'skein.spools.chime/on-event
+                                             {:spool "chime"})
+                   (reconcile-rule-view! visible
+                                         (registry/effective (rule-kinds) rule-kind))
+                   {:reconciled :applied})
+        :removed (locking visible
+                   (events/unregister-handler! runtime :chime/engine)
+                   (hooks/unregister-hook! runtime :chime/registration-barrier)
+                   (reconcile-rule-view! visible {})
+                   {:reconciled :removed})
+        {:reconciled :noop}))))
 
 (defn install!
   "Install chime's mutation barrier and event handler into the active weaver.

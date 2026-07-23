@@ -39,7 +39,7 @@ Install chime's mutation barrier and event handler into the active weaver.
 
   Chime ships no rules and no notifier: trusted config supplies rules with
   `register!` and a notifier with `set-notifier!`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/chime/src/skein/spools/chime.clj#L412-L431">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/chime/src/skein/spools/chime.clj#L442-L461">Source</a></sub></p>
 
 ## <a name="skein.spools.chime/mutation-registration-barrier!">`mutation-registration-barrier!`</a>
 ``` clojure
@@ -105,17 +105,24 @@ Return the last 100 notifier, process, and rule failures for this weaver lifetim
 
 ## <a name="skein.spools.chime/reconcile">`reconcile`</a>
 ``` clojure
-(reconcile {:keys [runtime]})
+(reconcile {:keys [runtime], :as ctx})
 ```
 Function.
 
-Baseline changed effective rules, then make the complete view visible.
+Reconcile chime's engine and visible rule view for a module transition.
 
-  Publication has already validated every owner partition. This second phase is
-  deliberately serialized with scans and mutation pre-commit hooks: a changed
-  or restored rule receives its baseline before the event lane can observe it.
-  Removed rules lose their seen entries at the same time (MI2/MI3).
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/chime/src/skein/spools/chime.clj#L387-L410">Source</a></sub></p>
+  Publication has already validated every owner partition. On an applied
+  contribution: register the mutation-barrier pre-commit hook and the
+  `:chime/engine` event handler, then baseline changed effective rules and
+  publish the complete view — repeats stay idempotent because duplicate hook
+  and handler keys replace prior entries (SPEC-004.C65/C76). On removal:
+  unregister both, then publish an empty visible view; direct `register!`
+  rules survive under the repl owner, so deactivation is view-level and a
+  later reapplication re-baselines and republishes them. Every branch holds
+  the visible-view monitor that scans, registration, and the mutation barrier
+  share, so no mutation or event lane observes a half-applied transition. Any
+  other contribution status is a noop.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/chime/src/skein/spools/chime.clj#L406-L440">Source</a></sub></p>
 
 ## <a name="skein.spools.chime/register!">`register!`</a>
 ``` clojure
