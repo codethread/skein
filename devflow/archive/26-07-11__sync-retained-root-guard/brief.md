@@ -1,7 +1,7 @@
 # Brief: sync-retained-root-guard — fail loudly when a retained spool root is deleted
 
 Kanban: card `pn7wh` (p2). Extracted from `unify-spool-classpath` (card `nbeu8`,
-[brief](../unify-spool-classpath/brief.md)) as the mitigation half of its "own the spool classpath"
+[brief](../26-07-11__unify-spool-classpath/brief.md)) as the mitigation half of its "own the spool classpath"
 concern: this card ships the loud, actionable failure now; the classloader redesign that removes the
 hazard stays with the refinement card.
 

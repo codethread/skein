@@ -3,7 +3,7 @@
 **Document ID:** `RFC-Dtf-001`
 **Status:** Accepted
 **Date:** 2026-07-20
-**Related:** [`devflow/specs/cli.md`](../specs/cli.md) (SPEC-002.C39, C34, C15, C40), SPEC-003.C64/C65, SPEC-004.C63e; feature [`devflow/feat/tz0ki-discovery-tiers/`](../feat/tz0ki-discovery-tiers/); card `tz0ki`; decision notes `5cxy8`, `h67ok`, `gu8kf`; council blackboard `p2xvg` / synthesis `gk3d8`; precedent `vocab-registry` (`skein.api.vocab.alpha`, PROP-Vr-001); in-flight v1-api work (`g1men-v1-api-format`, `wr9ui-v1-api-return-shape`, `mj6bj-declared-returns`).
+**Related:** [`devflow/specs/cli.md`](../specs/cli.md) (SPEC-002.C39, C34, C15, C40), SPEC-003.C64/C65, SPEC-004.C63e; feature [`devflow/archive/26-07-21__tz0ki-discovery-tiers/`](../archive/26-07-21__tz0ki-discovery-tiers/); card `tz0ki`; decision notes `5cxy8`, `h67ok`, `gu8kf`; council blackboard `p2xvg` / synthesis `gk3d8`; precedent `vocab-registry` (`skein.api.vocab.alpha`, PROP-Vr-001); in-flight v1-api work (`g1men-v1-api-format`, `wr9ui-v1-api-return-shape`, `mj6bj-declared-returns`).
 
 > This RFC records the decision history and rejected alternatives for the discovery-tier
 > factoring. The settled decisions are the [proposal](../feat/tz0ki-discovery-tiers/proposal.md);
@@ -272,4 +272,4 @@ it should be predictable and fractal in nature i imagine)."*
   (blackboard `p2xvg`, synthesis `gk3d8`), two terra-med validity reviews (runs `ntyg7`, `h9n4p`).
 - **RFC-Dtf-001.OUT2:** **Accepted** at the devflow proposal sign-off (2026-07-20, code owner). The
   feature run `tz0ki-discovery-tiers` is now in the spec-plan stage; the SPEC-002.C39 delta and the
-  fractal help-schema envelope are authored next in `devflow/feat/tz0ki-discovery-tiers/specs/`.
+  fractal help-schema envelope are authored next in `devflow/archive/26-07-21__tz0ki-discovery-tiers/specs/`.
