@@ -50,7 +50,7 @@ Return the normalized approved spool roots for `runtime`'s config dir.
 Function.
 
 Return `runtime`'s installed `skein.api.clock.alpha/Clock`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L449-L452">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L461-L464">Source</a></sub></p>
 
 ## <a name="skein.api.runtime.alpha/collect-entry!">`collect-entry!`</a>
 ``` clojure
@@ -73,7 +73,7 @@ Collect one authoring-form registry entry for the module source being
   source form under evaluation, not to a runtime, so this is the one lifecycle
   function taking no runtime argument. Malformed kinds and options fail
   loudly; returns `value`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L324-L348">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L334-L358">Source</a></sub></p>
 
 ## <a name="skein.api.runtime.alpha/declared">`declared`</a>
 ``` clojure
@@ -133,7 +133,7 @@ Declare one stable runtime module under keyword `key` for `runtime`.
   dependents (CC4). Whole-module removal is expressed by omitting the module
   from a successfully collected full graph, not here. Malformed declarations
   fail loudly. The staged or refreshed result conforms to `::module-result`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L275-L312">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L285-L322">Source</a></sub></p>
 
 ## <a name="skein.api.runtime.alpha/now">`now`</a>
 ``` clojure
@@ -145,7 +145,7 @@ Return the current java.time.Instant from `runtime`'s clock seam.
 
   Defaults to the real wall clock; deterministic tests inject an advanceable
   clock through `skein.test.alpha/set-clock!`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L458-L464">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L470-L476">Source</a></sub></p>
 
 ## <a name="skein.api.runtime.alpha/plan">`plan`</a>
 ``` clojure
@@ -161,9 +161,10 @@ Return the dry-run intentions of `refresh!` without publishing or reconciling.
   or recording coordinator state. They return a `::refresh-result`-shaped map
   flagged `:dry-run? true` with a `:caveat`. The one honest caveat, stated in
   the result and here: collection may load module source code and record that
-  load in the namespace ledger. Malformed options fail loudly. The result
-  conforms to `::plan-result` (DELTA-OlrRepl-001.CC14).
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L384-L398">Source</a></sub></p>
+  load in the namespace ledger. Options conform to `::refresh-opts`; malformed
+  options fail loudly. The result conforms to `::plan-result`
+  (DELTA-OlrRepl-001.CC14).
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L395-L410">Source</a></sub></p>
 
 ## <a name="skein.api.runtime.alpha/refresh!">`refresh!`</a>
 ``` clojure
@@ -181,13 +182,14 @@ Reconcile `runtime`'s live image against its declared module graph.
   reconciliation, leaving queued events, recent failures, and unrelated
   spool-state live. `(refresh! runtime {:only keys})` refreshes a non-empty set
   of known module keys and affected dependents against the active declaration
-  graph without re-reading startup files. Unknown option keys, an empty or
-  malformed `:only`, and unknown module keys fail loudly. Content-identical
+  graph without re-reading startup files. Options conform to `::refresh-opts`
+  (closed to `:only`): unknown option keys, an empty or malformed `:only`, and
+  unknown module keys fail loudly. Content-identical
   staged contributions skip publication and reconcile. The atomic multi-phase
   reconcile is the coordinator that startup also drives; this surface owns the
   arities, request classification, and result validation. The joined result
   conforms to `::refresh-result` (DELTA-OlrRepl-001.CC7).
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L358-L377">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L368-L388">Source</a></sub></p>
 
 ## <a name="skein.api.runtime.alpha/release-marker">`release-marker`</a>
 ``` clojure
@@ -225,7 +227,7 @@ Make `root-lib`'s current synced source live in dependency order (code only).
   the namespaces reloaded with their sources, and the residual and hard-conflict
   outcomes from the post-reload classification, conforming to
   `::reload-code-result` (DELTA-OlrRepl-001.CC9).
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L421-L441">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L433-L453">Source</a></sub></p>
 
 ## <a name="skein.api.runtime.alpha/remove-spool-entry!">`remove-spool-entry!`</a>
 ``` clojure
@@ -265,7 +267,7 @@ Return runtime-owned state for a spool key, creating it with `init-fn` once.
   once a version is declared. Opts conform to
   `:skein.api.runtime.alpha/spool-state-opts`; a malformed map fails loudly at
   the call site rather than degrading to the unversioned path.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L483-L537">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L495-L549">Source</a></sub></p>
 
 ## <a name="skein.api.runtime.alpha/status">`status`</a>
 ``` clojure
@@ -281,7 +283,7 @@ Return `runtime`'s offline, read-only joined module status.
   conflicts) with the last refresh result. It performs no network access, file
   write, source load, registration, or reconcile. The result conforms to
   `::status-result` (DELTA-OlrRepl-001.CC8, DELTA-OlrDrt-001.CC15).
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L405-L415">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L417-L427">Source</a></sub></p>
 
 ## <a name="skein.api.runtime.alpha/upsert-spool-entry!">`upsert-spool-entry!`</a>
 ``` clojure

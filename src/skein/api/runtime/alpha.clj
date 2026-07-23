@@ -230,6 +230,16 @@
          #(vector? (:after %))
          #(boolean? (:required? %))))
 
+;; `::refresh-opts` is the named public option grammar `refresh!` and `plan`
+;; consult; `validate-refresh-opts!` owns the actionable error prose and treats
+;; disagreement with this spec as loud drift.
+(s/def ::refresh-opts
+  (s/and map?
+         #(every? #{:only} (keys %))
+         #(or (not (contains? % :only))
+              (and (coll? (:only %)) (seq (:only %))
+                   (every? keyword? (:only %))))))
+
 (s/def ::refresh-status #{:applied :partial :unchanged :refused})
 (s/def ::refresh-mode #{:full :targeted})
 (s/def ::refresh-result
@@ -365,8 +375,9 @@
   reconciliation, leaving queued events, recent failures, and unrelated
   spool-state live. `(refresh! runtime {:only keys})` refreshes a non-empty set
   of known module keys and affected dependents against the active declaration
-  graph without re-reading startup files. Unknown option keys, an empty or
-  malformed `:only`, and unknown module keys fail loudly. Content-identical
+  graph without re-reading startup files. Options conform to `::refresh-opts`
+  (closed to `:only`): unknown option keys, an empty or malformed `:only`, and
+  unknown module keys fail loudly. Content-identical
   staged contributions skip publication and reconcile. The atomic multi-phase
   reconcile is the coordinator that startup also drives; this surface owns the
   arities, request classification, and result validation. The joined result
@@ -378,7 +389,7 @@
 
 (s/fdef refresh!
   :args (s/or :full (s/cat :runtime map?)
-              :targeted (s/cat :runtime map? :opts map?))
+              :targeted (s/cat :runtime map? :opts ::refresh-opts))
   :ret ::refresh-result)
 
 (defn plan
@@ -389,8 +400,9 @@
   or recording coordinator state. They return a `::refresh-result`-shaped map
   flagged `:dry-run? true` with a `:caveat`. The one honest caveat, stated in
   the result and here: collection may load module source code and record that
-  load in the namespace ledger. Malformed options fail loudly. The result
-  conforms to `::plan-result` (DELTA-OlrRepl-001.CC14)."
+  load in the namespace ledger. Options conform to `::refresh-opts`; malformed
+  options fail loudly. The result conforms to `::plan-result`
+  (DELTA-OlrRepl-001.CC14)."
   ([runtime] (plan runtime {}))
   ([runtime opts]
    (validate-refresh-opts! opts)
@@ -399,7 +411,7 @@
 
 (s/fdef plan
   :args (s/or :full (s/cat :runtime map?)
-              :targeted (s/cat :runtime map? :opts map?))
+              :targeted (s/cat :runtime map? :opts ::refresh-opts))
   :ret ::plan-result)
 
 (defn status
@@ -586,22 +598,28 @@
 (def ^:private allowed-refresh-keys #{:only})
 
 (defn- validate-refresh-opts!
-  "Validate the public refresh/plan options before touching the coordinator.
+  "Validate the public refresh/plan options against the named `::refresh-opts`
+  grammar.
 
   Options must be a map naming only `:only`; a present `:only` must be a
-  non-empty collection of module keywords. The coordinator separately rejects
-  unknown module keys against the active graph."
+  non-empty collection of module keywords. The checks here own the actionable
+  error prose; when they accept what the named spec rejects the two have
+  drifted, and that disagreement fails loudly with the spec explain data. The
+  coordinator separately rejects unknown module keys against the active graph."
   [opts]
-  (when-not (map? opts)
-    (throw (ex-info "Refresh options must be a map" {:opts opts})))
-  (when-let [unknown (seq (remove allowed-refresh-keys (keys opts)))]
-    (throw (ex-info "Refresh options contain unknown keys"
-                    {:unknown (vec (sort-by pr-str unknown))})))
-  (when (contains? opts :only)
-    (let [only (:only opts)]
-      (when-not (and (coll? only) (seq only) (every? keyword? only))
-        (throw (ex-info "Refresh :only must be a non-empty collection of module keys"
-                        {:only only})))))
+  (when-not (s/valid? ::refresh-opts opts)
+    (when-not (map? opts)
+      (throw (ex-info "Refresh options must be a map" {:opts opts})))
+    (when-let [unknown (seq (remove allowed-refresh-keys (keys opts)))]
+      (throw (ex-info "Refresh options contain unknown keys"
+                      {:unknown (vec (sort-by pr-str unknown))})))
+    (when (contains? opts :only)
+      (let [only (:only opts)]
+        (when-not (and (coll? only) (seq only) (every? keyword? only))
+          (throw (ex-info "Refresh :only must be a non-empty collection of module keys"
+                          {:only only})))))
+    (require-valid! ::refresh-opts opts
+                    "refresh options do not match the ::refresh-opts grammar"))
   opts)
 
 (defn- validate-refresh-result! [result]

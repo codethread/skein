@@ -15,6 +15,8 @@ SPEC-003 P5 describes the `module!` helper's closed declaration options. It gain
 
 - **DELTA-Cri-002.D1:** The `::module-declaration` result spec in `skein.api.runtime.alpha` accepts the optional normalized `:load` key (value `:image`). The public input grammar is the named `::module-opts` spec `module!` consults at the seam (including the `:load :image` cross-field constraints); the coordinator's `normalize-declaration` stays the normalizer and the authority for actionable per-field error prose, with spec/parser disagreement failing loudly as drift.
 
+- **DELTA-Cri-002.D2:** The `refresh!`/`plan` option grammar is the named `::refresh-opts` spec (closed to `:only`, a non-empty collection of module keywords) consulted at the seam and declared in both fdefs; the hand-rolled validator keeps the actionable error prose, with spec/validator disagreement failing loudly as drift.
+
 ## DELTA-Cri-002.P4 Open questions
 
 - **DELTA-Cri-002.Q1:** None.

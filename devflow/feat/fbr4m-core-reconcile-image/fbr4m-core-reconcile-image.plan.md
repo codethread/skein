@@ -4,8 +4,7 @@
 
 ## PLAN-Cri-001.P1 Goal and scope
 
-Ship ADR-003's two core changes: the reconcile applied/removed contract as normative spec text with coordinator-level proof, and `{:load :image}` as a validated member of the closed module declaration grammar. See
-[proposal.md](./proposal.md).
+Ship ADR-003's two core changes: the reconcile applied/removed contract as normative spec text with coordinator-level proof, and `{:load :image}` as a validated member of the closed module declaration grammar. See [proposal.md](./proposal.md).
 
 ## PLAN-Cri-001.P2 Approach
 

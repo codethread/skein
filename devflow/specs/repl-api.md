@@ -139,15 +139,7 @@ Helpers include:
 - `(runtime/clock runtime)` returns the runtime-owned `skein.api.clock.alpha/Clock` used for time reads and sleeps (SPEC-004.C1a).
 - `(runtime/now runtime)` returns that Clock's current `java.time.Instant`. It remains the convenient data-first read for trusted spools and takes the runtime first (SPEC-003.C18).
 
-Module `:file` targets are selected-workspace relative and may not escape the
-workspace. Module `:ns` targets are ledger-loaded from the complete synchronized
-root closure, including roots reached through `:after` dependencies — except a
-`:load :image` module, whose namespace is trusted from the live image and never
-source-loaded by refresh. Classpath
-modules for genuinely classpath-owned namespaces declare no `:spools`.
-`skein.spools.batteries`, like every synced spool, declares its approved root in
-`:spools`. A full refresh removes an owner by omission; targeted refresh includes
-affected dependents and cannot remove an unselected owner.
+Module `:file` targets are selected-workspace relative and may not escape the workspace. Module `:ns` targets are ledger-loaded from the complete synchronized root closure, including roots reached through `:after` dependencies — except a `:load :image` module, whose namespace is trusted from the live image and never source-loaded by refresh. Classpath modules for genuinely classpath-owned namespaces declare no `:spools`. `skein.spools.batteries`, like every synced spool, declares its approved root in `:spools`. A full refresh removes an owner by omission; targeted refresh includes affected dependents and cannot remove an unselected owner.
 
 Maven dependencies declared in an approved spool root's top-level `deps.edn :deps` are part of the spool sync contract described by SPEC-004. Version ranges, alternate approved-spool config files, source fetching beyond approved spool coordinates, and direct explicit-client `require` of newly synced weaver spools remain outside the REPL API contract.
 

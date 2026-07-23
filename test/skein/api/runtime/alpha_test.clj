@@ -282,6 +282,12 @@
       (is (not (s/valid? ::runtime/module-opts {:ns 'demo.ns :file "modules/demo.clj"})))
       (is (not (s/valid? ::runtime/module-opts
                          {:ns 'demo.ns :contribute 'unqualified})))))
+  (testing "refresh-opts names the option grammar refresh!/plan consult"
+    (is (s/valid? ::runtime/refresh-opts {}))
+    (is (s/valid? ::runtime/refresh-opts {:only [:demo]}))
+    (is (not (s/valid? ::runtime/refresh-opts {:only []})))
+    (is (not (s/valid? ::runtime/refresh-opts {:only ["demo"]})))
+    (is (not (s/valid? ::runtime/refresh-opts {:bogus true}))))
   (testing "collect-entry opts are closed to a boolean :override?"
     (is (s/valid? ::runtime/collect-entry-opts {}))
     (is (s/valid? ::runtime/collect-entry-opts {:override? true}))
