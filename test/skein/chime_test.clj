@@ -412,9 +412,9 @@
   (filterv #(= :chime/registration-barrier (:key %)) (hooks/hooks rt)))
 
 (deftest module-reconcile-registers-engine-and-cleans-up-on-removal
-  ;; Engine-parity regression (kanban card ifenn, epic waq0l): production
-  ;; activates chime via runtime/module!, so reconcile must own the hook and
-  ;; event handler that install! used to be the only registrar of.
+  ;; Production activates chime via runtime/module!, so module reconcile owns
+  ;; the engine: the mutation-barrier hook and the :chime/engine event handler
+  ;; register on an applied contribution and unregister on removal.
   (test-support/with-runtime
     {:prefix "skein-chime-config"}
     (fn [rt _config-dir]
@@ -445,9 +445,9 @@
         (is (= {:reconciled :noop} (chime/reconcile {:runtime rt})))))))
 
 (deftest module-activated-engine-fires-event-driven-notifications
-  ;; Engine-parity regression (kanban card ifenn, epic waq0l): activation via
-  ;; runtime/module! — the production path, no install! — must yield a live
-  ;; engine, so a bare strand mutation notifies with no direct scan! call.
+  ;; Activation via runtime/module! — the production path, no install! —
+  ;; yields a live engine: a bare strand mutation notifies with no direct
+  ;; scan! call.
   (test-support/with-runtime
     {:prefix "skein-chime-module"}
     (fn [rt config-dir]
