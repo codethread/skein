@@ -28,8 +28,8 @@ All output is JSON — pipe to `jq`.
 # backlog at a glance, priority-sorted
 strand kanban board | jq -r '.pending[] | [.priority, .id, (.epic // "-"), .title] | @tsv' | sort
 
-# refinement lane (cards not yet promoted) — same shape
-strand kanban board | jq -r '.refinement[]? | [.priority, .id, .title] | @tsv'
+# refinement lane (cards not yet promoted) — same shape; the lane key is always present, so a missing key fails the pipe
+strand kanban board | jq -r '.refinement[] | [.priority, .id, .title] | @tsv'
 
 # grep bodies across the whole open board
 strand kanban-tree | jq -r '.cards[] | "\(.id)\t\(.attributes["kanban/lane"])\t\(.title)\n\(.attributes.body // "")"' | grep -i <term>
@@ -39,7 +39,7 @@ strand kanban-tree | jq -r '.cards[] | "\(.id)\t\(.attributes["kanban/lane"])\t\
 
 - `strand kanban priority <id> <p1..p4>` — re-rank (p1 immediate blocker … p4 someday).
 - `strand kanban promote <id>` — refinement → pending.
-- `strand kanban finish <id> --outcome abandoned` — close stale/dead cards (reversible for epics via `reopen`).
+- `strand kanban finish <id> --outcome abandoned` — close dead cards, within the lifecycle: **features close only from claimed/in_review; epics close from refinement/pending** (reversible via `reopen`). A stale pending/refinement feature therefore cannot be abandoned by grooming — note it and flag it in the report instead.
 - `strand kanban note <id> ...` — annotate a card with grooming rationale.
 - `strand kanban add ... --epic <id>` — file gaps discovered while grooming.
 
@@ -49,13 +49,14 @@ Exact flags: `strand help kanban`.
 
 1. `strand kanban board` — orient: lane sizes, priority spread, orphan features (no `epic`).
 2. Scan `pending` (and `refinement`) with the recipes above; pull `strand kanban card <id>` only where a verdict needs the body.
-3. For each card form a verdict: keep as-is, re-prioritise, promote, merge/duplicate-of (note both, abandon one), or abandon.
+3. For each card form a verdict: keep as-is, re-prioritise, promote, duplicate-of (note both cards; abandonment only where the lifecycle allows it), abandon (epics, or features already claimed/in_review), or flag-for-user (stale pending/refinement features and anything else the ops cannot reach).
 4. Apply verdicts with the grooming ops, leaving a `note` on any card whose priority changed or that was abandoned, stating why.
 5. Report: a short table of changes made (id, action, reason) plus anything flagged but left for the user.
 
 ## Constraints
 
-- Grooming never claims, reviews, or finishes-as-done cards — lane movement beyond `promote` belongs to whoever works the card.
+- Grooming never claims, reviews, or finishes-as-done cards — lane movement beyond `promote` belongs to whoever works the card. In particular, never claim a card just to make it abandonable.
+- Mutate nothing until the scan reads have succeeded: a failed or truncated `kanban board`/`kanban-tree` read (non-zero exit, jq parse error, missing lane keys) aborts grooming with a report, never an "empty backlog" verdict.
 - Mutate only through `strand kanban ...` ops, never raw `strand update` against card strands.
 - If the guidance below is report-only (e.g. "just tell me what's stale"), make no mutations.
 
