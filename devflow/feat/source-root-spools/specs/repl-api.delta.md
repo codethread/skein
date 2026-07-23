@@ -1,6 +1,6 @@
 # REPL API Delta: Source-root spool coordinates
 
-**Document ID:** `SPEC-003-D006` **Status:** Draft **Base Spec:** [REPL API](../../../specs/repl-api.md) **Related proposal:** [`PROP-Srs-001`](../proposal.md) **Related brief:** [brief.md](../brief.md) (card `u4a24`) **Last Updated:** 2026-07-23
+**Document ID:** `SPEC-003-D006` **Status:** Merged **Base Spec:** [REPL API](../../../specs/repl-api.md) **Related proposal:** [`PROP-Srs-001`](../proposal.md) **Related brief:** [brief.md](../brief.md) (card `u4a24`) **Last Updated:** 2026-07-23
 
 ## SPEC-003-D006.P1 Summary
 

@@ -1,6 +1,6 @@
 # REPL API
 
-**Document ID:** `SPEC-003` **Status:** Implemented **Last Updated:** 2026-07-22 **Code:** `src/skein/repl.clj`, `src/skein/api/*.alpha`, `src/skein/userland/alpha.clj`, `src/skein/test`
+**Document ID:** `SPEC-003` **Status:** Implemented **Last Updated:** 2026-07-23 **Code:** `src/skein/repl.clj`, `src/skein/api/*.alpha`, `src/skein/userland/alpha.clj`, `src/skein/test`
 
 ## SPEC-003.P1 Purpose
 
@@ -141,9 +141,10 @@ Helpers include:
 Module `:file` targets are selected-workspace relative and may not escape the
 workspace. Module `:ns` targets are ledger-loaded from the complete synchronized
 root closure, including roots reached through `:after` dependencies. Classpath
-modules such as batteries declare no `:spools`. A full refresh removes an owner
-by omission; targeted refresh includes affected dependents and cannot remove an
-unselected owner.
+modules for genuinely classpath-owned namespaces declare no `:spools`.
+`skein.spools.batteries`, like every synced spool, declares its approved root in
+`:spools`. A full refresh removes an owner by omission; targeted refresh includes
+affected dependents and cannot remove an unselected owner.
 
 Maven dependencies declared in an approved spool root's top-level `deps.edn :deps` are part of the spool sync contract described by SPEC-004. Version ranges, alternate approved-spool config files, source fetching beyond approved spool coordinates, and direct explicit-client `require` of newly synced weaver spools remain outside the REPL API contract.
 
@@ -154,7 +155,7 @@ Maven dependencies declared in an approved spool root's top-level `deps.edn :dep
 - **SPEC-003.C60b:** A flat non-stream op uses a shape directly. A subcommand op mirrors its arg-spec tree: an interior return node is `{:subcommands {<name-string> <return-node> ...}}`, and a leaf return node is a return case; names match the arg-spec exactly at every level. A streaming return case declares `{:stream {:emits <shape> :result <shape>}}`; a non-stream case is a shape. `validate!` returns valid authored data unchanged or fails loudly, `explain` returns the declaration as JSON-safe data, and `check!` returns a conforming value unchanged or throws structured mismatch data carrying at least the failing path, expected shape, actual value. Selection context carries the full subcommand path.
 - **SPEC-003.C61:** Payload reference resolution is a parser contract: a **whole** argv value of `:stdin` or `:payload/<name>` resolves to the named envelope payload string; no substring interpolation. A reference without a matching payload fails loudly; an attached payload nothing references fails loudly. An arg may declare `:parse :json`/`:jsonl` to parse the resolved payload, failing loudly with context on malformed input. Ops registered without an arg-spec receive the raw envelope and own their argv/payload handling.
 - **SPEC-003.C62:** Op registration/override from trusted config and REPL uses `skein.api.weaver.alpha/register-op!` (loud on name collision) and `replace-op!` (explicit override); entries carry op metadata, including optional `:returns`, and registry-recorded provenance (SPEC-004.C63a–d). Workspace `defop` and direct spool registrations pass `:returns` through the same metadata route; there is no second macro or registry.
-- **SPEC-003.C63:** The shipped `skein.spools.batteries` reference spool (classpath, `skein.spools.*` tier) registers the public strand command surface as parser-backed ops; its behavior contract lives at `spools/batteries.md`. Workspaces may mask or replace batteries; a workspace without it retains core `help` discovery and loud unknown-op errors.
+- **SPEC-003.C63:** The shipped `skein.spools.batteries` reference spool is an ordinary approved spool in the `skein.spools.*` tier. `mill init` records the workspace's consent by seeding `skein.spools/batteries {:skein/source-root "spools/batteries"}` in `spools.edn`, and startup activates it through a `:spools`-guarded module. It registers the public strand command surface as parser-backed ops; its behavior contract lives at `spools/batteries.md`. Deleting the seeded entry is the supported visible opt-out. Workspaces may delete, mask, or replace batteries; a workspace without it retains core `help` discovery and loud unknown-op errors.
 - **SPEC-003.C63a:** Batteries registers `spool add <git-url> [--tag vN] [--lib family]`, `spool bump <family> [--to vN]`, and `spool status`. Add and bump contact the Git remote to list annotated release tags; add also fetches the optional advisory `spool.edn` at the selected peeled commit. Both accept only `vN` tags for positive integer `N`, resolve `refs/tags/vN^{}` to the peeled commit SHA, and write the tag/SHA pair through the validated comment-preserving atomic `spools.edn` write verb. A supplied `--lib` must match a root symbol in a present advisory manifest; without a manifest it confirms or overrides the implicit URL-basename root at `.`. `spool status` is offline and read-only: it performs no Git call, file write, refresh, or adoption action while joining declared families with root outcomes, modules, pending generation, and the running release marker. It joins every declared family off its normalized root set — a declaration that omits `:roots`, including a bare `:local/root` coordinate, carries the implicit `{family "."}` sole-root that normalization already applied — so a rootless declaration is projected, never rejected at read time. The separate `spool-status` op is retired without an alias under TEN-000@1.
 - **SPEC-003.C63b:** A successful spool bump always returns `:compare-url`. GitHub HTTPS,
   SSH, and SCP remotes become HTTPS web URLs before the compare path is added. Other HTTP(S)

@@ -1,6 +1,6 @@
 # CLI Delta: Source-root spool coordinates
 
-**Document ID:** `SPEC-002-D007` **Status:** Draft **Base Spec:** [CLI](../../../specs/cli.md) **Related proposal:** [`PROP-Srs-001`](../proposal.md) **Related brief:** [brief.md](../brief.md) (card `u4a24`) **Last Updated:** 2026-07-23
+**Document ID:** `SPEC-002-D007` **Status:** Merged **Base Spec:** [CLI](../../../specs/cli.md) **Related proposal:** [`PROP-Srs-001`](../proposal.md) **Related brief:** [brief.md](../brief.md) (card `u4a24`) **Last Updated:** 2026-07-23
 
 ## SPEC-002-D007.P1 Summary
 

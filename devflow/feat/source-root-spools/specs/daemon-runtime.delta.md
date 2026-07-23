@@ -1,6 +1,6 @@
 # Weaver Runtime Delta: Source-root spool coordinates
 
-**Document ID:** `SPEC-004-D006` **Status:** Draft **Base Spec:** [Weaver Runtime](../../../specs/daemon-runtime.md) **Related proposal:** [`PROP-Srs-001`](../proposal.md) **Related brief:** [brief.md](../brief.md) (card `u4a24`) **Last Updated:** 2026-07-23
+**Document ID:** `SPEC-004-D006` **Status:** Merged **Base Spec:** [Weaver Runtime](../../../specs/daemon-runtime.md) **Related proposal:** [`PROP-Srs-001`](../proposal.md) **Related brief:** [brief.md](../brief.md) (card `u4a24`) **Last Updated:** 2026-07-23
 
 ## SPEC-004-D006.P1 Summary
 

@@ -1,6 +1,6 @@
 # Alpha Surface Delta: Source-root spool coordinates
 
-**Document ID:** `SPEC-005-D001` **Status:** Draft **Base Spec:** [Alpha Surface](../../../specs/alpha-surface.md) **Related proposal:** [`PROP-Srs-001`](../proposal.md) **Related brief:** [brief.md](../brief.md) (card `u4a24`) **Last Updated:** 2026-07-23
+**Document ID:** `SPEC-005-D001` **Status:** Merged **Base Spec:** [Alpha Surface](../../../specs/alpha-surface.md) **Related proposal:** [`PROP-Srs-001`](../proposal.md) **Related brief:** [brief.md](../brief.md) (card `u4a24`) **Last Updated:** 2026-07-23
 
 ## SPEC-005-D001.P1 Summary
 
