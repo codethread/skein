@@ -7,7 +7,9 @@
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
+            [skein.api.events.alpha :as events]
             [skein.api.hooks.alpha :as hooks]
+            [skein.api.runtime.alpha :as runtime]
             [skein.api.weaver.alpha :as weaver]
             [skein.core.db-test :as db-test]
             [skein.core.weaver.runtime :as weaver-runtime]
@@ -402,6 +404,67 @@
         (chime/scan! {:strand/id (:id strand)})
         (is (= :rule (:kind (last (chime/recent-failures)))))
         (is (= :invalid (:rule (last (chime/recent-failures)))))))))
+
+(defn- engine-handler-entries [rt]
+  (filterv #(= :chime/engine (:key %)) (events/handlers rt)))
+
+(defn- barrier-hook-entries [rt]
+  (filterv #(= :chime/registration-barrier (:key %)) (hooks/hooks rt)))
+
+(deftest module-reconcile-registers-engine-and-cleans-up-on-removal
+  ;; Production activates chime via runtime/module!, so module reconcile owns
+  ;; the engine: the mutation-barrier hook and the :chime/engine event handler
+  ;; register on an applied contribution and unregister on removal.
+  (test-support/with-runtime
+    {:prefix "skein-chime-config"}
+    (fn [rt _config-dir]
+      (is (= {:reconciled :applied}
+             (chime/reconcile {:runtime rt :module/contribution {:status :applied}})))
+      (is (= 1 (count (engine-handler-entries rt))))
+      (is (= 1 (count (barrier-hook-entries rt))))
+      (chime/register! :phase-failed 'skein.chime-test/phase-failed-rule)
+      (testing "repeated application replaces entries and keeps the rule view"
+        (is (= {:reconciled :applied}
+               (chime/reconcile {:runtime rt :module/contribution {:status :applied}})))
+        (is (= 1 (count (engine-handler-entries rt))))
+        (is (= 1 (count (barrier-hook-entries rt))))
+        (is (= [:phase-failed] (mapv :key (chime/rules)))))
+      (testing "removal unregisters the engine and empties the visible view"
+        (is (= {:reconciled :removed}
+               (chime/reconcile {:runtime rt :module/contribution {:status :removed}})))
+        (is (= [] (engine-handler-entries rt)))
+        (is (= [] (barrier-hook-entries rt)))
+        (is (= [] (chime/rules))))
+      (testing "reapplication restores the surviving direct rule"
+        ;; direct register! rules live under the repl owner and survive module
+        ;; removal; deactivation is view-level only
+        (is (= {:reconciled :applied}
+               (chime/reconcile {:runtime rt :module/contribution {:status :applied}})))
+        (is (= [:phase-failed] (mapv :key (chime/rules)))))
+      (testing "any other contribution status fails loudly"
+        (is (thrown-with-msg?
+             clojure.lang.ExceptionInfo #"Unsupported module contribution status"
+             (chime/reconcile {:runtime rt})))))))
+
+(deftest module-activated-engine-fires-event-driven-notifications
+  ;; Activation via runtime/module! — the production path, no install! —
+  ;; yields a live engine: a bare strand mutation notifies with no direct
+  ;; scan! call.
+  (test-support/with-runtime
+    {:prefix "skein-chime-module"}
+    (fn [rt config-dir]
+      (is (= :applied
+             (:status (runtime/module! rt :chime
+                                       {:ns 'skein.spools.chime
+                                        :contribute 'skein.spools.chime/contribute
+                                        :reconcile 'skein.spools.chime/reconcile}))))
+      (is (= 1 (count (engine-handler-entries rt))))
+      (is (= 1 (count (barrier-hook-entries rt))))
+      (chime/register! :phase-failed 'skein.chime-test/phase-failed-rule)
+      (let [out-file (bind-file-notifier! config-dir)]
+        (weaver/add! rt {:title "module failure"
+                         :attributes {"phase" "failed"}})
+        (is (eventually #(file-contains? out-file "Run failed: module failure")))))))
 
 (deftest state-shape-matches-declared-version
   ;; Drift alarm for chime's versioned spool-state: a key added to new-state
