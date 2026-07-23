@@ -12,7 +12,7 @@ This is the **how/why** half of the shell executor docs. The other two halves ar
 
 Division of truth: signatures and argument lists live in the generated API doc; narrative and composition live here and in the contract. This cookbook never restates a fn signature or the attribute table — it links to them.
 
-The shell executor sits between two spools that know nothing of process execution: the [workflow engine](../workflow.md), which models an external wait point as a `gate`, and the operating system, which runs commands. The shell executor is the only namespace that speaks both. Load order matters — **workflow first, then the shell executor** (its `install!` registers the `:shell` executor and runs an initial gate scan) — see [`executors/shell.md`, "Loading"](./shell.md#loading).
+The shell executor sits between two spools that know nothing of process execution: the [workflow engine](../workflow.md), which models an external wait point as a `gate`, and the operating system, which runs commands. The shell executor is the only namespace that speaks both. Load order matters — **workflow first, then the shell executor** (its contribution publishes the `:shell` executor and its reconcile runs an initial gate scan) — see [`executors/shell.md`, "Loading"](./shell.md#loading).
 
 ## How to read a recipe
 

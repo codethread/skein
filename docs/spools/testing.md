@@ -105,6 +105,37 @@ The context map contains orchestration facts only: `:config-dir`, `:state-dir`, 
 `:runtime`, `:metadata`, and `:timeout-ms`. There are deliberately no strand/query wrappers,
 assertion helpers, or CLI subprocess helpers — exercise the real API forms.
 
+## Activating spool modules from test fixtures
+
+Tests activate a spool exactly the way production does — `runtime/module!` with the spool's
+exported base declaration — never through a spool-private registration back door. The conventions
+below come from [ADR-003](../../devflow/adrs/0003-spool-activation-lifecycle.md) (P7), which holds
+the rationale; they bind any fixture that activates spool modules.
+
+- **Use the exported base declaration.** A spool exports its declaration triple as data (for
+  example `skein.spools.batteries/module`). Production config assocs its `:spools` root guards
+  onto it; a bare test runtime assocs `{:load :image}` instead, trusting the namespaces the test
+  JVM already loaded. The two variants cannot be byte-identical: `:spools` guards fail
+  `module-root-problem` on unapproved roots in bare runtimes, and that refusal is correct.
+- **`:load :image` needs the namespace loaded and an explicit `:contribute`.** Both refusals are
+  loud. Test namespaces normally require the spool they exercise, so the image is already loaded
+  by the time the fixture runs.
+- **Per-fixture `module!` is fine; full-refresh tests re-declare.** A full `refresh!` recollects
+  the module graph from startup files and removes imperative declarations. Fixtures that never
+  full-refresh are unaffected; a test that runs full `refresh!` declares its modules in startup
+  files or re-declares after.
+- **Classpath activation and root approval do not mix.** A test that `module!`-activates a
+  namespace from the classpath must not also approve a real spool root providing the same
+  namespaces: the unledgered-residual and `:non-additive-sync-diff` refusals that follow are
+  correct behavior, not flakes. Tests that genuinely sync roots use freshly generated namespaces
+  in disposable roots.
+- **Activate `:workflow` before executor modules.** The kernel refuses a contribution naming an
+  undeclared kind; order fixture activation with `:after` edges or explicit sequencing.
+
+In this repo, `skein.spools.test-support/activate-spool!` wraps the pattern: it assocs
+`:load :image` onto the datum, declares the module, and throws with the full refresh result unless
+the module applied.
+
 ## The classpath boundary
 
 Two evaluation contexts exist even though the test weaver runs in your test JVM process:

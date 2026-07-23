@@ -25,7 +25,6 @@
   wake in SQLite is the sole authority for when a job next fires."
   (:require [clojure.spec.alpha :as s]
             [clojure.string :as str]
-            [skein.api.current.alpha :as current]
             [skein.api.registry.alpha :as registry]
             [skein.api.runtime.alpha :as runtime]
             [skein.api.scheduler.alpha :as scheduler]
@@ -373,24 +372,45 @@
   "Reconcile effective cron declarations with their durable dispatcher wakes.
 
   Removed declarations cancel before removal; changed declarations preserve an
-  unchanged wake and reschedule a changed cadence or handler."
-  [{:keys [runtime]}]
-  (let [visible (jobs-atom runtime)
-        effective (registry/effective (job-kinds runtime) job-kind)
-        before @visible
-        removed (remove (set (keys effective)) (keys before))]
-    (try
-      (doseq [id removed] (unregister! runtime id))
-      (doseq [[id job] effective]
-        (when (not= (select-keys job [:interval-ms :jitter-ms :handler])
-                    (select-keys (get before id) [:interval-ms :jitter-ms :handler]))
-          (register! runtime (assoc job :id id))))
-      {:reconciled :cron :jobs (vec (sort (keys effective)))}
-      (catch Throwable t
-        (throw (ex-info "Cron reconciliation left a recoverable degraded outcome"
-                        {:remedy "Repair the cron declaration or durable wake, then refresh the owning module"
-                         :jobs (vec (sort (keys effective)))}
-                        t))))))
+  unchanged wake and reschedule a changed cadence or handler. Applied and
+  removed contributions deliberately share the body: the effective registry
+  already reflects the transition, so one reconciliation pass registers what
+  appeared and cancels what vanished either way (SPEC-004.C46b). Any other
+  status is a direct-call error and fails loudly."
+  [{:keys [runtime] :as ctx}]
+  (let [status (get-in ctx [:module/contribution :status])]
+    (when-not (contains? #{:applied :removed} status)
+      (fail! "Unsupported module contribution status"
+             {:status status
+              :allowed #{:applied :removed}
+              :module/key (:module/key ctx)
+              :reconciler 'skein.spools.cron/reconcile}))
+    (let [visible (jobs-atom runtime)
+          effective (registry/effective (job-kinds runtime) job-kind)
+          before @visible
+          removed (remove (set (keys effective)) (keys before))]
+      (try
+        (doseq [id removed] (unregister! runtime id))
+        (doseq [[id job] effective]
+          (when (not= (select-keys job [:interval-ms :jitter-ms :handler])
+                      (select-keys (get before id) [:interval-ms :jitter-ms :handler]))
+            (register! runtime (assoc job :id id))))
+        {:reconciled :cron :jobs (vec (sort (keys effective)))}
+        (catch Throwable t
+          (throw (ex-info "Cron reconciliation left a recoverable degraded outcome"
+                          {:remedy "Repair the cron declaration or durable wake, then refresh the owning module"
+                           :jobs (vec (sort (keys effective)))}
+                          t)))))))
+
+(def module
+  "Base module declaration datum for the cron spool (ADR-003.P7).
+
+  The authored `:ns`/`:contribute`/`:reconcile` triple production and tests
+  share: production config assocs its `:spools` root guards onto it; bare-test
+  fixtures assoc `:load :image`."
+  {:ns 'skein.spools.cron
+   :contribute 'skein.spools.cron/contribute
+   :reconcile 'skein.spools.cron/reconcile})
 
 (defn jobs
   "Return the cron jobs registered on `runtime` as status maps, sorted by id.
@@ -401,17 +421,3 @@
   (`skein.api.scheduler.alpha/pending`), the single timing view."
   [runtime]
   (->> @(jobs-atom runtime) vals (sort-by (comp str :id)) vec))
-
-(defn install!
-  "Activate cron on the current runtime, creating the execution executor.
-
-  Registers no jobs — trusted config registers jobs with `register!`. Cron owns
-  no timer or clock pump; the scheduler primitive drives every `cron/<id>` wake.
-  Called as a no-arg module `:call` at startup/reload."
-  []
-  (let [runtime (current/runtime)]
-    (state runtime)
-    (job-kinds runtime)
-    {:installed true
-     :namespace 'skein.spools.cron
-     :jobs (mapv :id (jobs runtime))}))

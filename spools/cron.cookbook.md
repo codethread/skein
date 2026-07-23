@@ -38,7 +38,7 @@ weavers or many jobs do not fire on the same tick.
 
 **Composition.** Call `register!` with `:interval-ms`, optional `:jitter-ms`, and
 a `:handler` symbol resolving to `(fn [runtime] ..)`. Register from trusted startup
-config after cron's `install!` has created the execution executor.
+config after cron's module activation has created the execution executor.
 
 ```clojure
 (ns my.jobs
@@ -54,7 +54,7 @@ config after cron's `install!` has created the execution executor.
     ;; ... do the periodic work ...
     {:outcome :reported}))
 
-;; from startup config, once cron/install! has run:
+;; from startup config, once the cron module is active:
 (cron/register! (current/runtime)
   {:id          :nightly-report
    :interval-ms (* 24 60 60 1000)   ; base period between fires
@@ -83,13 +83,13 @@ Honest source: the job shape in [`cron/README.md`](./cron/README.md) and
 ## Recipe: Give the job its own startup module, out of test-loaded config
 
 **Situation.** Your job's first act is a real side effect, such as a `gh` call or
-network read. Your main config file's `install!` also runs under test, and you do
-not want that test to touch the real world.
+network read. Your main config file also loads under test, and you do not want
+that test to touch the real world.
 
 **Composition.** Give the job a dedicated startup-file module. Cron's own
-`install!` only creates the execution executor and registers no jobs. The job
-file holds the `:handler` plus an `install!` that performs the `register!` call.
-`init.clj` wires it as its own module.
+module only creates the execution executor and registers no jobs. The job file
+holds the `:handler` plus the `defjob` declaration. `init.clj` wires it as its
+own module.
 
 ```clojure
 ;; report_job.clj (ns report-job) — the job's handler and registration live together.

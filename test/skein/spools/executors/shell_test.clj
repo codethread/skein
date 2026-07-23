@@ -13,7 +13,9 @@
 (defn- with-shell [f]
   (with-runtime
     (fn [rt _]
-      (shell/install!)
+      (test-support/activate-spool! rt :skein/spools-workflow workflow/module)
+      (test-support/activate-spool! rt :skein/spools-shell shell/module
+                                    :after [:skein/spools-workflow])
       (f rt))))
 
 (defn- await-eventually
@@ -278,7 +280,7 @@
   ;; by omission when the module is refreshed away.
   (with-runtime
     (fn [rt _]
-      (workflow/install!)
+      (test-support/activate-spool! rt :skein/spools-workflow workflow/module)
       (is (= {workflow/executor-kind {"shell" 'skein.spools.executors.shell/gate-stalled?}
               :queries {"stalled-shell-gates" shell/stalled-shell-gates-query}}
              (shell/contribute {:runtime rt}))))))
@@ -290,7 +292,7 @@
   ;; scan is triggered.
   (with-runtime
     (fn [rt _]
-      (workflow/install!)
+      (test-support/activate-spool! rt :skein/spools-workflow workflow/module)
       (is (= {:reconciled :applied}
              (shell/reconcile {:runtime rt :module/contribution {:status :applied}})))
       (let [pool (binding [shell/*runtime* rt] (:worker-executor (#'shell/state)))]

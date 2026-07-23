@@ -50,7 +50,7 @@ Block until every offloaded cron job on `runtime` has finished, then return
   `skein.test.alpha/await-quiescent!`. `opts` accepts `:timeout-ms` (a
   positive integer); unknown keys are rejected loudly. The default budget comes
   from `skein.spools.test-support/await-budget-ms`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L251-L279">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L250-L278">Source</a></sub></p>
 
 ## <a name="skein.spools.cron/contribute">`contribute`</a>
 ``` clojure
@@ -63,7 +63,7 @@ Materialize cron's job-kind registry handle for dependent module contributions.
   The handle lives in its own spool-state slot so the publication kernel
   discovers `:skein.spools.cron/jobs` before a dependent module (e.g. the NVD
   scan job) stages its cron contribution.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L361-L370">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L360-L369">Source</a></sub></p>
 
 ## <a name="skein.spools.cron/defjob">`defjob`</a>
 ``` clojure
@@ -76,7 +76,7 @@ Collect one cron job declaration for the current runtime module.
   `id` is the stable cron job key and `job` is the same literal map accepted by
   `register!`. The macro performs no scheduling itself; cron's reconciler
   applies the complete effective declaration after publication.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L352-L359">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L351-L358">Source</a></sub></p>
 
 ## <a name="skein.spools.cron/fire-wake">`fire-wake`</a>
 ``` clojure
@@ -95,20 +95,7 @@ Scheduler wake handler for a `cron/<id>` fire, run on the shared event lane.
   cron-owned execution executor, recording an executor rejection loudly cron-side
   without throwing; (5) return so the scheduler completes the delivered wake. The
   job body never runs on the lane.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L221-L249">Source</a></sub></p>
-
-## <a name="skein.spools.cron/install!">`install!`</a>
-``` clojure
-(install!)
-```
-Function.
-
-Activate cron on the current runtime, creating the execution executor.
-
-  Registers no jobs — trusted config registers jobs with `register!`. Cron owns
-  no timer or clock pump; the scheduler primitive drives every `cron/<id>` wake.
-  Called as a no-arg module `:call` at startup/reload.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L405-L417">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L220-L248">Source</a></sub></p>
 
 ## <a name="skein.spools.cron/jobs">`jobs`</a>
 ``` clojure
@@ -122,7 +109,19 @@ Return the cron jobs registered on `runtime` as status maps, sorted by id.
   and (once fired) `:last-result`/`:last-fired-at`/`:last-error`. When a job next
   fires lives in its durable `cron/<id>` wake — read scheduler introspection
   (`skein.api.scheduler.alpha/pending`), the single timing view.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L395-L403">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L415-L423">Source</a></sub></p>
+
+## <a name="skein.spools.cron/module">`module`</a>
+
+
+
+
+Base module declaration datum for the cron spool (ADR-003.P7).
+
+  The authored `:ns`/`:contribute`/`:reconcile` triple production and tests
+  share: production config assocs its `:spools` root guards onto it; bare-test
+  fixtures assoc `:load :image`.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L405-L413">Source</a></sub></p>
 
 ## <a name="skein.spools.cron/recent-failures">`recent-failures`</a>
 ``` clojure
@@ -135,19 +134,23 @@ Return recorded cron failures for this runtime's weaver lifetime, oldest
   `skein.api.events.alpha/recent-failures`. Each entry carries `:kind` (`:run`
   for a `:handler` throw, `:offload` for an execution-executor rejection),
   `:job`, a `:message`, and `:at`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L113-L120">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L112-L119">Source</a></sub></p>
 
 ## <a name="skein.spools.cron/reconcile">`reconcile`</a>
 ``` clojure
-(reconcile {:keys [runtime]})
+(reconcile {:keys [runtime], :as ctx})
 ```
 Function.
 
 Reconcile effective cron declarations with their durable dispatcher wakes.
 
   Removed declarations cancel before removal; changed declarations preserve an
-  unchanged wake and reschedule a changed cadence or handler.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L372-L393">Source</a></sub></p>
+  unchanged wake and reschedule a changed cadence or handler. Applied and
+  removed contributions deliberately share the body: the effective registry
+  already reflects the transition, so one reconciliation pass registers what
+  appeared and cancels what vanished either way (SPEC-004.C46b). Any other
+  status is a direct-call error and fails loudly.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L371-L403">Source</a></sub></p>
 
 ## <a name="skein.spools.cron/register!">`register!`</a>
 ``` clojure
@@ -180,7 +183,7 @@ Register (or replace) a named cron job on `runtime` as a durable wake.
   no in-memory config yet (fresh JVM adopting a durable wake). A changed tuple arms
   a fresh wake at `now + interval + jitter`; a missing pending wake also arms a
   fresh wake. Returns the job's status map.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L299-L350">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L298-L349">Source</a></sub></p>
 
 ## <a name="skein.spools.cron/unregister!">`unregister!`</a>
 ``` clojure
@@ -199,4 +202,4 @@ Cancel a cron job's pending wake and remove it from `runtime`.
   guarded behind a `pending` check for `cron/<id>` — a missing wake is tolerated
   while genuine scheduler errors still surface
   (`PLAN-cron-on-scheduler-001.R1`).
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L167-L187">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L166-L186">Source</a></sub></p>

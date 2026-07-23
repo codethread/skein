@@ -22,7 +22,7 @@
   (test-support/with-runtime
     {:prefix "skein-chime-config"}
     (fn [rt config-dir]
-      (chime/install!)
+      (test-support/activate-spool! rt :skein/spools-chime chime/module)
       (f rt config-dir))))
 
 (defn- write-notifier! [dir out-file]
@@ -233,7 +233,7 @@
           (weaver-runtime/with-runtime-binding
             second-rt
             (fn []
-              (chime/install!)
+              (test-support/activate-spool! second-rt :skein/spools-chime chime/module)
               (chime/register! :phase-failed 'skein.chime-test/phase-failed-rule)
               (let [out-file (bind-file-notifier! second-config)]
                 (weaver/add! second-rt {:title "unrelated mutation"})
@@ -402,8 +402,10 @@
         (is (= :throwing (:rule (last (chime/recent-failures)))))
         (chime/register! :invalid 'skein.chime-test/invalid-notification-rule)
         (chime/scan! {:strand/id (:id strand)})
-        (is (= :rule (:kind (last (chime/recent-failures)))))
-        (is (= :invalid (:rule (last (chime/recent-failures)))))))))
+        ;; both rules fail this scan; dispatch follows the visible view's
+        ;; deterministic key order, so assert membership rather than recency
+        (is (some #(and (= :rule (:kind %)) (= :invalid (:rule %)))
+                  (chime/recent-failures)))))))
 
 (defn- engine-handler-entries [rt]
   (filterv #(= :chime/engine (:key %)) (events/handlers rt)))
@@ -447,17 +449,13 @@
              (chime/reconcile {:runtime rt})))))))
 
 (deftest module-activated-engine-fires-event-driven-notifications
-  ;; Activation via runtime/module! — the production path, no install! —
-  ;; yields a live engine: a bare strand mutation notifies with no direct
-  ;; scan! call.
+  ;; Activation via runtime/module! — the production path — yields a live
+  ;; engine: a bare strand mutation notifies with no direct scan! call.
   (test-support/with-runtime
     {:prefix "skein-chime-module"}
     (fn [rt config-dir]
       (is (= :applied
-             (:status (runtime/module! rt :chime
-                                       {:ns 'skein.spools.chime
-                                        :contribute 'skein.spools.chime/contribute
-                                        :reconcile 'skein.spools.chime/reconcile}))))
+             (:status (runtime/module! rt :chime chime/module))))
       (is (= 1 (count (engine-handler-entries rt))))
       (is (= 1 (count (barrier-hook-entries rt))))
       (chime/register! :phase-failed 'skein.chime-test/phase-failed-rule)

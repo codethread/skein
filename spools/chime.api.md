@@ -29,17 +29,17 @@ Function.
 Materialize Chime's rule kind for dependent module contributions.
 <p><sub><a href="https://github.com/codethread/skein/blob/main/spools/chime/src/skein/spools/chime.clj#L379-L385">Source</a></sub></p>
 
-## <a name="skein.spools.chime/install!">`install!`</a>
-``` clojure
-(install!)
-```
-Function.
+## <a name="skein.spools.chime/module">`module`</a>
 
-Install chime's mutation barrier and event handler into the active weaver.
 
-  Chime ships no rules and no notifier: trusted config supplies rules with
-  `register!` and a notifier with `set-notifier!`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/chime/src/skein/spools/chime.clj#L445-L464">Source</a></sub></p>
+
+
+Base module declaration datum for the chime spool (ADR-003.P7).
+
+  The authored `:ns`/`:contribute`/`:reconcile` triple production and tests
+  share: production config assocs its `:spools` root guards onto it; bare-test
+  fixtures assoc `:load :image`.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/chime/src/skein/spools/chime.clj#L448-L456">Source</a></sub></p>
 
 ## <a name="skein.spools.chime/mutation-registration-barrier!">`mutation-registration-barrier!`</a>
 ``` clojure
@@ -123,7 +123,7 @@ Reconcile chime's engine and visible rule view for a module transition.
   share, so no mutation or event lane observes a half-applied transition. Any
   other contribution status fails loudly: the module kernel only reconciles
   applied and removed outcomes, so anything else is a caller error.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/chime/src/skein/spools/chime.clj#L406-L443">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/chime/src/skein/spools/chime.clj#L406-L446">Source</a></sub></p>
 
 ## <a name="skein.spools.chime/register!">`register!`</a>
 ``` clojure

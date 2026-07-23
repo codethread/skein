@@ -86,14 +86,14 @@ contract is [SPEC-003.C60a/C60b](../devflow/specs/repl-api.md). Run
 
 `deprecate!` replaces a registered guild op with a stub that always fails loudly. A deprecated stub may explain, redirect, or refuse — it must never pretend to succeed. The thrown data includes `{:code :operation/deprecated}` plus the op name and replacement guidance.
 
-### `install!`
+### Activation
 
 ```clojure
-(guild/install! runtime)
-(guild/install! runtime "frontend")
+(runtime/module! runtime :skein/spools-guild guild/module)
+(guild/set-fallback-guild-name! runtime "frontend")
 ```
 
-`install!` registers the `guild` op, clears previous guild declarations in that runtime, and records an optional fallback name. Re-run it during trusted config reload before re-declaring ops.
+Guild activates through the module lifecycle: `guild/module` is the exported base declaration (`contribute` publishes the `guild` op, `reconcile` clears previous guild declarations in that runtime). The guild name is read from runtime metadata when available; `set-fallback-guild-name!` records a fallback for contexts without it — reconcile resets the fallback, so call it after activation.
 
 ### `guild list`
 

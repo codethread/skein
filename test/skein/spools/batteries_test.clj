@@ -21,7 +21,7 @@
             [skein.api.weaver.alpha :as weaver]
             [skein.core.specs :as specs]
             [skein.spools.batteries :as batteries]
-            [skein.spools.test-support :refer [with-runtime]]
+            [skein.spools.test-support :as test-support :refer [with-runtime]]
             [skein.test.alpha :as t]))
 
 (s/def ::title string?)
@@ -37,7 +37,7 @@
   [f]
   (with-runtime
     (fn [rt _config-dir]
-      (batteries/install! rt)
+      (test-support/activate-spool! rt :skein/spools-batteries batteries/module)
       (f rt))))
 
 (defn- op-entry [rt op-name]
@@ -196,7 +196,7 @@
   (with-runtime
     {:release-marker "v4"}
     (fn [rt _config-dir]
-      (batteries/install! rt)
+      (test-support/activate-spool! rt :skein/spools-batteries batteries/module)
       (let [seen-sha (atom nil)
             peeled-v9 (sha "9")
             peeled-v12 (sha "d")]
@@ -266,7 +266,7 @@
 (deftest spool-add-implicit-root-and-release-tag-failures
   (with-runtime
     (fn [rt _config-dir]
-      (batteries/install! rt)
+      (test-support/activate-spool! rt :skein/spools-batteries batteries/module)
       (testing "a missing advisory manifest uses the confirmed URL-derived lib at root dot"
         (stub-git! rt (tag-lines ["v1" (sha "a") (sha "b")]) nil)
         (is (= {'demo.spool "."}
@@ -294,7 +294,7 @@
 (deftest spool-add-validates-explicit-lib-against-advisory-manifest
   (with-runtime
     (fn [rt _config-dir]
-      (batteries/install! rt)
+      (test-support/activate-spool! rt :skein/spools-batteries batteries/module)
       (stub-git! rt
                  (tag-lines ["v1" (sha "a") (sha "b")])
                  (pr-str {:spool/format 1
@@ -317,7 +317,7 @@
 (deftest spool-add-wraps-malformed-trailing-manifest-input-with-coordinate-context
   (with-runtime
     (fn [rt _config-dir]
-      (batteries/install! rt)
+      (test-support/activate-spool! rt :skein/spools-batteries batteries/module)
       (let [git-url "https://example.invalid/trailing.git"
             commit (sha "b")]
         (stub-git! rt
@@ -339,7 +339,7 @@
   (with-runtime
     {:release-marker "v4"}
     (fn [rt _config-dir]
-      (batteries/install! rt)
+      (test-support/activate-spool! rt :skein/spools-batteries batteries/module)
       (let [old-sha (sha "1")
             v3-sha (sha "3")]
         (runtime/upsert-spool-entry!
@@ -379,7 +379,7 @@
     (testing git-url
       (with-runtime
         (fn [rt _config-dir]
-          (batteries/install! rt)
+          (test-support/activate-spool! rt :skein/spools-batteries batteries/module)
           (let [old-sha (sha "1")
                 new-sha (sha "2")]
             (runtime/upsert-spool-entry!
@@ -400,7 +400,7 @@
   (with-runtime
     {:release-marker "v5"}
     (fn [rt config-dir]
-      (batteries/install! rt)
+      (test-support/activate-spool! rt :skein/spools-batteries batteries/module)
       (runtime/upsert-spool-entry!
        rt 'demo/family
        {:git/url "https://example.invalid/demo.git"
@@ -434,7 +434,7 @@
   ;; exercised through the same normalization path the live world uses.
   (with-runtime
     (fn [rt config-dir]
-      (batteries/install! rt)
+      (test-support/activate-spool! rt :skein/spools-batteries batteries/module)
       (spit (io/file config-dir "spools.edn")
             (pr-str {:spools {'demo/family {:local/root "../demo"}}}))
       (spit (io/file config-dir "module.clj") "{:loaded true}\n")
@@ -1034,7 +1034,7 @@
 (deftest batteries-adopts-discovery-tier-pattern
   (with-batteries
     (fn [rt]
-      (testing "install! registers the batteries-owned glossary outcomes"
+      (testing "module reconcile seeds the batteries-owned glossary outcomes"
         (is (set/subset?
              #{"batteries/state-invalid" "batteries/attr-key-duplicate"
                "batteries/edge-malformed" "batteries/query-unknown"

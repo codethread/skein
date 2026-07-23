@@ -350,15 +350,15 @@ opts into:
   `add` and `weave`): what to run first, what to prefer.
 
 `failure-modes` carry glossary outcome **names** only; the envelope resolves each to its definition
-once, in its `glossary` map. Batteries owns and registers these outcomes (e.g.
+once, in its `glossary` map. Batteries owns and seeds these outcomes (e.g.
 `batteries/state-invalid`, `batteries/query-unknown`, `batteries/spool-release-unresolved`) from
-`install!` before the ops that reference them, so the definitions travel with the spool.
+its module reconcile, so the definitions travel with the spool.
 
 Batteries also **exports** `default-help-transform`, a reference renderer that turns the raw help
 envelope into readable text. It is a single recursive function over the uniform node — the op root, a
 subcommand verb, and any deeper level render through the same body with no per-level special-casing.
 It is exported for trusted config to elect (`register-default-help-transform!`), never registered
-from `install!`: absent that election, `strand help` stays raw-JSON, and `strand help --json <op>`
+by the module itself: absent that election, `strand help` stays raw-JSON, and `strand help --json <op>`
 always bypasses any elected transform.
 
 ## 4. Attribute and edge flag semantics

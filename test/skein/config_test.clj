@@ -21,7 +21,13 @@
             [skein.core.weaver.module-publication :as publication]
             [skein.core.weaver.runtime :as weaver-runtime]
             [skein.core.weaver.spool-sync :as spool-sync]
-            [skein.spools.test-support :as test-support]))
+            [skein.spools.batteries :as batteries]
+            [skein.spools.chime :as chime]
+            [skein.spools.cron :as cron]
+            [skein.spools.executors.shell :as shell]
+            [skein.spools.test-support :as test-support]
+            [skein.spools.unsafe-text-search :as unsafe-text-search]
+            [skein.spools.workflow :as workflow]))
 
 (defn- delete-directory!
   "Delete a directory tree rooted at `path` if it exists."
@@ -109,7 +115,8 @@
             ((requiring-resolve 'skein.spools.workflow/contribute)
              {:runtime rt :module/key :skein/spools-workflow})
             ((requiring-resolve 'skein.spools.workflow/reconcile)
-             {:runtime rt :module/key :skein/spools-workflow})
+             {:runtime rt :module/key :skein/spools-workflow
+              :module/contribution {:status :applied}})
             (spool-sync/load-synced-namespace!
              rt 'ct.spools.devflow :skein/spools-devflow)
             (publish-module-contribution!
@@ -1277,12 +1284,15 @@
   (and (seq? form) (= 'runtime/module! (first form))))
 
 (defn- parse-module-form
-  "Project a `(runtime/module! runtime <key> <opts>)` form into its guard-relevant data."
+  "Project a `(runtime/module! runtime <key> <opts>)` form into its guard- and
+  parity-relevant data."
   [form]
   (let [opts (nth form 3)]
     {:key (nth form 2)
      :ns (some-> (:ns opts) unquote-form)
      :file (:file opts)
+     :contribute (some-> (:contribute opts) unquote-form)
+     :reconcile (some-> (:reconcile opts) unquote-form)
      :spools (into #{} (map unquote-form) (:spools opts))}))
 
 (defn- ns-require-libs
@@ -1359,3 +1369,37 @@
                 (is (contains? spools coord)
                     (str key " requires " required-ns " (coordinate " coord
                          ") but its :spools guard " spools " does not declare it"))))))))))
+
+(def ^:private in-tree-spool-modules
+  "The in-tree spool modules `.skein/init.clj` activates, keyed as init.clj
+  keys them, each mapped to the spool's exported base declaration datum.
+  Guild ships in-tree but is not activated in this workspace."
+  {:skein/spools-batteries batteries/module
+   :skein/spools-workflow workflow/module
+   :skein/spools-shell shell/module
+   :skein/spools-unsafe-text-search unsafe-text-search/module
+   :skein/spools-chime chime/module
+   :skein/spools-cron cron/module})
+
+(deftest init-in-tree-declarations-match-exported-spool-datums
+  ;; ADR-003.P7 (as amended): the cold-start init.clj cannot deref the spool
+  ;; datums (the production classpath carries no spool sources at collection
+  ;; time), so its literal declaration maps are recorded duplication guarded
+  ;; here — the checked-in baseline only; gitignored init.local.clj overrides
+  ;; are out of scope. Cardinality is asserted first, so a deleted,
+  ;; duplicated, or re-keyed declaration fails before any triple comparison.
+  (let [declared (filter #(some-> (:ns %) str (str/starts-with? "skein.spools."))
+                         (map parse-module-form
+                              (filter module-form? (read-all-forms ".skein/init.clj"))))
+        by-key (group-by :key declared)]
+    (is (= (set (keys in-tree-spool-modules)) (set (keys by-key)))
+        "init.clj's in-tree spool module keys drifted from the expected set")
+    (is (every? #(= 1 (count %)) (vals by-key))
+        "an in-tree module key is declared more than once in init.clj")
+    (doseq [[key datum] in-tree-spool-modules]
+      (let [literal (select-keys (first (get by-key key)) [:ns :contribute :reconcile])
+            expected {:ns (:ns datum)
+                      :contribute (:contribute datum)
+                      :reconcile (:reconcile datum)}]
+        (is (= expected literal)
+            (str key " init.clj literal drifted from the exported datum"))))))

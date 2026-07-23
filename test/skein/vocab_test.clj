@@ -1,6 +1,7 @@
 (ns skein.vocab-test
   "Tests for the skein.api.vocab.alpha vocabulary registry: the core seed lives
-  in the `new-state` init-fn (present on a fresh runtime, no `install!`),
+  in the `new-state` init-fn (present on a fresh runtime before any
+  spool module activates),
   `declare!` is a single-owner hard edge with same-owner idempotency, and the
   reads are runtime-first, sorted, and narrowable."
   (:require [clojure.test :refer [deftest is testing]]
@@ -17,7 +18,7 @@
         (vocab/declarations runtime)))
 
 (deftest fresh-runtime-carries-core-seed
-  (testing "the reflected edge catalog and core note/* are present before any install!"
+  (testing "the reflected edge catalog and core note/* are present before any spool activation"
     (with-runtime
       (fn [rt _]
         (let [edges (vocab/declarations rt {:kind :edge})]

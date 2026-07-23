@@ -148,7 +148,7 @@
   "Upsert a guild op in the weaver registry.
 
   The guild owns its op lifecycle through its own state atoms and (re)declares
-  ops as it installs, deprecates, and reloads; the registry's loud-collision
+  ops as it registers, deprecates, and reloads; the registry's loud-collision
   default is the wrong policy here, so re-declaration is an explicit replace."
   ([runtime name doc handler-sym arg-spec returns]
    (let [metadata (cond-> {:doc doc :arg-spec arg-spec}
@@ -249,7 +249,7 @@
     (assoc deprecated :name (:name entry))))
 
 (defn ops
-  "Return JSON-safe metadata describing the installed guild API."
+  "Return JSON-safe metadata describing the registered guild API."
   [{:op/keys [runtime-metadata] :as ctx}]
   {:guild (or (:name runtime-metadata)
               @(fallback-guild-name (:op/runtime ctx)))
@@ -278,32 +278,48 @@
               :returns guild-returns}}}})
 
 (defn reconcile
-  "Reset Guild's runtime-owned declarations for a freshly applied module."
-  [{:keys [runtime]}]
-  (reset! (guild-ops runtime) {})
-  (reset! (deprecated-ops runtime) {})
-  (reset! (fallback-guild-name runtime) nil)
-  (publish-declarations! runtime)
-  {:reconciled :guild})
+  "Reconcile Guild's runtime-owned declarations per the module contract.
 
-(defn install!
-  "Install the built-in `guild` operation into `runtime`.
+  Applied and removed contributions deliberately share one body: resetting
+  the runtime-owned declaration atoms (including the fallback guild name) and
+  republishing clears every prior declaration, which is both
+  fresh-application hygiene and complete teardown (SPEC-004.C46b). Any other
+  status is a direct-call error and fails loudly."
+  [{:keys [runtime] :as ctx}]
+  (let [status (get-in ctx [:module/contribution :status])]
+    (case status
+      (:applied :removed)
+      (do (reset! (guild-ops runtime) {})
+          (reset! (deprecated-ops runtime) {})
+          (reset! (fallback-guild-name runtime) nil)
+          (publish-declarations! runtime)
+          {:reconciled :guild})
+      (fail! "Unsupported module contribution status"
+             {:status status
+              :allowed #{:applied :removed}
+              :module/key (:module/key ctx)
+              :reconciler 'skein.spools.guild/reconcile}))))
 
-  The guild name is read from runtime metadata when available. Passing
-  `guild-name` records a fallback value for contexts without runtime metadata.
-  Re-running is reload-safe and clears prior guild declarations in this runtime."
-  ([runtime]
-   (install! runtime nil))
-  ([runtime guild-name]
-   (when (and (some? guild-name) (not (and (string? guild-name) (not (str/blank? guild-name)))))
-     (fail! "Guild name must be a non-blank string" {:guild/name guild-name}))
-   (reset! (guild-ops runtime) {})
-   (reset! (deprecated-ops runtime) {})
-   (reset! (fallback-guild-name runtime) guild-name)
-   (publish-declarations! runtime)
-   (register-or-replace-op! runtime
-                            'guild
-                            (:doc guild-arg-spec)
-                            'skein.spools.guild/ops
-                            guild-arg-spec
-                            guild-returns)))
+(defn set-fallback-guild-name!
+  "Record `guild-name` as the fallback guild name in `runtime`'s state.
+
+  The guild name is normally read from runtime metadata; the fallback covers
+  contexts without it. Module reconcile resets the fallback to nil, so
+  trusted config and tests call this after activation. Passing nil clears
+  the fallback; a non-nil value must be a non-blank string and anything else
+  fails loudly with the offending value."
+  [runtime guild-name]
+  (when (and (some? guild-name) (not (and (string? guild-name) (not (str/blank? guild-name)))))
+    (fail! "Guild name must be a non-blank string" {:guild/name guild-name}))
+  (reset! (fallback-guild-name runtime) guild-name)
+  guild-name)
+
+(def module
+  "Base module declaration datum for the guild spool (ADR-003.P7).
+
+  The authored `:ns`/`:contribute`/`:reconcile` triple production and tests
+  share: production config assocs its `:spools` root guards onto it; bare-test
+  fixtures assoc `:load :image`."
+  {:ns 'skein.spools.guild
+   :contribute 'skein.spools.guild/contribute
+   :reconcile 'skein.spools.guild/reconcile})

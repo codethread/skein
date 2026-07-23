@@ -54,19 +54,17 @@ Function.
 Dispatch a guild-declared operation after parsing and validating input.
 <p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L163-L169">Source</a></sub></p>
 
-## <a name="skein.spools.guild/install!">`install!`</a>
-``` clojure
-(install! runtime)
-(install! runtime guild-name)
-```
-Function.
+## <a name="skein.spools.guild/module">`module`</a>
 
-Install the built-in `guild` operation into `runtime`.
 
-  The guild name is read from runtime metadata when available. Passing
-  `guild-name` records a fallback value for contexts without runtime metadata.
-  Re-running is reload-safe and clears prior guild declarations in this runtime.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L289-L309">Source</a></sub></p>
+
+
+Base module declaration datum for the guild spool (ADR-003.P7).
+
+  The authored `:ns`/`:contribute`/`:reconcile` triple production and tests
+  share: production config assocs its `:spools` root guards onto it; bare-test
+  fixtures assoc `:load :image`.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L317-L325">Source</a></sub></p>
 
 ## <a name="skein.spools.guild/ops">`ops`</a>
 ``` clojure
@@ -74,17 +72,23 @@ Install the built-in `guild` operation into `runtime`.
 ```
 Function.
 
-Return JSON-safe metadata describing the installed guild API.
+Return JSON-safe metadata describing the registered guild API.
 <p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L251-L265">Source</a></sub></p>
 
 ## <a name="skein.spools.guild/reconcile">`reconcile`</a>
 ``` clojure
-(reconcile {:keys [runtime]})
+(reconcile {:keys [runtime], :as ctx})
 ```
 Function.
 
-Reset Guild's runtime-owned declarations for a freshly applied module.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L280-L287">Source</a></sub></p>
+Reconcile Guild's runtime-owned declarations per the module contract.
+
+  Applied and removed contributions deliberately share one body: resetting
+  the runtime-owned declaration atoms (including the fallback guild name) and
+  republishing clears every prior declaration, which is both
+  fresh-application hygiene and complete teardown (SPEC-004.C46b). Any other
+  status is a direct-call error and fails loudly.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L280-L301">Source</a></sub></p>
 
 ## <a name="skein.spools.guild/register-op!">`register-op!`</a>
 ``` clojure
@@ -104,3 +108,18 @@ Register a guild operation in `runtime`'s CLI operation registry.
   the weaver JVM. The handler receives the usual op context plus parsed JSON
   input at `:guild/input`.
 <p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L182-L220">Source</a></sub></p>
+
+## <a name="skein.spools.guild/set-fallback-guild-name!">`set-fallback-guild-name!`</a>
+``` clojure
+(set-fallback-guild-name! runtime guild-name)
+```
+Function.
+
+Record `guild-name` as the fallback guild name in `runtime`'s state.
+
+  The guild name is normally read from runtime metadata; the fallback covers
+  contexts without it. Module reconcile resets the fallback to nil, so
+  trusted config and tests call this after activation. Passing nil clears
+  the fallback; a non-nil value must be a non-blank string and anything else
+  fails loudly with the offending value.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L303-L315">Source</a></sub></p>

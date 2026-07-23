@@ -9,6 +9,7 @@
             [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [clojure.test :as t]
+            [skein.api.runtime.alpha :as runtime]
             [skein.api.weaver.alpha :as weaver]
             [skein.core.db-test :as db-test]
             [skein.core.weaver.config :as weaver-config]
@@ -156,6 +157,25 @@
          ;; Runtime-added local roots are retained for the process lifetime by tools.deps.
          ;; Keep temp config dirs so later add-libs calls do not see stale basis entries.
          nil)))))
+
+(defn activate-spool!
+  "Activate a spool module on a bare test runtime from the JVM image.
+
+  Assocs `:load :image` (plus an optional `:after` edge) onto the spool's
+  exported base declaration and declares it under `key` via `runtime/module!`,
+  which refreshes the module immediately outside startup collection
+  (ADR-003.P7: tests pass the base datum; production carries `:spools` guards
+  instead). Throws with the full refresh result unless the module's outcome is
+  applied or unchanged, so a fixture failure names the refusal instead of
+  cascading into unrelated assertions. Returns the refresh result."
+  [rt key base-decl & {:keys [after]}]
+  (let [result (runtime/module! rt key (cond-> (assoc base-decl :load :image)
+                                         after (assoc :after after)))
+        status (get-in result [:modules key :status])]
+    (when-not (contains? #{:applied :unchanged} status)
+      (throw (ex-info "Spool module activation failed"
+                      {:module/key key :module/status status :result result})))
+    result))
 
 (defn poll-until
   "Poll `pred` (a no-arg fn) every `interval-ms` until it returns a truthy

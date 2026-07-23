@@ -40,7 +40,6 @@
             [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [clojure.walk :as walk]
-            [skein.api.current.alpha :as current]
             [skein.api.format.alpha :as format-alpha]
             [skein.api.graph.alpha :as graph]
             [skein.api.notes.alpha :as notes]
@@ -1466,33 +1465,6 @@
    ['vocab vocab-arg-spec 'skein.spools.batteries/vocab-op]
    ['spool spool-arg-spec 'skein.spools.batteries/spool-op]])
 
-(defn install!
-  "Register the batteries core strand ops into a weaver runtime.
-
-  Registers the batteries-owned glossary outcomes first, then the ops (the
-  load-order contract, DELTA-Dtf-002.CC7): an op's `failure-modes` references are
-  checked against the runtime glossary at registration. The reference default help
-  transform (`default-help-transform`) is NOT registered here — it is elected by
-  trusted config (DELTA-Dtf-002.D1).
-
-  The no-arg arity registers into the active runtime for legacy direct callers;
-  the explicit-runtime arity is for tests and trusted callers. New startup
-  configuration declares the `contribute`/`reconcile` module entry points."
-  ([] (install! (current/runtime)))
-  ([rt]
-   (doseq [outcome batteries-glossary]
-     (glossary/register-glossary-outcome! rt (assoc outcome :owner 'skein.spools.batteries)))
-   {:installed true
-    :namespace 'skein.spools.batteries
-    :ops (mapv (fn [[op-name arg-spec handler op-meta]]
-                 (weaver/register-op! rt op-name
-                                      (merge {:doc (:doc arg-spec)
-                                              :arg-spec arg-spec
-                                              :returns (get op-returns op-name)}
-                                             op-meta)
-                                      handler))
-               op-registrations)}))
-
 (defn- op-contribution-entry
   "Assemble one op registry entry in `register-op!`'s canonical shape.
 
@@ -1538,16 +1510,40 @@
                         op-registrations)}})
 
 (defn reconcile
-  "Seed batteries' owned glossary outcomes as a runtime resource.
+  "Reconcile batteries' owned glossary outcomes per the module contract.
 
   The declarative operation partition publishes through `contribute`; the
   glossary outcomes its ops' `failure-modes` reference are batteries-owned
-  runtime resources (not declaration data), so the module lifecycle seeds them
-  here rather than during direct registration (DELTA-OlrRepl-001.CC6). Module
-  publication does not run the direct-registration glossary-ref check, so
-  publishing before this reconcile is safe; help resolves the referenced-term
-  closure against the seeded outcomes."
-  [{:keys [runtime]}]
-  (doseq [outcome batteries-glossary]
-    (glossary/register-glossary-outcome! runtime (assoc outcome :owner 'skein.spools.batteries)))
-  {:reconciled :batteries-glossary})
+  runtime resources (not declaration data), so an applied contribution seeds
+  them here rather than during direct registration (DELTA-OlrRepl-001.CC6).
+  Module publication does not run the direct-registration glossary-ref check,
+  so publishing before this reconcile is safe; help resolves the
+  referenced-term closure against the seeded outcomes. The removal branch is
+  deliberately effect-free: the glossary API ships register/replace and no
+  unregister — outcomes are process-lifetime seeds (SPEC-004.C46b,
+  DELTA-Itr-001) — so there is nothing to retract, and re-registering on
+  removal is the defect the contract names. Any other status is a direct-call
+  error and fails loudly."
+  [{:keys [runtime] :as ctx}]
+  (let [status (get-in ctx [:module/contribution :status])]
+    (case status
+      :applied (do (doseq [outcome batteries-glossary]
+                     (glossary/register-glossary-outcome!
+                      runtime (assoc outcome :owner 'skein.spools.batteries)))
+                   {:reconciled :batteries-glossary})
+      :removed {:reconciled :removed}
+      (throw (ex-info "Unsupported module contribution status"
+                      {:status status
+                       :allowed #{:applied :removed}
+                       :module/key (:module/key ctx)
+                       :reconciler 'skein.spools.batteries/reconcile})))))
+
+(def module
+  "Base module declaration datum for the batteries spool (ADR-003.P7).
+
+  The authored `:ns`/`:contribute`/`:reconcile` triple production and tests
+  share: production config assocs its `:spools` root guards onto it; bare-test
+  fixtures assoc `:load :image`."
+  {:ns 'skein.spools.batteries
+   :contribute 'skein.spools.batteries/contribute
+   :reconcile 'skein.spools.batteries/reconcile})

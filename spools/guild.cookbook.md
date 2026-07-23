@@ -5,7 +5,7 @@ Composition recipes for `skein.spools.guild`: how to publish a stable operation 
 This is the **how/why** half of the guild docs. The other two are:
 
 - [`guild.md`](./guild.md) — the **contract**: the declaration surface
-  (`register-op!`, `deprecate!`, `install!`, `guild list`), the naming and
+  (`register-op!`, `deprecate!`, module activation, `guild list`), the naming and
   versioning conventions, and the worked two-repo example. Read it for what the
   spool promises.
 - [`guild.api.md`](./guild.api.md) — the **generated reference**: every public
@@ -32,7 +32,7 @@ Each recipe cites the honest source it was distilled from — the spool's own co
 
 **Situation.** Another local weaver needs to ask yours a stable question — "is this gate satisfied?", "accept this release" — and you want it calling a named, intentional entry point, not reaching into your repo-private REPL helpers. You also want bad input rejected before your handler ever runs.
 
-**Composition.** `install!` once to seat the `guild` op and reset declaration state, then `register-op!` each public op under a dotted, version-suffixed handle. An `:input-spec` validates the parsed JSON input, and the handler receives the ordinary op context plus that input at `:guild/input` — so the public contract lives at the fn boundary while the implementation stays private.
+**Composition.** Activate the guild module once to seat the `guild` op and reset declaration state, then `register-op!` each public op under a dotted, version-suffixed handle. An `:input-spec` validates the parsed JSON input, and the handler receives the ordinary op context plus that input at `:guild/input` — so the public contract lives at the fn boundary while the implementation stays private.
 
 ```clojure
 (ns user
@@ -46,7 +46,7 @@ Each recipe cites the honest source it was distilled from — the spool's own co
   ;; repo-private implementation; the public contract is this fn's shape
   {:gate (:gate-name input) :satisfied false})
 
-(guild/install! runtime)                ; seat the guild op, clear prior decls
+(runtime/module! runtime :skein/spools-guild guild/module) ; seat the guild op
 (guild/register-op! runtime 'gate.status.v1
   {:doc "Return whether a backend gate is satisfied."
    :input-spec ::gate-status-input}
@@ -75,9 +75,9 @@ A caller invokes it over the ordinary op socket, passing one JSON argument; inpu
 - **`init.clj` is the published API file.** Because the declarations live in
   checked-in trusted config, a peering repo can read exactly what you expose.
   Treat guild declarations like public contract code, not incidental setup.
-- **`install!` is reload-safe.** Re-running it clears prior declarations in that
-  runtime and re-seats the `guild` op, so a trusted-config reload re-declares
-  your API cleanly rather than stacking stale ops.
+- **Reconcile is reload-safe.** Every module refresh clears prior declarations
+  in that runtime and re-seats the `guild` op, so a trusted-config reload
+  re-declares your API cleanly rather than stacking stale ops.
 
 Honest source: the worked two-repo example in [`guild.md`](./guild.md), and `register-op-registers-and-invokes-through-op-registry` / `input-spec-invalid-input-fails-loudly-with-structured-data` in [`test/skein/guild_test.clj`](../test/skein/guild_test.clj).
 

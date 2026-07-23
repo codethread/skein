@@ -665,54 +665,6 @@
           |Workflow molecule/wisp attributes written by the workflow spool's
           |compile and builders.")}))
 
-(def ^:private install-metadata
-  {:installed true
-   :namespace 'skein.spools.workflow
-   :workflow {:builder 'skein.spools.workflow/workflow
-              :step 'skein.spools.workflow/step
-              :gate 'skein.spools.workflow/gate
-              :checkpoint 'skein.spools.workflow/checkpoint
-              :call 'skein.spools.workflow/call
-              :param 'skein.spools.workflow/param
-              :compiler 'skein.spools.workflow/compile
-              :pourer 'skein.spools.workflow/pour!
-              :wisp 'skein.spools.workflow/wisp!
-              :bond 'skein.spools.workflow/bond!
-              :squash 'skein.spools.workflow/squash!
-              :burn 'skein.spools.workflow/burn!
-              :describe 'skein.spools.workflow/describe}
-   :runtime {:start 'skein.spools.workflow/start!
-             :current-root 'skein.spools.workflow/current-root
-             :active-runs 'skein.spools.workflow/active-runs
-             :ready-step 'skein.spools.workflow/ready-step
-             :ready 'skein.spools.workflow/ready
-             :ready-gates 'skein.spools.workflow/ready-gates
-             :ready-checkpoint 'skein.spools.workflow/ready-checkpoint
-             :complete 'skein.spools.workflow/complete!
-             :choose 'skein.spools.workflow/choose!
-             :advance 'skein.spools.workflow/advance!
-             :choice-detail 'skein.spools.workflow/choice-detail
-             :choice-details 'skein.spools.workflow/choice-details
-             :done? 'skein.spools.workflow/done?
-             :run-history 'skein.spools.workflow/run-history
-             :squash-run 'skein.spools.workflow/squash-run!}
-   :registry {:register-workflow 'skein.spools.workflow/register-workflow!
-              :workflow-definition 'skein.spools.workflow/workflow-definition
-              :workflows 'skein.spools.workflow/workflows}})
-
-(defn install!
-  "Materialize the workflow registries and return installation metadata.
-
-  Realizes the owner-partition registry handle (declaring its constructor and
-  executor kinds) and seeds the `workflow/*` attribute namespace. This is the
-  eager entry point for the pre-module lifecycle; the module lifecycle uses
-  `contribute`/`reconcile` below."
-  []
-  (let [rt (current/runtime)]
-    (registry/registry-handle rt)
-    (declare-workflow-vocab! rt))
-  install-metadata)
-
 (defn contribute
   "Module contribution for the workflow spool.
 
@@ -726,10 +678,34 @@
   {})
 
 (defn reconcile
-  "Reconcile the workflow spool's resources: seed the `workflow/*` vocabulary."
-  [{:keys [runtime]}]
-  (declare-workflow-vocab! runtime)
-  {:reconciled :workflow})
+  "Reconcile the workflow spool's resources per the module contract.
+
+  An applied contribution seeds the `workflow/*` vocabulary. The removal
+  branch is deliberately effect-free: vocabulary ownership has no retraction
+  API — declarations are process-lifetime seeds (SPEC-004.C46b,
+  DELTA-Itr-001) — and re-declaring on removal is the defect the contract
+  names. Any other status is a direct-call error and fails loudly."
+  [{:keys [runtime] :as ctx}]
+  (let [status (get-in ctx [:module/contribution :status])]
+    (case status
+      :applied (do (declare-workflow-vocab! runtime)
+                   {:reconciled :workflow})
+      :removed {:reconciled :removed}
+      (fail! "Unsupported module contribution status"
+             {:status status
+              :allowed #{:applied :removed}
+              :module/key (:module/key ctx)
+              :reconciler 'skein.spools.workflow/reconcile}))))
+
+(def module
+  "Base module declaration datum for the workflow spool (ADR-003.P7).
+
+  The authored `:ns`/`:contribute`/`:reconcile` triple production and tests
+  share: production config assocs its `:spools` root guards onto it; bare-test
+  fixtures assoc `:load :image`."
+  {:ns 'skein.spools.workflow
+   :contribute 'skein.spools.workflow/contribute
+   :reconcile 'skein.spools.workflow/reconcile})
 
 ;; --- input contract specs -------------------------------------------------
 
