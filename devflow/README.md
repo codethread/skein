@@ -13,12 +13,14 @@ Root specs are canonical for shipped behavior:
 - [Strand Model](./specs/strand-model.md) — strand records, state lifecycle, burn deletion, JSON attributes, relation semantics, and readiness rules.
 - [CLI Surface](./specs/cli.md) — the op-only public CLI: the `strand` invoke-envelope dispatcher (zero builtin subcommands), the `mill` router/bootstrap/lifecycle surface, and NDJSON single/stream response relay; per-command behavior lives in `spools/batteries.md`.
 - [REPL API](./specs/repl-api.md) — interactive Clojure helper contract, including recursive arg-spec and return trees, connected REPL, runtime spool workspace helpers, lifecycle hook helpers, and the `skein.test.alpha` author-side weaver-world test helpers.
-- [Weaver Runtime](./specs/daemon-runtime.md) — local long-lived weaver lifecycle, storage model with schema generations and the forward-migration contract, leaf-resolved operation metadata and hook gates, transports, trusted startup config, query registry, runtime spool workspace model, and synchronous lifecycle hooks.
+- [Weaver Runtime](./specs/daemon-runtime.md) — local long-lived weaver lifecycle, storage model with schema generations and the forward-migration contract, leaf-resolved operation metadata and hook gates, transports, trusted startup config, query registry, the three-kind runtime spool workspace model, and synchronous lifecycle hooks.
 - [Alpha Surface](./specs/alpha-surface.md) — the contract index drawing the line around shipped alpha surface: which tiers are in-contract (root specs, blessed API namespaces, opt-in reference spool docs) and which surface is explicitly internal (mill socket protocol, unenumerated error codes, `skein.core.*`).
 
 ## Active features
 
-`devflow/feat/` holds only planned-but-unbuilt work; a feature folder appears here when planning starts and moves to `archive/` once its spec deltas merge into the root specs. Currently empty — in-flight work lives on the kanban board and as devflow runs in `.skein`.
+`devflow/feat/` holds only planned-but-unbuilt work; a feature folder appears here when planning starts and moves to `archive/` once its spec deltas merge into the root specs. In-flight work lives on the kanban board and as devflow runs in `.skein`.
+
+- `source-root-spools` — adds `:skein/source-root` as the non-acquiring coordinate for spools shipped in the Skein checkout and moves batteries from the production classpath to the ordinary approved-spool path. Contracts are promoted into `cli.md` (SPEC-002.C14a), `repl-api.md` (SPEC-003.C62-adjacent module guidance and C63), `daemon-runtime.md` (SPEC-004.C42/C44/C48@2/C49@2/C50a/C50b/C94a), and `alpha-surface.md` (SPEC-005.C3); awaiting acceptance and archive.
 
 ## Archived features
 

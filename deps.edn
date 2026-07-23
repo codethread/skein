@@ -1,4 +1,4 @@
-{:paths ["src" "spools/batteries/src" "dev"]
+{:paths ["src" "dev"]
  :deps {org.clojure/clojure {:mvn/version "1.12.0"}
         com.github.seancorfield/next.jdbc {:mvn/version "1.3.1048"}
         org.xerial/sqlite-jdbc {:mvn/version "3.53.2.0"}
@@ -12,7 +12,7 @@
  ;; "scripts" is on the test path so the one-shot cutover scripts under
  ;; scripts/cutover can be exercised by a registered test namespace rather than
  ;; only standalone; the runner's registry, not the classpath, decides what runs.
- {:test {:extra-paths ["test" "scripts" "spools/workflow/src" "spools/text-search/src" "spools/guild/src" "spools/chime/src" "spools/cron/src"
+ {:test {:extra-paths ["test" "scripts" "spools/batteries/src" "spools/workflow/src" "spools/text-search/src" "spools/guild/src" "spools/chime/src" "spools/cron/src"
                        ".skein/spools/macros/src"]
          :extra-deps {;; Test-only ergonomics: readable nested-map/JSON assertions
                       ;; (match?) and spec-driven property tests (defspec). Kept
@@ -51,7 +51,7 @@
                      :main-opts ["-m" "quality.conventions-check"]}
   :lint/splint {:extra-deps {io.github.noahtheduke/splint {:mvn/version "1.21.0"}}
                 :main-opts ["-m" "noahtheduke.splint" "--output" "clj-kondo" "src" "spools/batteries/src" "spools/workflow/src" "spools/text-search/src" "spools/guild/src" "test"]}
-  :reflect-check {:extra-paths ["scripts" "spools/workflow/src" "spools/text-search/src" "spools/guild/src" "spools/chime/src" "spools/cron/src"]
+  :reflect-check {:extra-paths ["scripts" "spools/batteries/src" "spools/workflow/src" "spools/text-search/src" "spools/guild/src" "spools/chime/src" "spools/cron/src"]
                   :jvm-opts ["--enable-native-access=ALL-UNNAMED" "-Dclojure.compiler.direct-linking=true"]
                   :main-opts ["-m" "quality.reflect-check"]}
   :deps/antq {:extra-deps {com.github.liquidz/antq {:mvn/version "2.11.1276"}}

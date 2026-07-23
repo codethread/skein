@@ -1336,19 +1336,17 @@
   ;; wired. This asserts it directly: every init.clj module! that pulls a
   ;; skein.spools.*/skein.macros.* namespace onto the classpath — a :ns module
   ;; (its own coordinate) or a :file module's ns :require (each required
-  ;; coordinate) — must declare that coordinate in :spools, batteries (the
-  ;; classpath exception with no coordinate) excepted. Coordinates resolve
-  ;; through the synced root manifests, never a name heuristic: ct.spools.devflow
-  ;; lives in the codethread/devflow root and skein.spools.executors.shell in the
-  ;; skein.spools/workflow root, so a prefix rule would both false-fail devflow
-  ;; and false-pass a real miss.
+  ;; coordinate) — must declare that coordinate in :spools. Coordinates resolve
+  ;; through the synced root manifests, never a name heuristic: batteries and
+  ;; workflow are source-root spools, ct.spools.devflow lives in the
+  ;; codethread/devflow root, and skein.spools.executors.shell lives in the
+  ;; skein.spools/workflow root, so a prefix rule would false-pass real misses.
   (with-startup-config-runtime
     (fn [rt]
       (let [coordinate-roots (coordinate-source-roots rt)
             modules (map parse-module-form (filter module-form? (read-all-forms ".skein/init.clj")))]
         (is (seq modules) "parsed at least one init.clj module! form")
-        (doseq [{:keys [key file spools] use-ns :ns} modules
-                :when (not= use-ns 'skein.spools.batteries)]
+        (doseq [{:keys [key file spools] use-ns :ns} modules]
           (let [required-nss (if file
                                (->> (ns-require-libs (read-first-form (io/file ".skein" file)))
                                     (filter spool-or-macros-ns?))

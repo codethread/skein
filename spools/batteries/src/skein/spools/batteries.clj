@@ -11,6 +11,12 @@
   CLI root. The namespace owns no module-level state:
   op handlers read the runtime from their invocation context (`:op/runtime`).
 
+  Production loading follows the ordinary approved-spool path. `mill init` seeds
+  `skein.spools/batteries {:skein/source-root \"spools/batteries\"}` in
+  `spools.edn`, and its startup module names that root in `:spools`. Deleting
+  the seeded entry is the supported opt-out; a workspace without it has no
+  batteries ops.
+
   Ops adopt the discovery-tier pattern (DELTA-Dtf-003.CC2): their arg-specs drive
   help, and where it adds value they carry closed `:annotations` sub-maps
   (`use-when`/`notes`/`failure-modes`) and op-level `:about`/`:prime` prose.
@@ -1514,14 +1520,16 @@
 (defn contribute
   "Return batteries' complete stable-owner CLI operation contribution.
 
-  The classpath spool remains explicitly required by workspace startup; this
-  function only supplies its declarative operation partition. Each entry is
-  assembled into the canonical `::op-entry` shape (string key, `:name`, `:fn`,
-  provenance, and arg-spec node metadata) exactly as `register-op!` would, so the module
+  Workspace startup loads the namespace through the seeded approved
+  `skein.spools/batteries` source root and a module guarded by that root.
+  Deleting the seeded entry is the supported opt-out. This function supplies
+  the declarative operation partition. Each entry is assembled into the
+  canonical `::op-entry` shape (string key, `:name`, `:fn`, provenance, and
+  arg-spec node metadata) exactly as `register-op!` would, so the module
   publication path is equivalent to direct registration. Batteries ships no
   `help` op of its own — the built-in help op stays effective and batteries
-  elects only the reference help transform (DELTA-Dtf-002.D1) — so the partition
-  declares no overrides over the lower defaults layer."
+  elects only the reference help transform (DELTA-Dtf-002.D1) — so the
+  partition declares no overrides over the lower defaults layer."
   [_ctx]
   {:ops {:entries (into {}
                         (map (fn [[op-name arg-spec handler op-meta]]

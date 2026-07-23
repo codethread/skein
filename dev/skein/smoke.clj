@@ -354,10 +354,19 @@
     (try
       (run-mill-config! workspace "weaver" "status")
       (assert (.isFile config-file) "clean bootstrap preserves/creates config.json")
-      (assert-file-contents (java.io.File. workspace "spools.edn") "{:spools {}}\n" "clean bootstrap creates empty spools.edn")
+      (assert-file-contents
+       (java.io.File. workspace "spools.edn")
+       "{:spools {skein.spools/batteries {:skein/source-root \"spools/batteries\"}}}\n"
+       "clean bootstrap seeds the batteries source-root coordinate")
       (let [init-contents (slurp init-file)]
-        (doseq [needle ["(require 'skein.spools.batteries)" "(runtime/module! runtime :skein/spools-batteries" ":ns 'skein.spools.batteries" "skein.spools.batteries/contribute" "skein.spools.batteries/reconcile"]]
-          (assert-contains init-contents needle "clean bootstrap creates the batteries module init.clj template")))
+        (doseq [needle ["(runtime/module! runtime :skein/spools-batteries"
+                        ":ns 'skein.spools.batteries"
+                        ":spools ['skein.spools/batteries]"
+                        "skein.spools.batteries/contribute"
+                        "skein.spools.batteries/reconcile"]]
+          (assert-contains init-contents needle "clean bootstrap creates the guarded batteries module init.clj template"))
+        (assert (not (clojure.string/includes? init-contents "(require 'skein.spools.batteries)"))
+                "clean bootstrap does not create a bare batteries require"))
       (assert (.isDirectory (java.io.File. workspace "spools")) "clean bootstrap creates spools directory")
       (assert (not (.exists (java.io.File. workspace ".git"))) "clean bootstrap does not run git init")
       (let [strand-id (cli-add-config! workspace "Bootstrap clean strand" "--attr" "owner=ct")]
@@ -374,15 +383,15 @@
         spools-path (java.io.File. workspace "spools.edn")
         init-path (java.io.File. workspace "init.clj")
         original-config "{\"configFormat\":\"alpha\"}\n"
-        original-spools "{:spools {}}\n;; user comment\n"
+        original-spools "{:spools {skein.spools/batteries {:skein/source-root \"spools/batteries\"}}}\n;; user comment\n"
         original-init (source-file/render-forms
                        ['(require '[skein.api.current.alpha :as current]
                                   '[skein.api.runtime.alpha :as runtime]
                                   '[skein.api.graph.alpha :as graph])
                         '(def runtime (current/runtime))
-                        '(require 'skein.spools.batteries)
                         '(runtime/module! runtime :skein/spools-batteries
                                           {:ns 'skein.spools.batteries
+                                           :spools ['skein.spools/batteries]
                                            :contribute 'skein.spools.batteries/contribute
                                            :reconcile 'skein.spools.batteries/reconcile})
                         '(graph/register-query! runtime 'dirty [:= [:attr :owner] "dirty"])])]
@@ -421,9 +430,9 @@
                 [skein.api.hooks.alpha :as hooks]
                 [skein.api.patterns.alpha :as patterns]))
    '(def runtime (current/runtime))
-   '(require 'skein.spools.batteries)
    '(runtime/module! runtime :skein/spools-batteries
                      {:ns 'skein.spools.batteries
+                      :spools ['skein.spools/batteries]
                       :contribute 'skein.spools.batteries/contribute
                       :reconcile 'skein.spools.batteries/reconcile})
    '(graph/register-query! runtime 'smoke-owned [:= [:attr :owner] "smoke"])
@@ -454,7 +463,8 @@
     (write-client-config-to-dir! workspace)
     (.mkdirs (java.io.File. lib-root "src"))
     (spit (java.io.File. lib-root "deps.edn") "{:paths [\"src\"]}\n")
-    (spit (java.io.File. workspace "spools.edn") "{:spools {smoke/runtime-lib {:local/root \"spools/smoke-runtime-lib\"}}}\n")
+    (spit (java.io.File. workspace "spools.edn")
+          "{:spools {skein.spools/batteries {:skein/source-root \"spools/batteries\"}\n           smoke/runtime-lib {:local/root \"spools/smoke-runtime-lib\"}}}\n")
     (source-file/spit-forms! init-path startup-forms)
     (start-weaver-config! workspace)
     (try

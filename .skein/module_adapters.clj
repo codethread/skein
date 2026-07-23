@@ -13,8 +13,9 @@
   Batteries exports its default transform but never auto-registers it, so this
   world opts in as trusted config (DELTA-Dtf-002.D1). `--json` always bypasses
   the slot, so a broken transform never bricks help (DELTA-Dtf-001.CC4). The
-  batteries namespace ships on the classpath and is loaded by its module before
-  this reconcile runs, so the transform value resolves without a synced load."
+  batteries namespace is loaded from its approved spool by the guarded module
+  before this reconcile runs, so the transform value resolves from that synced
+  provider."
   [{:keys [runtime]}]
   (current/with-runtime runtime
     (help-transform/register-default-help-transform!

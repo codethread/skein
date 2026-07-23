@@ -574,12 +574,9 @@ record and the only input to load-boundary validation. A README should still sho
 entry and activation order, so a consumer can review what a helper would write. No prerequisite is
 fetched transitively.
 
-Core enforces load-boundary checks. Authoring helpers, including planned batteries support, help
-users write entries that pass those checks. Userland may replace the helpers, but not the checks.
+Core enforces load-boundary checks. Authoring helpers, including the batteries `spool add` and `spool bump` verbs, help users write entries that pass those checks. Userland may replace the helpers, but not the checks.
 
-If a prerequisite is a blessed `skein.api.*.alpha` namespace or `skein.spools.batteries`, document
-the namespace and why it is required but do not invent a family coordinate for it. Both ship on the
-selected Skein classpath. Every other source repository gets its own family entry.
+If a prerequisite is a blessed `skein.api.*.alpha` namespace, document the namespace and why it is required but do not invent a family coordinate for it; blessed API namespaces ship on the selected Skein classpath. Batteries is different: it is an ordinary approved root, normally present through the `skein.spools/batteries {:skein/source-root "spools/batteries"}` entry seeded by `mill init`. Name that root in the module's `:spools` prerequisites when the module needs batteries, and use `:after` when it depends on the batteries module's published contribution. Every external source repository still gets its own family entry.
 
 ### README activation snippet
 
@@ -616,13 +613,9 @@ no unload semantics.
 
 The policy is intentionally narrow:
 
-- The rule applies to every approved spool root: git or local, shared
-  `spools.edn` or gitignored `spools.local.edn`.
+- The rule applies to every approved spool root: Git, local, or `:skein/source-root`, from shared `spools.edn` or gitignored `spools.local.edn`.
 - Every `:deps` entry must be a Maven coordinate map containing `:mvn/version`.
-- Source-bearing coordinates are rejected in spool-root `deps.edn :deps`,
-  including `:git/url`, `:git/sha`, and `:local/root`. If a spool composes with
-  another source root, document that root's repository as a family entry in
-  `spools.edn`.
+- Source-bearing coordinates are rejected in spool-root `deps.edn :deps`, including `:git/url`, `:git/sha`, `:local/root`, and `:skein/source-root`. If a spool composes with another source root, document that root's repository as a family entry in `spools.edn`.
 - Mutable Maven versions are rejected: no `-SNAPSHOT`, `RELEASE`, or `LATEST`.
 - Repo redirection is rejected: no top-level `:mvn/repos` or `:mvn/local-repo`
   in the spool root.

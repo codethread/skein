@@ -86,10 +86,7 @@ From a Skein source checkout, `make install` installs the Go CLIs (`strand` and 
 the checkout as mill's default source for weaver launch and the thin nREPL attach client. After
 that, use the CLIs directly: `mill start`, `mill init`, and `mill weaver start`.
 
-`mill init` is the normal repo bootstrap path. It creates or completes the canonical repo `.skein`
-workspace, writes shareable `config.json` with the alpha format marker when absent, and leaves
-shared config files ready to commit. It does not run `git init`, persist source, or initialize
-database storage; weaver startup prepares storage.
+`mill init` is the normal repo bootstrap path. It creates or completes the canonical repo `.skein` workspace, writes shareable `config.json` with the alpha format marker when absent, and leaves shared config files ready to commit. Generated `spools.edn` opts into the batteries command surface with `skein.spools/batteries {:skein/source-root "spools/batteries"}`; generated `init.clj` activates it through a module guarded by that root. The relative coordinate resolves against the mill-selected Skein checkout, so no absolute source path is persisted. Deleting the seeded entry is the supported opt-out. Init does not run `git init` or initialize database storage; weaver startup prepares storage.
 
 `mill init --stealth` provides the same repo-local workspace for personal use without tracked
 config. It refuses if `.skein` is already tracked, maintains a marker-owned block in

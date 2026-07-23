@@ -6,16 +6,16 @@
 
 Chime knows nothing about any particular workflow or attribute vocabulary: it ships **no rules and no notifier**. A workspace's trusted config decides what deserves attention (rules) and each developer decides how to be told (notifier). It owns only runtime-local weaver-lifetime state: the notifier binding, rules, deduplication memory, batch scan memory, and recent failures are kept on the active runtime and isolated from other runtimes in the same JVM.
 
-Chime spawns a user-configured local process with the user's authority, so it is an approved local-root spool like agent-run rather than a shipped classpath spool.
+Chime spawns a user-configured local process with the user's authority. Its code still loads as an approved spool, through the shipped source-root coordinate rather than the production classpath.
 
 For composition recipes — binding a notifier, writing rules that fire on an attribute transition or on readiness, and debugging when the notifications go quiet — see the [cookbook](../chime.cookbook.md).
 
 ## Loading
 
-Approve the local root from the selected workspace's `spools.edn`:
+Approve the shipped root from the selected workspace's `spools.edn`:
 
 ```clojure
-{:spools {skein.spools/chime {:local/root "../spools/chime"}}}
+{:spools {skein.spools/chime {:skein/source-root "spools/chime"}}}
 ```
 
 Activate it from trusted startup config after syncing approved roots:
@@ -116,7 +116,7 @@ Rule, notifier, and process failures are recorded by `(chime/recent-failures)` a
 
 ## See also
 
-- [`../README.md`](../README.md) — shipped and approved local-root spool index.
+- [`../README.md`](../README.md) — the spool index.
 - [`agent-harness.spool/agent-run/README.md`][agent-run-contract] — external coordinate,
   activation, and local-override pattern.
 - [`../../docs/spools/customisation.md#promoting-config-to-a-local-spool`](../../docs/spools/customisation.md#promoting-config-to-a-local-spool) — authoring and loading local spools.

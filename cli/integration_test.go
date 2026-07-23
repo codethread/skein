@@ -108,15 +108,26 @@ func TestInitBootstrapsConfigDirWorkspaceThroughMill(t *testing.T) {
 	if _, ok := cfgFile["source"]; ok || cfgFile["configFormat"] != "alpha" {
 		t.Fatalf("unexpected bootstrap config: %#v", cfgFile)
 	}
-	if _, err := os.Stat(filepath.Join(cfg, "spools.edn")); err != nil {
+	spoolsPath := filepath.Join(cfg, "spools.edn")
+	if _, err := os.Stat(spoolsPath); err != nil {
 		t.Fatalf("expected spools.edn bootstrap: %v", err)
+	}
+	spools := string(mustReadFile(t, spoolsPath))
+	if want := `skein.spools/batteries {:skein/source-root "spools/batteries"}`; !strings.Contains(spools, want) {
+		t.Fatalf("spools.edn missing %q, got:\n%s", want, spools)
+	}
+	if strings.Contains(spools, "{:spools {}}") {
+		t.Fatalf("spools.edn retained the empty-spools seed, got:\n%s", spools)
 	}
 	initPath := filepath.Join(cfg, "init.clj")
 	got := string(mustReadFile(t, initPath))
-	for _, want := range []string{"(require 'skein.spools.batteries)", "(runtime/module! runtime :skein/spools-batteries", ":ns 'skein.spools.batteries", "skein.spools.batteries/contribute", "skein.spools.batteries/reconcile"} {
+	for _, want := range []string{"(runtime/module! runtime :skein/spools-batteries", ":ns 'skein.spools.batteries", ":spools ['skein.spools/batteries]", "skein.spools.batteries/contribute", "skein.spools.batteries/reconcile"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("init.clj missing %q, got:\n%s", want, got)
 		}
+	}
+	if strings.Contains(got, "(require 'skein.spools.batteries)") {
+		t.Fatalf("init.clj retained the bare batteries require, got:\n%s", got)
 	}
 	if _, err := os.Stat(filepath.Join(cfg, ".git")); !os.IsNotExist(err) {
 		t.Fatalf("explicit --workspace init must not run git init, stat err=%v", err)

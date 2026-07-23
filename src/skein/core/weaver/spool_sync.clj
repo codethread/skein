@@ -19,7 +19,7 @@
             [skein.core.query :as query]
             [skein.core.weaver.access :refer [approved-spool-sync-state release-marker
                                               with-spool-classloader config-dir spools-file
-                                              canonical-root cache-base]])
+                                              canonical-root cache-base source-checkout-root]])
   (:import [java.math BigInteger]
            [java.security MessageDigest]
            [java.nio.file FileSystemException FileVisitResult Files LinkOption SimpleFileVisitor StandardCopyOption]
@@ -28,6 +28,7 @@
 (def ^:private local-spool-keys #{:local/root})
 (def ^:private overlay-spool-keys #{:local/root :claims})
 (def ^:private git-spool-keys #{:git/url :git/sha :git/tag :roots :requires :skein/min})
+(def ^:private source-root-spool-keys #{:skein/source-root})
 (def ^:private git-sha-pattern #"[0-9a-f]{40}")
 (def ^:private release-marker-pattern #"v([1-9][0-9]*)")
 
@@ -69,6 +70,7 @@
 (s/def :git/sha #(and (string? %) (boolean (re-matches git-sha-pattern %))))
 (s/def :git/tag ::release-marker)
 (s/def :skein/min ::release-marker)
+(s/def :skein/source-root ::root-path)
 (s/def :local/root ::non-blank-string)
 (s/def ::claims (s/nilable ::release-marker))
 
@@ -83,7 +85,12 @@
 (s/def ::local-family-entry
   (s/and #(exact-keys? local-spool-keys %)
          (s/keys :req [:local/root])))
-(s/def ::family-entry (s/or :git ::git-family-entry :local ::local-family-entry))
+(s/def ::source-root-family-entry
+  (s/and #(exact-keys? source-root-spool-keys %)
+         (s/keys :req [:skein/source-root])))
+(s/def ::family-entry (s/or :git ::git-family-entry
+                            :local ::local-family-entry
+                            :skein/source-root ::source-root-family-entry))
 (s/def ::overlay-entry
   (s/and #(exact-keys? overlay-spool-keys %)
          (s/keys :req [:local/root] :req-un [::claims])
@@ -96,7 +103,10 @@
                     (s/keys :req [:git/url :git/sha] :opt [:git/tag]))
         :local (s/and #(= :local (:kind %))
                       #(exact-keys? #{:kind :local/root} %)
-                      (s/keys :req [:local/root]))))
+                      (s/keys :req [:local/root]))
+        :skein/source-root (s/and #(= :skein/source-root (:kind %))
+                                  #(exact-keys? #{:kind :skein/source-root} %)
+                                  (s/keys :req [:skein/source-root]))))
 (s/def ::roots-map ::roots)
 (s/def ::skein-min (s/nilable ::release-marker))
 (s/def ::provenance #{:spools-edn :local-overlay})
@@ -191,13 +201,37 @@
     requires))
 
 (defn- normalize-shared-family [source family entry]
-  (validate-entry-map! source family entry (into local-spool-keys git-spool-keys))
+  (validate-entry-map! source family entry
+                       (reduce into #{} [local-spool-keys git-spool-keys source-root-spool-keys]))
   (let [local? (contains? entry :local/root)
-        git? (some #(contains? entry %) git-spool-keys)]
-    (when (= local? (boolean git?))
+        git? (boolean (some #(contains? entry %) git-spool-keys))
+        source-root? (contains? entry :skein/source-root)]
+    (when-not (= 1 (count (filter true? [local? git? source-root?])))
       (throw (ex-info "Spool entry requires exactly one coordinate kind"
                       (assoc source :family family :entry entry))))
-    (if local?
+    (cond
+      source-root?
+      (do
+        (when-not (relative-root-path? (:skein/source-root entry))
+          (throw (ex-info "Source-root spool entry requires a relative :skein/source-root path with no ~ or .. segments"
+                          (assoc source :family family
+                                 :skein/source-root (:skein/source-root entry) :entry entry))))
+        (require-spec! ::family-entry entry "Spool family entry has an invalid shape"
+                       (assoc source :family family :entry entry))
+        (require-spec!
+         ::normalized-family
+         {:family family
+          :coordinate {:kind :skein/source-root :skein/source-root (:skein/source-root entry)}
+          :roots-map {family "."}
+          :requires {}
+          :skein-min nil
+          :claims nil
+          :provenance :spools-edn
+          :source source}
+         "Normalized spool family has an invalid shape"
+         (assoc source :family family)))
+
+      local?
       (do
         (when-not (non-blank-string? (:local/root entry))
           (throw (ex-info "Spool entry requires non-blank string :local/root"
@@ -216,6 +250,8 @@
           :source source}
          "Normalized spool family has an invalid shape"
          (assoc source :family family)))
+
+      :else
       (do
         (when-not (non-blank-string? (:git/url entry))
           (throw (ex-info "Git spool entry requires non-blank string :git/url"
@@ -413,7 +449,7 @@
   #{:mvn/version :exclusions :classifier :extension})
 
 (def ^:private rejected-spool-deps-keys
-  #{:git/url :git/sha :local/root})
+  #{:git/url :git/sha :local/root :skein/source-root})
 
 (def ^:private allowed-spools-file-keys #{:spools :mvn-overrides})
 
@@ -565,7 +601,9 @@
               (s/valid? :git/sha (:git/sha entry))
               (not (contains? entry :local/root)))
     :local (and (s/valid? :local/root (:local/root entry))
-                (not-any? #(contains? entry %) [:git/url :git/sha :git/tag]))
+                (not-any? #(contains? entry %) [:git/url :git/sha :git/tag :skein/source-root]))
+    :skein/source-root (and (s/valid? :skein/source-root (:skein/source-root entry))
+                            (not-any? #(contains? entry %) [:git/url :git/sha :git/tag :local/root]))
     false))
 
 (s/def ::root non-blank-string?)
@@ -721,6 +759,28 @@
                     "Declared spool config has an invalid shape" {})
      result)))
 
+(defn- source-root-coordinate-root
+  "Resolve a `:skein/source-root` path beneath `<checkout>/spools`, failing loudly.
+
+  The checkout comes from the specified source-checkout authority (SPEC-004.C50b),
+  never cwd or config state. Containment is enforced by canonical confinement
+  after symlink resolution — not merely lexical `..`/absolute rejection — so a
+  symlink escaping `<checkout>/spools` fails rather than resolving (TEN-003)."
+  ^java.io.File [path]
+  (let [checkout (source-checkout-root)
+        spools-dir (.getCanonicalFile (io/file checkout "spools"))
+        resolved (.getCanonicalFile (io/file checkout path))
+        boundary (str (.getPath spools-dir) java.io.File/separator)]
+    (when-not (or (= (.getPath resolved) (.getPath spools-dir))
+                  (str/starts-with? (.getPath resolved) boundary))
+      (throw (ex-info "Source-root coordinate must resolve beneath <checkout>/spools"
+                      {:status :failed
+                       :reason :source-root-escapes-checkout
+                       :checkout (.getPath checkout)
+                       :path path
+                       :resolved (.getPath resolved)})))
+    resolved))
+
 (defn approved-spools
   "Read and validate the effective runtime spool allowlist.
 
@@ -744,9 +804,10 @@
                       (mapcat
                        (fn [{:keys [family coordinate roots-map claims provenance source]}]
                          (let [kind (:kind coordinate)
-                               coordinate-root (if (= :git kind)
-                                                 (io/file (cache-base) "skein" "spools" (:git/sha coordinate))
-                                                 (io/file (canonical-root runtime (:local/root coordinate))))]
+                               coordinate-root (case kind
+                                                 :git (io/file (cache-base) "skein" "spools" (:git/sha coordinate))
+                                                 :local (io/file (canonical-root runtime (:local/root coordinate)))
+                                                 :skein/source-root (source-root-coordinate-root (:skein/source-root coordinate)))]
                            (map (fn [[lib root-path]]
                                   (let [root (if (= "." root-path)
                                                coordinate-root
@@ -773,7 +834,8 @@
 (defn- spool-source-fields [entry]
   (case (:kind entry)
     :local (select-keys entry [:local/root])
-    :git (select-keys entry [:git/url :git/sha :git/tag])))
+    :git (select-keys entry [:git/url :git/sha :git/tag])
+    :skein/source-root (select-keys entry [:skein/source-root])))
 
 (defn- sync-result-base [lib entry]
   (merge {:lib lib
