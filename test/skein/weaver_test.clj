@@ -207,6 +207,7 @@
 (def module-contributions (atom {}))
 (def module-reconcile-mode (atom :ok))
 (def module-reconciliations (atom []))
+(def module-reconcile-statuses (atom []))
 
 (def ^:private raw-mutating-standard
   {:hook-class :mutating :deadline-class :standard})
@@ -230,8 +231,10 @@
 
 (defn module-reconcile
   "Record module resource reconciliation or fail under the test-controlled mode."
-  [{key :module/key}]
+  [{key :module/key :as ctx}]
   (swap! module-reconciliations conj key)
+  (swap! module-reconcile-statuses conj
+         [key (get-in ctx [:module/contribution :status])])
   (when (= :fail @module-reconcile-mode)
     (throw (ex-info "reconcile boom" {:module/key key})))
   {:module (name key)})
@@ -428,6 +431,7 @@
     (reset! module-contributions {})
     (reset! module-reconcile-mode :ok)
     (reset! module-reconciliations [])
+    (reset! module-reconcile-statuses [])
     (f)))
 
 (defn test-pattern [{:keys [input]}]
@@ -3901,6 +3905,9 @@
                          [:modules :base :file])))
           (is (= [:base :dependent] @module-reconciliations)
               "dependency order, not startup declaration order, owns reconcile")
+          (is (= [[:base :applied] [:dependent :applied]]
+                 @module-reconcile-statuses)
+              "an applied-path reconcile receives contribution status :applied")
           (is (= #{"base-local" "dependent"}
                  (set (keys (graph/queries rt)))))
           (is (= "init.clj"
@@ -3928,12 +3935,127 @@
             (is (= :applied (:status result)))
             (is (= :removed (get-in result [:modules :base :status])))
             (is (= :removed (get-in result [:modules :dependent :status])))
+            (is (= [[:dependent :removed] [:base :removed]]
+                   (filterv #(= :removed (second %)) @module-reconcile-statuses))
+                "a removal-path reconcile receives contribution status :removed, dependents first")
             (is (= #{"new"} (set (keys (graph/queries rt))))
                 "full-graph omission deletes only the omitted owners"))
           (finally
             (weaver-runtime/stop! rt))))
       (finally
         (delete-tree! (io/file workspace ".."))))))
+
+(deftest image-module-declaration-grammar-refusals
+  (with-runtime
+    (fn [rt _db-file]
+      (letfn [(refusal-data [opts]
+                (try
+                  (runtime/module! rt :image-grammar opts)
+                  nil
+                  (catch clojure.lang.ExceptionInfo e (ex-data e))))]
+        (let [data (refusal-data {:ns 'skein.weaver-test
+                                  :load :classpath
+                                  :contribute 'skein.weaver-test/module-contribute})]
+          (is (= :image-grammar (:module/key data)))
+          (is (= :classpath (:load data)))
+          (is (= #{:image} (:allowed data))
+              ":load refusal names the allowed value set"))
+        (let [data (refusal-data {:file "modules/image.clj"
+                                  :load :image
+                                  :contribute 'skein.weaver-test/module-contribute})]
+          (is (= :image-grammar (:module/key data)))
+          (is (= "modules/image.clj" (:file data)))
+          (is (= [:ns] (:allowed data))
+              ":load :image refusal with :file names the accepted target kind"))
+        (let [data (refusal-data {:ns 'skein.weaver-test :load :image})]
+          (is (= :image-grammar (:module/key data)))
+          (is (= :contribute (:required data))
+              ":load :image refusal without :contribute names the missing key"))))))
+
+(deftest image-module-activates-from-the-live-image-without-source-load
+  (with-runtime
+    (fn [rt _db-file]
+      (let [workspace (get-in rt [:metadata :config-dir])
+            declaration (str "(skein.core.weaver.runtime/declare-module! "
+                             "skein.core.weaver.runtime/*runtime* :image-live "
+                             "{:ns 'skein.weaver-test :load :image "
+                             ":contribute 'skein.weaver-test/module-contribute "
+                             ":reconcile 'skein.weaver-test/module-reconcile})\n")]
+        (swap! module-contributions assoc :image-live
+               {:queries {"image-live" [:= [:attr :owner] "image"]}})
+        (spit (io/file workspace "init.clj") declaration)
+        (let [ledger-before (spool-sync/namespace-load-ledger rt)
+              result (runtime/refresh! rt)
+              outcome (get-in result [:modules :image-live])]
+          (is (= :applied (:status result)))
+          (is (= :applied (:status outcome)))
+          (is (= :image (:source/status outcome)))
+          (is (not (contains? outcome :source/stamp)))
+          (is (= ledger-before (spool-sync/namespace-load-ledger rt))
+              "image activation performs no source load")
+          (is (nil? (get-in @(:module-state rt) [:contribution-sources :image-live]))
+              "no source stamp is recorded for an image module")
+          (is (= [:= [:attr :owner] "image"] (get (graph/queries rt) "image-live")))
+          (is (= [[:image-live :applied]] @module-reconcile-statuses)))
+        (let [status (weaver-runtime/module-status rt)]
+          (is (= :image (get-in status [:modules :image-live :load]))
+              "the declaration stays introspectable data")
+          (is (= :image (get-in status [:module/outcomes :image-live :source/status]))))
+        (let [plan (runtime/plan rt)]
+          (is (true? (:dry-run? plan)))
+          (is (= :image (get-in plan [:modules :image-live :source/status]))
+              "plan states the module as image-owned"))
+        (let [ledger (spool-sync/namespace-load-ledger rt)
+              reconciles (count @module-reconciliations)
+              result (runtime/refresh! rt {:only [:image-live]})]
+          (is (= :unchanged (:status result)))
+          (is (= :image (get-in result [:modules :image-live :source/status])))
+          (is (= ledger (spool-sync/namespace-load-ledger rt))
+              "targeted refresh over an image module stays loadless")
+          (is (= reconciles (count @module-reconciliations))
+              "an unchanged image contribution skips reconcile"))))))
+
+(deftest image-redeclaration-drops-the-recorded-source-stamp
+  (with-runtime
+    (fn [rt _db-file]
+      (let [workspace (get-in rt [:metadata :config-dir])
+            suffix (str/replace (str (random-uuid)) "-" "")
+            ns-sym (symbol (str "test.module.stamp-" suffix))
+            root-lib 'test/module-root]
+        (write-local-spool-module!
+         workspace root-lib ns-sym
+         "(runtime/collect-module-entry! :queries \"stamp-q\" [:= [:attr :v] 1])")
+        (is (= :applied (:status (runtime/module! rt :stamp-mod
+                                                  {:ns ns-sym :spools [root-lib]}))))
+        (is (some? (get-in @(:module-state rt) [:contribution-sources :stamp-mod]))
+            "a source-loaded :ns module records its stamp")
+        (swap! module-contributions assoc :stamp-mod
+               {:queries {"stamp-q" [:= [:attr :v] 1]}})
+        (let [result (runtime/module! rt :stamp-mod
+                                      {:ns ns-sym
+                                       :load :image
+                                       :contribute 'skein.weaver-test/module-contribute})]
+          (is (= :image (get-in result [:modules :stamp-mod :source/status])))
+          (is (nil? (get-in @(:module-state rt) [:contribution-sources :stamp-mod]))
+              "redeclaring as :load :image drops the recorded source stamp")
+          (is (= [:= [:attr :v] 1] (get (graph/queries rt) "stamp-q"))))))))
+
+(deftest image-module-unloaded-namespace-fails-as-module-outcome
+  (with-runtime
+    (fn [rt _db-file]
+      (let [suffix (str/replace (str (random-uuid)) "-" "")
+            ns-sym (symbol (str "test.module.image-unloaded-" suffix))
+            result (runtime/module! rt :image-unloaded
+                                    {:ns ns-sym
+                                     :load :image
+                                     :contribute 'skein.weaver-test/module-contribute})
+            outcome (get-in result [:modules :image-unloaded])]
+        (is (= :partial (:status result)))
+        (is (= :failed (:status outcome)))
+        (is (= :image-unloaded (get-in outcome [:error :data :module/key])))
+        (is (= ns-sym (get-in outcome [:error :data :ns]))
+            "the failure names the unloaded namespace")
+        (is (= :image (get-in outcome [:error :data :load])))))))
 
 (deftest targeted-refresh-retains-prior-contribution-and-isolates-collisions
   (with-runtime
