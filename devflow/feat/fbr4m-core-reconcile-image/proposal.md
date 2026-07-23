@@ -35,8 +35,8 @@ skein-src before any fixture conversion can start:
   refused loudly otherwise with the module key, offending value, and allowed
   alternatives in the error.
 - **PROP-Cri-001.G3:** An image-mode activation performs no source load during
-  collection, and a declared-but-unloaded namespace is refused loudly at
-  evaluation.
+  collection, and a declared-but-unloaded namespace fails loudly at evaluation
+  as that module's `:failed` outcome.
 - **PROP-Cri-001.G4:** `plan`/`status` output states an image module as
   image-owned with no source stamp (`:source/status :image`, no
   `:source/stamp`), keeping the declaration printable data.
@@ -70,16 +70,23 @@ skein-src before any fixture conversion can start:
   `:module/key`, the offending value, and the allowed alternatives (TEN-003,
   ADR-003.P4). These throw out of `module!` on the declare path, exactly like
   today's grammar refusals.
-- **PROP-Cri-001.S2 (evaluation):** `evaluate-module` takes an image branch:
-  when the declaration carries `:load :image`, it performs no source load and
-  no contribution-collection scope at all; it requires `(find-ns ns)` and
-  reports an unloaded namespace as that module's `:failed` outcome with error
-  data naming the module key, the namespace, and the remedy (load/require the
-  namespace before activation) — the established per-module failure channel,
-  which `:required? true` escalates per SPEC-004.C94. The contribution comes
-  from the declared `:contribute` fn as today. The outcome carries
-  `:source/status :image` and no `:source/stamp`. Non-image declarations are
-  byte-for-byte untouched.
+- **PROP-Cri-001.S2 (evaluation):** `evaluate-module` takes an image branch
+  before any collection scope or `load-source!` call: when the declaration
+  carries `:load :image`, it performs no source load and no
+  contribution-collection scope at all; the contribution comes from the
+  declared `:contribute` fn as today, and the outcome carries `:source/status
+  :image` and no `:source/stamp`. `load-source!` itself is untouched — it stays
+  the non-image path, including its implicit no-reachable-source arm. The
+  ADR's "refusal" of an unloaded namespace maps to the established per-module
+  evaluation-failure channel, exactly like a missing synced source: the module
+  reports `[:modules key :status] = :failed` (top-level result normally
+  `:partial`), never a top-level `:refused` and never a throw out of
+  `module!`; `:required?` semantics are unchanged (its escalation covers
+  prerequisite problems per SPEC-004's module-refresh C94, not evaluation
+  failures). The `:failed` outcome's error data satisfies ADR-003.P4's message
+  discipline: the module key, the offending namespace value, and the allowed
+  alternative (the namespace must be loaded/required before an image module
+  activates). Non-image declarations are byte-for-byte untouched.
 - **PROP-Cri-001.S3 (honesty):** `plan` and `status` need no new plumbing: the
   per-module outcome (`:source/status :image`, absent stamp) and the
   introspectable declaration (`:load :image` in the graph) are the honest
@@ -90,17 +97,21 @@ skein-src before any fixture conversion can start:
   contributions; a reconciler branches — applied ensures live resources and
   registrations, removed tears them down; running registration effects on
   `:removed` is a defect; a status outside the set (reachable only by direct
-  call) fails loudly naming the received status, the allowed set, and the
-  module. A reconcile throw degrades that module's outcome to `:degraded`
-  (existing `reconcile-one` behavior, now contractual). The
-  `skein.api.runtime.alpha/module!` docstring carries the same contract in one
-  sentence.
+  call) fails loudly naming the received status, the allowed set, the module,
+  and the reconciler it happened in (ADR-003.P6). A reconcile throw degrades
+  that module's outcome to `:degraded` (existing `reconcile-one` behavior —
+  `reconcile-one` needs no code change; it is the coordinator contract and
+  test seam, now contractual). The `skein.api.runtime.alpha/module!` docstring
+  carries the same contract in one sentence.
 - **PROP-Cri-001.S5 (spec deltas):** SPEC-003 P5's `module!` helper prose and P6
   example gain `:load :image`; the `::module-declaration` result spec accepts
   the optional normalized `:load` key. Deltas authored under
   `devflow/feat/fbr4m-core-reconcile-image/specs/` and merged into the root
   specs in this branch (repo discipline: root specs updated with the behavior
-  change).
+  change). The module-refresh C94 clause is cited, not changed; note
+  daemon-runtime.md carries two distinct clauses numbered C94 (a storage
+  clause and the module-refresh clause), so the delta identifies its target by
+  text, not number alone.
 - **PROP-Cri-001.S6 (tests):** In `skein.weaver-test` (coordinator tier) and
   `skein.api.runtime.alpha-test` (API tier): grammar refusals (bad `:load`
   value, `:file` + `:load :image`, missing `:contribute`) with actionable

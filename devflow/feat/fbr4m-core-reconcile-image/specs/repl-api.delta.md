@@ -1,0 +1,41 @@
+# REPL API delta for core reconcile contract + image activation
+
+**Document ID:** `DELTA-Cri-002`
+**Root spec:** [repl-api.md](../../../specs/repl-api.md)
+**Feature:** [../proposal.md](../proposal.md)
+**Status:** Merged
+**Last Updated:** 2026-07-23
+**Configuration identification:** Document IDs must be ordered as document type, short name, sequential id, then optional version. Prefix every nested point ID with the full document ID, for example `DELTA-Cri-002.P1`, so references are globally grepable and do not clash across documents.
+
+## DELTA-Cri-002.P1 Summary
+
+SPEC-003 P5 describes the `module!` helper's closed declaration options and P6
+shows the example spool init. Both gain the `{:load :image}` grammar ADR-003.P4
+adopted, and the helper prose gains the one-sentence reconcile contract
+ADR-003.P6 formalized (normative text in SPEC-004.C46b via DELTA-Cri-001.CC1).
+
+## DELTA-Cri-002.P2 Contract changes
+
+- **DELTA-Cri-002.CC1 (P5 helper prose):** The `module!` helper line gains the
+  optional `:load :image` mode: with an `:ns` target and an explicit
+  `:contribute`, the declaration trusts the already-loaded JVM image and
+  performs no source load during collection; an unloaded namespace is that
+  module's failed outcome. The reconcile sentence states the contract: a
+  `:reconcile` fn receives the contribution status and branches — `:applied`
+  ensures registrations and resources, `:removed` tears them down; other
+  statuses (direct calls only) fail loudly.
+- **DELTA-Cri-002.CC2 (module `:ns` target paragraph):** The paragraph stating
+  "Module `:ns` targets are ledger-loaded from the complete synchronized root
+  closure" gains the image-mode exception: a `:load :image` module's namespace
+  is trusted from the live image and never source-loaded by refresh.
+
+## DELTA-Cri-002.P3 Design decisions
+
+- **DELTA-Cri-002.D1:** The `::module-declaration` result spec in
+  `skein.api.runtime.alpha` accepts the optional normalized `:load` key (value
+  `:image`); the grammar's authority stays `module!`'s docstring and the
+  coordinator's `normalize-declaration`, per the existing comment contract.
+
+## DELTA-Cri-002.P4 Open questions
+
+- **DELTA-Cri-002.Q1:** None.
