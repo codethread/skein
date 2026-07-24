@@ -4889,3 +4889,37 @@
               (weaver-runtime/stop! rt)))))
       (finally
         (delete-tree! (io/file workspace ".."))))))
+
+(deftest g2a-first-refresh-after-live-upgrade-retains-explicit-removal-reconciler
+  (let [world (temp-world)
+        workspace (:config-dir world)
+        suffix (str/replace (str (random-uuid)) "-" "")
+        root-lib 'test/module-root
+        module-ns (symbol (str "test.module.live-upgrade-" suffix))]
+    (try
+      (write-local-spool-module!
+       workspace root-lib module-ns
+       (str "(defn contribute [_ctx]"
+            " {:queries {\"live-upgrade\" [:= [:attr :owner] \"legacy\"]}})\n"))
+      (spit (io/file workspace "init.clj")
+            (str "(skein.core.weaver.runtime/declare-module! "
+                 "skein.core.weaver.runtime/*runtime* :live-upgrade "
+                 "{:ns '" module-ns " :spools ['" root-lib "] "
+                 ":contribute '" module-ns "/contribute "
+                 ":reconcile 'skein.weaver-test/module-reconcile})\n"))
+      (let [rt (weaver-runtime/start! nil {:world world :publish? false})]
+        (try
+          (reset! module-reconcile-statuses [])
+          ;; Simulate a coordinator state recorded before Phase A was loaded.
+          (swap! (:module-state rt) dissoc :resolved-entry-points)
+          (spit (io/file workspace "init.clj") "")
+          (let [result (weaver-runtime/refresh-modules! rt)]
+            (is (= :applied (:status result)))
+            (is (= :removed (get-in result [:modules :live-upgrade :status])))
+            (is (= [[:live-upgrade :removed]] @module-reconcile-statuses)
+                "the legacy explicit reconciler survives the first removal refresh")
+            (is (empty? (:resolved/entry-points result))))
+          (finally
+            (weaver-runtime/stop! rt))))
+      (finally
+        (delete-tree! (io/file workspace ".."))))))

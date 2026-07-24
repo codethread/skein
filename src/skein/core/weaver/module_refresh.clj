@@ -550,6 +550,21 @@
    :module/outcome (get-in state [:outcomes key])
    :module/resource (get-in state [:resources key])})
 
+(defn- legacy-resolved-entry-points
+  "Bootstrap resolved entry points from pre-Phase-A coordinator state.
+
+  A live weaver may pick up this coordinator without restarting. Its existing
+  state has no `:resolved-entry-points`, but its authored graph still carries
+  the explicit Phase A keys. Seed those keys so a module omitted by the first
+  post-upgrade full refresh can still run its retained removal reconciler."
+  [state]
+  (into (sorted-map)
+        (keep (fn [[key declaration]]
+                (let [resolved (select-keys declaration [:contribute :reconcile])]
+                  (when (seq resolved)
+                    [key resolved]))))
+        (:graph state)))
+
 (defn- store-source-stamp [result key raw-outcome]
   (if-let [stamp (:source/stamp raw-outcome)]
     (assoc-in result [:source-stamps key] stamp)
@@ -872,7 +887,8 @@
                     ;; modules keep theirs through the removal reconcile before
                     ;; dropping out of the exposed/stored set (PROP-Dsp-001.G2a).
                     resolved-entry-points
-                    (merge (:resolved-entry-points state)
+                    (merge (legacy-resolved-entry-points state)
+                           (:resolved-entry-points state)
                            (into {}
                                  (keep (fn [[key outcome]]
                                          (when (contains? outcome :module/resolved)
