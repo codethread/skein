@@ -30,9 +30,10 @@
                     :module/role role
                     :module/callable callable}
         var (try
-              (or (when-let [loaded-ns (and ns-sym (find-ns ns-sym))]
-                    (ns-resolve loaded-ns (symbol (name callable))))
-                  (requiring-resolve callable))
+              (when ns-sym
+                (when-not (find-ns ns-sym)
+                  (require ns-sym))
+                (get (ns-interns ns-sym) (symbol (name callable))))
               (catch Throwable throwable
                 (throw (ex-info "Module callable did not resolve to a function"
                                 error-data

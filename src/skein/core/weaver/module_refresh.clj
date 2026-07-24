@@ -8,7 +8,6 @@
   publication; resource reconcilers run afterward with explicit degradation."
   (:require [clojure.java.io :as io]
             [clojure.set :as set]
-            [clojure.tools.namespace.parse :as ns-parse]
             [skein.core.format :as format]
             [skein.core.weaver.dispatch :as dispatch]
             [skein.core.weaver.module-graph :as module-graph]
@@ -299,10 +298,51 @@
         synced)
       (classpath-source-file (classpath-binding runtime ns-sym))))
 
-(defn- declared-file-namespace [file]
+(def ^:private deferred-reader-forms
+  '#{comment defn defmacro fn fn* quote var})
+
+(defn- namespaces-in-form
+  "Return namespace symbols declared in evaluated positions of one reader form."
+  [form]
+  (cond
+    (and (seq? form)
+         (contains? #{'ns 'clojure.core/ns} (first form))
+         (symbol? (second form)))
+    [(second form)]
+
+    (seq? form)
+    (if (contains? deferred-reader-forms (first form))
+      []
+      (mapcat namespaces-in-form (rest form)))
+
+    (coll? form)
+    (mapcat namespaces-in-form form)
+
+    :else []))
+
+(defn- declared-file-namespaces
+  "Return every namespace form evaluated while loading `file`."
+  [file]
   (with-open [reader (java.io.PushbackReader. (io/reader (io/file file)))]
-    (some-> (ns-parse/read-ns-decl reader)
-            ns-parse/name-from-ns-decl)))
+    (let [eof (Object.)]
+      (binding [*read-eval* false]
+        (loop [namespaces []]
+          (let [form (read {:eof eof :read-cond :allow :features #{:clj}} reader)]
+            (if (identical? eof form)
+              namespaces
+              (recur (into namespaces (namespaces-in-form form))))))))))
+
+(defn- declared-file-namespace [key file]
+  (let [namespaces (declared-file-namespaces file)]
+    (when (< 1 (count namespaces))
+      (fail! (format/reflow
+              "|Module :file source declares more than one namespace; convention
+               |lookup requires one unambiguous owner")
+             {:reason :multiple-module-namespaces
+              :module/key key
+              :file file
+              :namespaces namespaces}))
+    (first namespaces)))
 
 (defn- collection-context [runtime key declaration]
   (if-let [ns-sym (:ns declaration)]
@@ -312,7 +352,7 @@
     (let [file (spool-sync/module-file runtime (:file declaration))]
       {:module/key key
        :source/file file
-       :source/namespace (declared-file-namespace file)})))
+       :source/namespace (declared-file-namespace key file)})))
 
 (defn- load-module-file! [runtime file result]
   (spool-sync/with-namespace-load-observation

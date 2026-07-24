@@ -4195,6 +4195,8 @@
             nonsym-ns (ns-of "spool-nonsym")
             nonfn-ns (ns-of "spool-nonfn")
             missing-callable-ns (ns-of "spool-missing-callable")
+            referred-target-ns (ns-of "spool-referred-target")
+            referred-only-ns (ns-of "spool-referred-only")
             conflict-ns (ns-of "spool-conflict")
             compose-ns (ns-of "spool-compose")
             legacy-compose-ns (ns-of "legacy-compose")]
@@ -4216,6 +4218,14 @@
         (write-local-spool-module!
          workspace root-lib missing-callable-ns
          "(def spool {:contribute 'no.such.spool.namespace/contribute})")
+        (write-local-spool-module!
+         workspace root-lib referred-target-ns
+         (str "(defn foreign-contribute [_ctx]"
+              " {:queries {\"foreign-referred-q\" [:= [:attr :v] 1]}})"))
+        (write-local-spool-module!
+         workspace root-lib referred-only-ns [referred-target-ns]
+         (str "(refer '" referred-target-ns " :only '[foreign-contribute])\n"
+              "(def spool {:contribute 'foreign-contribute})"))
         (write-local-spool-module!
          workspace root-lib conflict-ns
          (str "(runtime/collect-module-entry! :queries \"conflict-q\" [:= [:attr :v] 1])\n"
@@ -4261,6 +4271,30 @@
               (is (= :contribute (get-in o [:error :data :module/role])))
               (is (= 'no.such.spool.namespace/contribute
                      (get-in o [:error :data :module/callable])))))
+          (testing "an unqualified spool symbol cannot resolve through a referred foreign Var"
+            (let [o (outcome :spool-referred-only referred-only-ns)]
+              (is (= :failed (:status o)))
+              (is (= :spool-referred-only
+                     (get-in o [:error :data :module/key])))
+              (is (= :contribute (get-in o [:error :data :module/role])))
+              (is (= (symbol (str referred-only-ns) "foreign-contribute")
+                     (get-in o [:error :data :module/callable])))
+              (is (not (contains? (graph/queries rt) "foreign-referred-q")))))
+          (testing "an explicit qualified symbol cannot target a referred-only name"
+            (let [callable (symbol (str referred-only-ns) "foreign-contribute")
+                  result (runtime/module!
+                          rt :explicit-referred-only
+                          {:ns referred-only-ns
+                           :spools [root-lib]
+                           :contribute callable
+                           :reconcile callable})
+                  o (get-in result [:modules :explicit-referred-only])]
+              (is (= :failed (:status o)))
+              (is (= :explicit-referred-only
+                     (get-in o [:error :data :module/key])))
+              (is (= :contribute (get-in o [:error :data :module/role])))
+              (is (= callable (get-in o [:error :data :module/callable])))
+              (is (not (contains? (graph/queries rt) "foreign-referred-q")))))
           (testing "a :contribute entry point plus collected authoring forms is a loud conflict"
             (let [o (outcome :spool-conflict conflict-ns)]
               (is (= :failed (:status o)))
@@ -4289,6 +4323,40 @@
               (is (= {:contribute (symbol (str legacy-compose-ns) "contribute")
                       :reconcile (symbol (str legacy-compose-ns) "reconcile")}
                      (get-in result [:resolved/entry-points :legacy-compose]))))))))))
+
+(deftest file-module-rejects-multiple-namespace-owners
+  (with-runtime
+    (fn [rt _db-file]
+      (let [workspace (get-in rt [:metadata :config-dir])
+            suffix (str/replace (str (random-uuid)) "-" "")
+            ns-of (fn [label] (symbol (str "test.module." label "-" suffix)))
+            first-ns (ns-of "file-first")
+            second-ns (ns-of "file-second")
+            source-for
+            (fn [filename spool-first?]
+              (let [source (str "modules/" filename ".clj")
+                    file (io/file workspace source)
+                    spool-form
+                    "(defn contribute [_ctx] {}) (def spool {:contribute 'contribute})\n"]
+                (io/make-parents file)
+                (spit file
+                      (str "(ns " first-ns ")\n"
+                           (when spool-first? spool-form)
+                           "(ns " second-ns ")\n"
+                           (when-not spool-first? spool-form)))
+                source))]
+        (doseq [[key source] [[:multi-ns-spool-first
+                               (source-for "multi-ns-spool-first" true)]
+                              [:multi-ns-spool-second
+                               (source-for "multi-ns-spool-second" false)]]]
+          (let [result (runtime/module! rt key {:file source})
+                outcome (get-in result [:modules key])]
+            (is (= :failed (:status outcome)))
+            (is (= :multiple-module-namespaces
+                   (get-in outcome [:error :data :reason])))
+            (is (= key (get-in outcome [:error :data :module/key])))
+            (is (= [first-ns second-ns]
+                   (get-in outcome [:error :data :namespaces])))))))))
 
 (deftest targeted-refresh-retains-prior-contribution-and-isolates-collisions
   (with-runtime
