@@ -287,7 +287,11 @@
       (is (not (s/valid? ::runtime/module-declaration
                          (assoc image-declaration :reconcile :not-a-symbol))))
       (is (not (s/valid? ::runtime/module-declaration
-                         (assoc image-declaration :extra :unsupported))))))
+                         (assoc image-declaration :extra :unsupported))))
+      (is (not (s/valid? ::runtime/module-declaration
+                         (assoc image-declaration :spools [1]))))
+      (is (not (s/valid? ::runtime/module-declaration
+                         (assoc image-declaration :after [:ok 2]))))))
   (testing "module-opts names the public input grammar module! consults"
     (let [image-opts {:ns 'skein.api.runtime.alpha-test :load :image
                       :contribute 'skein.api.runtime.alpha-test/image-contribute}]

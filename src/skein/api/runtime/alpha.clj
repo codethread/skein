@@ -233,8 +233,8 @@
               (qualified-symbol? (:contribute %)))
          #(or (not (contains? % :reconcile))
               (qualified-symbol? (:reconcile %)))
-         #(vector? (:spools %))
-         #(vector? (:after %))
+         #(and (vector? (:spools %)) (every? symbol? (:spools %)))
+         #(and (vector? (:after %)) (every? keyword? (:after %)))
          #(boolean? (:required? %))))
 
 ;; `::refresh-opts` is the named public option grammar `refresh!` and `plan`
