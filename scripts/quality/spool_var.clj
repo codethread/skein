@@ -75,13 +75,60 @@
     (spool-value-problem value)
     "authored value is not a map"))
 
+(defn- declaration-site
+  "Return a site when `form` declares the public var name `spool`.
+
+  This only recognizes the var forms themselves. Traversal through the
+  small set of executable top-level wrappers belongs to
+  `declaration-sites` so ordinary call arguments, function bodies,
+  unrelated var values, and quoted data stay out of scope."
+  [form]
+  (when (and (seq? form)
+             (contains? public-var-forms (first form))
+             (symbol? (second form))
+             (= "spool" (name (second form))))
+    (let [form-kind (first form)
+          tail (drop 2 form)
+          [value has-value?] (cond
+                               (not= 'def form-kind) [nil false]
+                               (and (= 2 (count tail)) (string? (first tail)))
+                               [(second tail) true]
+                               (seq tail) [(first tail) true]
+                               :else [nil false])]
+      {:line (:line (meta form))
+       :form-kind form-kind
+       :private? (boolean (:private (meta (second form))))
+       :value value
+       :has-value? has-value?})))
+
+(def ^:private executable-wrapper-forms
+  '#{do when when-not if if-not cond})
+
+(defn- declaration-sites
+  "Return declaration sites in one reader form.
+
+  A top-level executable wrapper may contain the actual `def`, so descend
+  recursively through its executable child forms. No other form is
+  traversed: in particular `quote`, ordinary calls, function bodies, and
+  unrelated `def` values remain inert to this structural repository
+  check."
+  [form]
+  (if-let [site (declaration-site form)]
+    [site]
+    (if (and (seq? form) (contains? executable-wrapper-forms (first form)))
+      (mapcat declaration-sites (rest form))
+      [])))
+
 (defn def-spool-sites
-  "Return declaration sites for every top-level public-var form named
-  `spool` read from `file`.
+  "Return declaration sites for every public-var form named `spool` in a
+  top-level executable context read from `file`.
 
   A valid site uses `def`; `defonce`, `defn`, and `defmacro` sites are
   returned so `findings` can reject them as malformed declarations. The
   var name must be exactly `spool`; `def-spool` and `spooler` are not it.
+  Executable wrappers (`do`, `when`, `when-not`, `if`, `if-not`, `cond`)
+  are traversed recursively, while quotes, function bodies, ordinary call
+  arguments, and unrelated `def` values are not.
   A docstring form (`(def spool \"doc\" value)`) reports the value, not
   the docstring."
   [^java.io.File file]
@@ -96,24 +143,7 @@
         (let [form (reader/read opts rdr)]
           (cond
             (= ::eof form) sites
-            (and (seq? form)
-                 (contains? public-var-forms (first form))
-                 (symbol? (second form))
-                 (= "spool" (name (second form))))
-            (let [form-kind (first form)
-                  tail (drop 2 form)
-                  [value has-value?] (cond
-                                       (not= 'def form-kind) [nil false]
-                                       (and (= 2 (count tail)) (string? (first tail)))
-                                       [(second tail) true]
-                                       (seq tail) [(first tail) true]
-                                       :else [nil false])]
-              (recur (conj sites {:line (:line (meta form))
-                                  :form-kind form-kind
-                                  :private? (boolean (:private (meta (second form))))
-                                  :value value
-                                  :has-value? has-value?})))
-            :else (recur sites)))))))
+            :else (recur (into sites (declaration-sites form)))))))))
 
 (defn findings
   "Turn `sites` ({:filename :line :form-kind :private? :value :has-value?
