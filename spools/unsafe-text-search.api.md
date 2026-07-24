@@ -74,22 +74,6 @@ Default row cap for `search`. Overflow fails loudly rather than truncating,
   that raises its read limit does not thereby widen `search`; pass `:limit`.
 <p><sub><a href="https://github.com/codethread/skein/blob/main/spools/unsafe-text-search/src/skein/spools/unsafe_text_search.clj#L45-L55">Source</a></sub></p>
 
-## <a name="skein.spools.unsafe-text-search/module">`module`</a>
-
-
-
-
-Base module declaration datum for the unsafe-text-search spool (ADR-003.P7).
-
-  The authored `:ns`/`:contribute` pair every consumer starts from. A consumer
-  whose config can load this namespace assocs its world's `:spools` guards
-  onto the datum; cold startup config, which runs before spool sources are
-  loadable, mirrors it literally under the init.clj parity test; bare-test
-  fixtures assoc `:load :image`. Every variant is `module!` input, validated
-  against `skein.api.runtime.alpha`'s `::module-opts` grammar. The spool owns
-  no live resources, so it declares no `:reconcile`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/unsafe-text-search/src/skein/spools/unsafe_text_search.clj#L237-L248">Source</a></sub></p>
-
 ## <a name="skein.spools.unsafe-text-search/search">`search`</a>
 ``` clojure
 (search runtime opts)
@@ -125,3 +109,18 @@ Handle `strand search ...`, threading parsed args into `search`.
   The registered op handler; resolved by symbol at dispatch time, so it is public
   like the other spools' op handlers.
 <p><sub><a href="https://github.com/codethread/skein/blob/main/spools/unsafe-text-search/src/skein/spools/unsafe_text_search.clj#L171-L182">Source</a></sub></p>
+
+## <a name="skein.spools.unsafe-text-search/spool">`spool`</a>
+
+
+
+
+Entry-point declaration for the unsafe-text-search spool (PROP-Dsp-001
+  `def spool` convention).
+
+  The refresh coordinator resolves `:contribute` from this public var at every
+  module evaluation, so a consumer declares only a source target and world
+  policy (`{:ns 'skein.spools.unsafe-text-search :spools [...]}`). The spool
+  owns no live resources, so it declares no `:reconcile`. Unqualified symbols
+  resolve against this namespace; fn values are rejected (ADR-002.O1).
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/unsafe-text-search/src/skein/spools/unsafe_text_search.clj#L237-L246">Source</a></sub></p>

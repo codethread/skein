@@ -54,22 +54,6 @@ Function.
 Dispatch a guild-declared operation after parsing and validating input.
 <p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L163-L169">Source</a></sub></p>
 
-## <a name="skein.spools.guild/module">`module`</a>
-
-
-
-
-Base module declaration datum for the guild spool (ADR-003.P7).
-
-  The authored `:ns`/`:contribute`/`:reconcile` triple every consumer starts
-  from. A consumer whose config can load this namespace assocs its world's
-  `:spools` guards onto the datum; cold startup config, which runs before
-  spool sources are loadable, mirrors it literally under the init.clj parity
-  test; bare-test fixtures assoc `:load :image`. Every variant is `module!`
-  input, validated against `skein.api.runtime.alpha`'s `::module-opts`
-  grammar.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L317-L329">Source</a></sub></p>
-
 ## <a name="skein.spools.guild/ops">`ops`</a>
 ``` clojure
 (ops {:op/keys [runtime-metadata], :as ctx})
@@ -127,3 +111,18 @@ Record `guild-name` as the fallback guild name in `runtime`'s state.
   the fallback; a non-nil value must be a non-blank string and anything else
   fails loudly with the offending value.
 <p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L303-L315">Source</a></sub></p>
+
+## <a name="skein.spools.guild/spool">`spool`</a>
+
+
+
+
+Entry-point declaration for the guild spool (PROP-Dsp-001 `def spool`
+  convention).
+
+  The refresh coordinator resolves `:contribute`/`:reconcile` from this public
+  var at every module evaluation, so a consumer declares only a source target
+  and world policy (`{:ns 'skein.spools.guild :spools [...]}`) and never mirrors
+  the pair. Unqualified symbols resolve against this namespace; fn values are
+  rejected (ADR-002.O1).
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L317-L327">Source</a></sub></p>

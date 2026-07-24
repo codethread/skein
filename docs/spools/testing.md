@@ -107,15 +107,15 @@ assertion helpers, or CLI subprocess helpers — exercise the real API forms.
 
 ## Activating spool modules from test fixtures
 
-Tests activate a spool exactly the way production does — `runtime/module!` with the spool's exported base declaration — never through a spool-private registration back door. The conventions below come from [ADR-003](../../devflow/adrs/0003-spool-activation-lifecycle.md) (P7), which holds the rationale; they bind any fixture that activates spool modules.
+Tests activate a spool exactly the way production does — `runtime/module!` naming a source target — never through a spool-private registration back door. The convention that resolves a spool's entry points is [ADR-004](../../devflow/adrs/0004-def-spool-convention.md); the fixture-activation conventions below come from [ADR-003](../../devflow/adrs/0003-spool-activation-lifecycle.md) (P7), which holds their rationale, and bind any fixture that activates spool modules.
 
-- **Use the exported base declaration.** A spool exports its declaration triple as data (for example `skein.spools.batteries/module`). A consumer whose config can load the namespace assocs its `:spools` root guards onto it (cold startup config instead mirrors it literally under a parity test — see [writing-shared-spools.md](./writing-shared-spools.md)); a bare test runtime assocs `{:load :image}`, trusting the namespaces the test JVM already loaded. The guard and image variants cannot be byte-identical: `:spools` guards fail `module-root-problem` on unapproved roots in bare runtimes, and that refusal is correct.
-- **`:load :image` needs the namespace loaded and an explicit `:contribute`.** Both refusals are loud. Test namespaces normally require the spool they exercise, so the image is already loaded by the time the fixture runs.
+- **Name a source target and let the coordinator resolve `spool`.** A spool declares its entry points once in a public `(def spool …)` var (see [writing-shared-spools.md](./writing-shared-spools.md)); a bare test runtime activates it by naming the namespace with `{:load :image}`, and the coordinator resolves the `spool` var from the namespace the test JVM already loaded. A production consumer whose config can load the namespace names the same source target plus its `:spools` root guards. The bare-test and production variants differ by design: `:spools` guards fail `module-root-problem` on unapproved roots in bare runtimes, and that refusal is correct.
+- **`:load :image` needs the namespace loaded and carrying a `spool` var.** Both refusals are loud. Test namespaces normally require the spool they exercise, so the image is loaded — and the `spool` var resolvable — by the time the fixture runs.
 - **Per-fixture `module!` is fine; full-refresh tests re-declare.** A full `refresh!` recollects the module graph from startup files and removes imperative declarations. Fixtures that never full-refresh are unaffected; a test that runs full `refresh!` declares its modules in startup files or re-declares after.
 - **Classpath activation and root approval do not mix.** A test that `module!`-activates a namespace from the classpath must not also approve a real spool root providing the same namespaces: the unledgered-residual and `:non-additive-sync-diff` refusals that follow are correct behavior, not flakes. Tests that genuinely sync roots use freshly generated namespaces in disposable roots.
 - **Activate `:workflow` before executor modules.** The kernel refuses a contribution naming an undeclared kind; order fixture activation with `:after` edges or explicit sequencing.
 
-In this repo, `skein.spools.test-support/activate-spool!` wraps the pattern: it assocs `:load :image` onto the datum, declares the module, and throws with the full refresh result unless the module applied.
+In this repo, `skein.spools.test-support/activate-spool!` wraps the pattern: it takes the spool's namespace symbol, requires it, declares an image module `{:ns ns-sym :load :image}`, and throws with the full refresh result unless the module applied or was unchanged. The coordinator resolves the entry points from the namespace's `spool` var, so a fixture needs no incidental `:require` just to reach a datum.
 
 ## The classpath boundary
 
@@ -145,13 +145,12 @@ Write the spool fixture, approval, and module declaration into the generated wor
                                 {:local/root "spools/demo"}}}
           :files {"spools/demo/deps.edn" "{:paths [\"src\"]}\n"
                   "spools/demo/src/demo/lib.clj"
-                  "(ns demo.lib)\n(defn contribute [_] {:queries {\"demo\" [:= [:attr :demo] true]}})\n"}
+                  "(ns demo.lib)\n(defn contribute [_] {:queries {\"demo\" [:= [:attr :demo] true]}})\n(def spool {:contribute 'contribute})\n"}
           :init "(require '[skein.api.current.alpha :as current]
                           '[skein.api.runtime.alpha :as runtime])
                  (runtime/module! (current/runtime) :demo/lib
                    {:ns 'demo.lib
-                    :spools ['demo/spool]
-                    :contribute 'demo.lib/contribute})"}]
+                    :spools ['demo/spool]})"}]
     (is (= :applied
            (get-in (t/repl! ctx
                     '(do

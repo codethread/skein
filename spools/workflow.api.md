@@ -351,22 +351,6 @@ Return a workflow gate step definition — a step whose completion belongs to
   opts as `step`.
 <p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/workflow.clj#L88-L106">Source</a></sub></p>
 
-## <a name="skein.spools.workflow/module">`module`</a>
-
-
-
-
-Base module declaration datum for the workflow spool (ADR-003.P7).
-
-  The authored `:ns`/`:contribute`/`:reconcile` triple every consumer starts
-  from. A consumer whose config can load this namespace assocs its world's
-  `:spools` guards onto the datum; cold startup config, which runs before
-  spool sources are loadable, mirrors it literally under the init.clj parity
-  test; bare-test fixtures assoc `:load :image`. Every variant is `module!`
-  input, validated against `skein.api.runtime.alpha`'s `::module-opts`
-  grammar.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/workflow.clj#L700-L712">Source</a></sub></p>
-
 ## <a name="skein.spools.workflow/molecule-id">`molecule-id`</a>
 ``` clojure
 (molecule-id result)
@@ -510,6 +494,21 @@ Return a read-only, creation-ordered projection of every molecule ever poured
   their strand's `updated_at`. Writes nothing and fails loudly (TEN-003) for a
   run that never had a root strand.
 <p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/workflow.clj#L363-L377">Source</a></sub></p>
+
+## <a name="skein.spools.workflow/spool">`spool`</a>
+
+
+
+
+Entry-point declaration for the workflow spool (PROP-Dsp-001 `def spool`
+  convention).
+
+  The refresh coordinator resolves `:contribute`/`:reconcile` from this public
+  var at every module evaluation, so a consumer declares only a source target
+  and world policy (`{:ns 'skein.spools.workflow :spools [...]}`) and never
+  mirrors the pair. Unqualified symbols resolve against this namespace; fn
+  values are rejected (ADR-002.O1).
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/workflow.clj#L700-L710">Source</a></sub></p>
 
 ## <a name="skein.spools.workflow/squash!">`squash!`</a>
 ``` clojure

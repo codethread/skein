@@ -3,7 +3,7 @@
 **Document ID:** `DELTA-Dsp-001`
 **Root spec:** [repl-api.md](../../../specs/repl-api.md)
 **Feature:** [../proposal.md](../proposal.md) (`PROP-Dsp-001`)
-**Status:** Draft
+**Status:** Merged — Phase A. CC1–CC4 are in SPEC-003 (`module!` grammar, `::spool` at C17c, the public-name reservation and repository lint at C17d). CC5's C19 exception stays staged here for Phase C — the `module!` keys are still accepted in Phase A, so SPEC-003.C19 is not yet false; the exact wording is approved under delegated coordinator sign-off (note `dp90p`) and promotes into SPEC-003.C19 only when Phase C lands (`PLAN-Dsp-001.CM1`).
 **Last Updated:** 2026-07-24
 **Configuration identification:** Document IDs order as document type, short name, sequential id, then optional version: `DELTA-Dsp-001` for v1 and `DELTA-Dsp-001@2` for v2. Omit `@1`. Prefix every nested point ID with the full document ID, for example `DELTA-Dsp-001.CC1`, so references are globally grepable and do not clash across documents.
 

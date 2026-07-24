@@ -111,22 +111,6 @@ Function.
 List lean-projected strands, optionally filtered by lifecycle state and/or a named query.
 <p><sub><a href="https://github.com/codethread/skein/blob/main/spools/batteries/src/skein/spools/batteries.clj#L778-L792">Source</a></sub></p>
 
-## <a name="skein.spools.batteries/module">`module`</a>
-
-
-
-
-Base module declaration datum for the batteries spool (ADR-003.P7).
-
-  The authored `:ns`/`:contribute`/`:reconcile` triple every consumer starts
-  from. A consumer whose config can load this namespace assocs its world's
-  `:spools` guards onto the datum; cold startup config, which runs before
-  spool sources are loadable, mirrors it literally under the init.clj parity
-  test; bare-test fixtures assoc `:load :image`. Every variant is `module!`
-  input, validated against `skein.api.runtime.alpha`'s `::module-opts`
-  grammar.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/batteries/src/skein/spools/batteries.clj#L1541-L1553">Source</a></sub></p>
-
 ## <a name="skein.spools.batteries/note-op">`note-op`</a>
 ``` clojure
 (note-op ctx)
@@ -229,6 +213,21 @@ Function.
 
 Return one normalized strand by id.
 <p><sub><a href="https://github.com/codethread/skein/blob/main/spools/batteries/src/skein/spools/batteries.clj#L762-L765">Source</a></sub></p>
+
+## <a name="skein.spools.batteries/spool">`spool`</a>
+
+
+
+
+Entry-point declaration for the batteries spool (PROP-Dsp-001 `def spool`
+  convention).
+
+  The refresh coordinator resolves `:contribute`/`:reconcile` from this public
+  var at every module evaluation, so a consumer declares only a source target
+  and world policy (`{:ns 'skein.spools.batteries :spools [...]}`) and never
+  mirrors the pair. Unqualified symbols resolve against this namespace; fn
+  values are rejected (ADR-002.O1).
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/batteries/src/skein/spools/batteries.clj#L1541-L1551">Source</a></sub></p>
 
 ## <a name="skein.spools.batteries/spool-op">`spool-op`</a>
 ``` clojure
