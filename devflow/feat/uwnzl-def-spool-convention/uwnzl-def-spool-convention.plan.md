@@ -37,7 +37,7 @@ A module's activation entry points move out of its declaration and into a `(def 
 
 ## PLAN-Dsp-001.P4 Contract and migration impact
 
-- **PLAN-Dsp-001.CM1 (grammar break, recorded not shimmed):** Phase C removes `:contribute`/`:reconcile` from `::module-opts` under TEN-000@1 — no aliases, no shims. Withdrawing accepted input keys breaks SPEC-003.C19's accretion promise for `skein.api.runtime.alpha`, so `DELTA-Dsp-001.CC5` stages the exact C19 exception wording now for user sign-off (Q3) and promotes it into the root spec only when Phase C lands. Phase A does not break C19: the keys are still accepted.
+- **PLAN-Dsp-001.CM1 (grammar break, recorded not shimmed):** Phase C removes `:contribute`/`:reconcile` from `::module-opts` under TEN-000@1 — no aliases, no shims. Withdrawing accepted input keys breaks SPEC-003.C19's accretion promise for `skein.api.runtime.alpha`, so `DELTA-Dsp-001.CC5` stages the exact C19 exception wording now and promotes it into the root spec only when Phase C lands. The coordinator approved that wording under the user's delegated sign-off authority in note `dp90p`; Phase A does not break C19 because the keys are still accepted.
 - **PLAN-Dsp-001.CM2 (per-phase spec truthfulness):** Each phase's land updates the root specs to describe that phase's actual behaviour. Phase A's deltas document the convention and the transitional acceptance of the old keys as a recorded pending-removal obligation; Phase C's delta completes the removal. No land ships a knowingly false root spec.
 - **PLAN-Dsp-001.CM3 (no data migration, no forced restart):** No schema or persisted-config migration. The canonical world consumes siblings at pinned shas, so nothing changes there until the Phase C pin bump and refresh. Sibling `:skein/min` floors gate their own consumers.
 
@@ -74,7 +74,7 @@ Outcome: the transitional window closes. Bump sibling pins, drop the remaining s
 - **PLAN-Dsp-001.R2 (removal teardown regression):** Without the retained resolved set (A4), dropping `:reconcile` from declarations makes removal-by-omission teardown disappear silently — the exact parity-bug class ADR-003.P6 exists to prevent. The existing removal test still uses declared keys and will not catch it, so a `spool`-var removal variant is mandatory.
 - **PLAN-Dsp-001.R3 (over-broad forms conflict):** The forms-vs-`:contribute` loud conflict must be scoped to `:contribute` only; a `:reconcile`-only `spool` var must still compose with collected authoring forms (the `module_adapters`/`kanban_tracker` pattern), which is valid production behaviour today.
 - **PLAN-Dsp-001.R4 (status-shape breakage):** The resolved-entry-point exposure must be a new additive field, never a mutation of the authored `:modules` graph, or downstream status readers break (archaeology `niyif`, risk R7).
-- **PLAN-Dsp-001.Q1 (C19 exception wording — user sign-off):** The SPEC-003.C19 exception in `DELTA-Dsp-001.CC5` is drafted and staged but not landed silently; the user reviews the wording before it is promoted at Phase C (PROP-Dsp-001.Q3).
+- **PLAN-Dsp-001.Q1 (settled — C19 exception wording):** The coordinator approved the exact SPEC-003.C19 exception in `DELTA-Dsp-001.CC5` under the user's delegated sign-off authority (note `dp90p`). It remains staged until Phase C because the legacy keys are still accepted in Phase A.
 
 ## PLAN-Dsp-001.P8 Task context
 
