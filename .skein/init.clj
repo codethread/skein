@@ -4,7 +4,12 @@
 ;; re-reads this file to recollect the whole graph. Startup-file collection only
 ;; STAGES declarations — no source load, publication, or reconcile runs here — so
 ;; this file holds no imperative effects; each concern's registrations live in its
-;; module's contribution (authoring forms / `:contribute`) or its `:reconcile`.
+;; module's contribution (authoring forms or its namespace's `def spool`
+;; `:contribute`) or its `:reconcile`. In-tree modules resolve their entry points
+;; from that public `spool` var by convention (PROP-Dsp-001), so their
+;; declarations name only a source target and world policy; the remaining
+;; explicit `:contribute`/`:reconcile` keys back pinned sibling spools that have
+;; no `spool` var yet, and drop out in Phase C.
 ;;
 ;; File-per-concern map (each is one module):
 ;;   config.clj        — named queries + the devflow/kanban/hitl CLI op surface
@@ -32,21 +37,16 @@
 ;; glossary outcomes those ops reference.
 (runtime/module! runtime :skein/spools-batteries
                  {:ns 'skein.spools.batteries
-                  :spools ['skein.spools/batteries]
-                  :contribute 'skein.spools.batteries/contribute
-                  :reconcile 'skein.spools.batteries/reconcile})
+                  :spools ['skein.spools/batteries]})
 ;; This repo elects the batteries reference help transform after batteries loads.
 (runtime/module! runtime :module-adapters
                  {:file "module_adapters.clj"
-                  :reconcile 'module-adapters/reconcile-help-transform
                   :after [:skein/spools-batteries]})
 
 ;; --- workflow engine + shell executor -------------------------------------
 (runtime/module! runtime :skein/spools-workflow
                  {:ns 'skein.spools.workflow
-                  :spools ['skein.spools/workflow]
-                  :contribute 'skein.spools.workflow/contribute
-                  :reconcile 'skein.spools.workflow/reconcile})
+                  :spools ['skein.spools/workflow]})
 ;; The shell executor ships in the workflow spool root and fulfils :shell gates
 ;; by running the gate command directly. It contributes the :shell executor
 ;; symbol and its query, and its reconcile owns the worker pool + initial scan;
@@ -54,9 +54,7 @@
 (runtime/module! runtime :skein/spools-shell
                  {:ns 'skein.spools.executors.shell
                   :spools ['skein.spools/workflow]
-                  :after [:skein/spools-workflow]
-                  :contribute 'skein.spools.executors.shell/contribute
-                  :reconcile 'skein.spools.executors.shell/reconcile})
+                  :after [:skein/spools-workflow]})
 ;; UNSAFE spool: unsafe-text-search reaches past the blessed api.* contract into
 ;; skein.core.db to LIKE-search titles and attribute values, including archived
 ;; rows the query language cannot see. It is a maintained, in-the-open example of
@@ -64,8 +62,7 @@
 ;; exercised. It contributes its query and needs no resource reconcile.
 (runtime/module! runtime :skein/spools-unsafe-text-search
                  {:ns 'skein.spools.unsafe-text-search
-                  :spools ['skein.spools/unsafe-text-search]
-                  :contribute 'skein.spools.unsafe-text-search/contribute})
+                  :spools ['skein.spools/unsafe-text-search]})
 ;; devflow is an external git-distributed spool: activation is gated on the
 ;; approved codethread/devflow coordinate (spools.edn pin or a developer's
 ;; spools.local.edn checkout), never on an incidental classpath copy. It still
@@ -137,8 +134,6 @@
                  {:file "harnesses.clj"
                   :spools ['ct.spools/delegation 'ct.spools/agent-run]
                   :after [:skein/spools-shuttle :skein/spools-delegation]
-                  :contribute 'harnesses/contribute
-                  :reconcile 'harnesses/reconcile
                   :required? true})
 ;; The declarative reviewer roster stays a small git-reviewable data document,
 ;; contributed as the workspace-owned partition of delegation's roster kind.
@@ -148,7 +143,6 @@
                  {:file "reviewers.clj"
                   :spools ['ct.spools/delegation]
                   :after [:skein/spools-delegation]
-                  :contribute 'reviewers/contribute
                   :required? true})
 
 ;; --- chime notification engine + this repo's attention rules ----------------
@@ -159,8 +153,6 @@
 (runtime/module! runtime :skein/spools-chime
                  {:ns 'skein.spools.chime
                   :spools ['skein.spools/chime]
-                  :contribute 'skein.spools.chime/contribute
-                  :reconcile 'skein.spools.chime/reconcile
                   :required? true})
 (runtime/module! runtime :attention
                  {:file "attention.clj"
@@ -181,7 +173,6 @@
                  {:file "kanban_tracker.clj"
                   :spools ['codethread/kanban 'codethread/devflow]
                   :after [:skein/spools-kanban :skein/spools-devflow]
-                  :reconcile 'kanban-tracker/reconcile
                   :required? true})
 
 ;; --- cron timer engine + the NVD scan job -----------------------------------
@@ -191,8 +182,6 @@
 (runtime/module! runtime :skein/spools-cron
                  {:ns 'skein.spools.cron
                   :spools ['skein.spools/cron]
-                  :contribute 'skein.spools.cron/contribute
-                  :reconcile 'skein.spools.cron/reconcile
                   :required? true})
 ;; The NVD scan job is its own module (not part of config.clj) so config_test's
 ;; direct config.clj load never registers the job or seeds against real gh.
@@ -229,7 +218,6 @@
                  {:file "workflows.clj"
                   :spools ['skein.spools/workflow 'ct.spools/delegation]
                   :after [:skein/spools-workflow :skein/spools-delegation :config]
-                  :contribute 'workflows/contribute
                   :required? true})
 
 ;; The subagent gate executor reconciles last: its reconcile runs an initial gate

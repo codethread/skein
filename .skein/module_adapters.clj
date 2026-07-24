@@ -23,3 +23,11 @@
      {:transform @(requiring-resolve 'skein.spools.batteries/default-help-transform)
       :owner 'skein.spools.batteries}))
   {:reconciled :help-transform})
+
+(def spool
+  "Entry-point declaration for the module-adapters file module.
+
+  Its `:reconcile` entry point lives here instead of in the init.clj
+  declaration. Unqualified symbols resolve against this namespace
+  (PROP-Dsp-001.G1/Q4)."
+  {:reconcile 'reconcile-help-transform})

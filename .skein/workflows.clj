@@ -1288,3 +1288,10 @@
                               :story 'workflows/story-workflow
                               :story-fold 'workflows/story-fold-workflow
                               :story-keep 'workflows/story-keep-workflow}})
+
+(def spool
+  "Entry-point declaration for the workflows file module.
+
+  The workflow constructors and ops publish through `contribute`. Unqualified
+  symbols resolve against this namespace (PROP-Dsp-001.G1/Q4)."
+  {:contribute 'contribute})

@@ -1,7 +1,7 @@
 (ns quality.conventions-check
   "Enforce repo-wide Clojure conventions that prose alone cannot hold.
 
-  Five checks, all held at zero findings:
+  Six checks, all held at zero findings:
   - every namespace carries a docstring;
   - no local binding is named after a clojure.core macro (a local named
     `fn` shadows the macro and turns later thunks into eager calls; rename
@@ -16,14 +16,18 @@
   - shipped spool sources use `skein.core.*` only from unsafe-named
     namespaces (SPEC-005.C5) — spools are userland code building on
     `skein.api.*.alpha`, and the designed exception is nominal; the
-    unsafe-namespace convention's rules live in `quality.spool-tiers`."
+    unsafe-namespace convention's rules live in `quality.spool-tiers`;
+  - a public `spool` var in a module-loadable namespace carries a
+    well-formed `::spool` declaration (PROP-Dsp-001.G6a) — the structural
+    guard against incidental shadowing lives in `quality.spool-var`."
   (:require [clj-kondo.core :as kondo]
             [clojure.java.io :as io]
             [clojure.string :as str]
             [clojure.tools.reader :as reader]
             [clojure.tools.reader.reader-types :as reader-types]
             [quality.api-form :as api-form]
-            [quality.spool-tiers :as spool-tiers]))
+            [quality.spool-tiers :as spool-tiers]
+            [quality.spool-var :as spool-var]))
 
 (def ^:private source-roots
   ;; Everything lintable: engine, batteries, local-root spools, trusted
@@ -152,7 +156,8 @@
                          " (e.g. `{" local "-sym :" local "}`)"))
                   (embedded-require-findings)
                   (api-form/check analysis)
-                  (spool-tiers/check analysis))]
+                  (spool-tiers/check analysis)
+                  (spool-var/check))]
     (if (seq findings)
       (do (binding [*out* *err*]
             (doseq [f findings] (println f))

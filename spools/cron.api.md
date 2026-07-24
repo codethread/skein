@@ -109,23 +109,7 @@ Return the cron jobs registered on `runtime` as status maps, sorted by id.
   and (once fired) `:last-result`/`:last-fired-at`/`:last-error`. When a job next
   fires lives in its durable `cron/<id>` wake — read scheduler introspection
   (`skein.api.scheduler.alpha/pending`), the single timing view.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L419-L427">Source</a></sub></p>
-
-## <a name="skein.spools.cron/module">`module`</a>
-
-
-
-
-Base module declaration datum for the cron spool (ADR-003.P7).
-
-  The authored `:ns`/`:contribute`/`:reconcile` triple every consumer starts
-  from. A consumer whose config can load this namespace assocs its world's
-  `:spools` guards onto the datum; cold startup config, which runs before
-  spool sources are loadable, mirrors it literally under the init.clj parity
-  test; bare-test fixtures assoc `:load :image`. Every variant is `module!`
-  input, validated against `skein.api.runtime.alpha`'s `::module-opts`
-  grammar.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L405-L417">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L417-L425">Source</a></sub></p>
 
 ## <a name="skein.spools.cron/recent-failures">`recent-failures`</a>
 ``` clojure
@@ -188,6 +172,21 @@ Register (or replace) a named cron job on `runtime` as a durable wake.
   a fresh wake at `now + interval + jitter`; a missing pending wake also arms a
   fresh wake. Returns the job's status map.
 <p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L298-L349">Source</a></sub></p>
+
+## <a name="skein.spools.cron/spool">`spool`</a>
+
+
+
+
+Entry-point declaration for the cron spool (PROP-Dsp-001 `def spool`
+  convention).
+
+  The refresh coordinator resolves `:contribute`/`:reconcile` from this public
+  var at every module evaluation, so a consumer declares only a source target
+  and world policy (`{:ns 'skein.spools.cron :spools [...]}`) and never mirrors
+  the pair. Unqualified symbols resolve against this namespace; fn values are
+  rejected (ADR-002.O1).
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L405-L415">Source</a></sub></p>
 
 ## <a name="skein.spools.cron/unregister!">`unregister!`</a>
 ``` clojure

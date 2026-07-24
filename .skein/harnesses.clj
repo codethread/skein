@@ -360,3 +360,12 @@
     ;; contract rides every run regardless
     (shuttle/set-default-task-contract! agents/worker-contract))
   {:reconciled :harnesses})
+
+(def spool
+  "Entry-point declaration for the harnesses file module.
+
+  The uniform convention covers every module-loadable namespace even when the
+  file is not itself a spool. Unqualified symbols resolve against this
+  namespace (PROP-Dsp-001.G1/Q4)."
+  {:contribute 'contribute
+   :reconcile 'reconcile})

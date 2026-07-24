@@ -50,3 +50,10 @@
     (kanban/set-tracker! {:name "devflow"
                           :project 'kanban-tracker/devflow-projection}))
   {:reconciled :kanban-tracker})
+
+(def spool
+  "Entry-point declaration for the kanban-tracker file module.
+
+  The tracker binding lives entirely in `reconcile`. Unqualified symbols
+  resolve against this namespace (PROP-Dsp-001.G1/Q4)."
+  {:reconcile 'reconcile})

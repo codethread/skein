@@ -66,23 +66,6 @@ Return durable stall detail for a ready `:shell` gate view, or nil.
   run row.
 <p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/executors/shell.clj#L306-L315">Source</a></sub></p>
 
-## <a name="skein.spools.executors.shell/module">`module`</a>
-
-
-
-
-Base module declaration datum for the shell executor (ADR-003.P7).
-
-  The authored `:ns`/`:contribute`/`:reconcile` triple every consumer starts
-  from. Callers order it after the workflow module with an `:after` edge on
-  the workflow module's key (the executor kind must exist before this
-  contribution publishes) and assoc their world's `:spools` guards or
-  `:load :image` — cold startup config, which runs before spool sources are
-  loadable, mirrors it literally under the init.clj parity test. Every
-  variant is `module!` input, validated against `skein.api.runtime.alpha`'s
-  `::module-opts` grammar.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/executors/shell.clj#L396-L409">Source</a></sub></p>
-
 ## <a name="skein.spools.executors.shell/on-event">`on-event`</a>
 ``` clojure
 (on-event _event)
@@ -120,6 +103,22 @@ Dispatch every ready `:shell` gate not already claimed or errored.
   Enumerates ready gates purely through the workflow surface and serializes on a
   runtime-owned monitor so concurrent scans cannot double-launch a gate.
 <p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/executors/shell.clj#L282-L299">Source</a></sub></p>
+
+## <a name="skein.spools.executors.shell/spool">`spool`</a>
+
+
+
+
+Entry-point declaration for the shell executor (PROP-Dsp-001 `def spool`
+  convention).
+
+  The refresh coordinator resolves `:contribute`/`:reconcile` from this public
+  var at every module evaluation, so a consumer declares only a source target
+  and world policy and never mirrors the pair. Callers still order it after the
+  workflow module with an `:after` edge on the workflow module's key (the
+  executor kind must exist before this contribution publishes). Unqualified
+  symbols resolve against this namespace; fn values are rejected (ADR-002.O1).
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/executors/shell.clj#L396-L407">Source</a></sub></p>
 
 ## <a name="skein.spools.executors.shell/stalled-shell-gates-query">`stalled-shell-gates-query`</a>
 

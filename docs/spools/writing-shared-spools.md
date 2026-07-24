@@ -581,10 +581,8 @@ If a prerequisite is a blessed `skein.api.*.alpha` namespace, document the names
 ### README activation snippet
 
 Include an **Activation** section with the complete trusted `init.clj` snippet.
-The consumer owns the runtime and declares modules explicitly. Use `:spools`
-for every approved root prerequisite and `:after` when one module depends on
-another. The spool in this example exposes module contribution and reconcile
-entry points.
+
+The consumer owns the runtime and declares modules explicitly. It names a source target and world policy only — `:spools` for every approved root prerequisite, `:after` when one module depends on another, `:required?` for a loud missing-prerequisite refusal — and never mirrors the spool's `:contribute`/`:reconcile` entry points, which the spool declares in its own `spool` var (below).
 
 ```clojure
 (require '[skein.api.current.alpha :as current]
@@ -595,32 +593,53 @@ entry points.
 (runtime/module! rt :acme/priority
   {:ns 'acme.priority.alpha
    :spools ['acme/priority]
-   :contribute 'acme.priority.alpha/contribute
-   :reconcile 'acme.priority.alpha/reconcile
    :required? true})
 ```
 
-Under `:required? true`, missing or failed root prerequisites refuse refresh.
-Namespace loading, contribution, publication, and reconcile failures are
-reported in the joined refresh result and `runtime/status`.
+Under `:required? true`, missing or failed root prerequisites refuse refresh. Namespace loading, contribution, publication, and reconcile failures are reported in the joined refresh result and `runtime/status`.
 
-### Export the base declaration as data
+### Declare entry points in a `spool` var
 
-Beside `contribute`/`reconcile`, export the declaration triple itself as a datum (the in-tree spools name it `module`):
+Beside `contribute`/`reconcile`, declare the spool's activation entry points in one public var named `spool`:
 
 ```clojure
-(def module
-  "Base module declaration datum (ADR-003.P7)."
-  {:ns 'acme.priority.alpha
-   :contribute 'acme.priority.alpha/contribute
-   :reconcile 'acme.priority.alpha/reconcile})
+(def spool
+  {:contribute 'contribute
+   :reconcile 'reconcile})
 ```
 
-The datum is the authored source of the triple. A consumer whose config evaluates while the namespace is loadable assocs its world onto it — `(runtime/module! rt :acme/priority (assoc acme/module :spools ['acme/priority] :required? true))` — and the spool's own tests assoc `{:load :image}` to activate from the test classpath without a source reload. Every variant is `module!` input, validated at declaration time against the named `::module-opts` grammar in `skein.api.runtime.alpha`. Rationale and the conversion conventions: [ADR-003](../../devflow/adrs/0003-spool-activation-lifecycle.md) (P7) and [testing.md](./testing.md).
+The refresh coordinator resolves this `spool` var from the loaded namespace at every module evaluation that needs a convention field ([ADR-004](../../devflow/adrs/0004-def-spool-convention.md)), so a consumer names only a source target and world policy and never mirrors the pair. During the Phase A transition, a complete legacy explicit declaration bypasses convention lookup; Phase C removes those keys and makes the public name unconditional. The public name is the point: it is the grep-friendly surface spool authors own, so a reader finds a spool's entry points by searching `def spool` in its source, and every consumer reads the same contract from the docs rather than re-deriving it from a `module!` call.
 
-One consumer cannot deref the datum: cold startup config that collects module declarations before any spool source is loadable (a weaver world's `init.clj` runs exactly there). Such config mirrors the triple as a literal declaration map and pins the copy to the datum with a parity test — skein-src's `init-in-tree-declarations-match-exported-spool-datums` is the worked example. The literal is a documented exception, not a second source of truth: the parity test is what keeps it honest (ADR-003 P7 records the rationale).
+The shape is `skein.api.spool.alpha/::spool`: a map with optional `:contribute` and `:reconcile` symbols, at least one present, and no `:ns` key — the namespace is implicit in where the var lives. Symbols are qualified against the spool namespace, so unqualified `'contribute` and fully qualified `'acme.priority.alpha/contribute` both resolve; fn values are rejected (ADR-002.O1), because the published declaration must stay printable data for `plan`, `status`, and shadow-by-redeclare. Validate a candidate with plain `s/valid?`/`s/explain-data` against `::spool`; the runtime enforces the same spec loudly at activation.
 
-There is no imperative `install!` companion: the module lifecycle is the one activation path, and a reconciler follows the SPEC-004.C46b status contract — branch on `:applied`/`:removed` and fail loudly on anything else.
+There is no imperative `install!` companion: the module lifecycle is the one activation path, and a reconciler follows the SPEC-004.C46b status contract — branch on `:applied`/`:removed` and fail loudly on anything else. Fixture-activation conventions are in [testing.md](./testing.md).
+
+### Workspace file modules
+
+A workspace-relative `:file` module can use the same convention when the loaded file declares one namespace. The coordinator resolves `spool` from that namespace:
+
+```clojure
+;; .skein/acme_priority.clj
+(ns acme.priority.local)
+
+(defn reconcile [ctx]
+  (case (get-in ctx [:module/contribution :status])
+    :applied {:reconciled :acme/priority}
+    :removed {:reconciled :acme/priority}
+    (throw (ex-info "Unexpected contribution status"
+                    {:module :acme/priority
+                     :status (get-in ctx [:module/contribution :status])}))))
+
+(def spool
+  {:reconcile 'reconcile})
+```
+
+```clojure
+(runtime/module! rt :acme/priority
+  {:file "acme_priority.clj"})
+```
+
+A file that declares no namespace remains authoring-forms-only: its collected forms may contribute, but it gets no `spool` convention lookup. Keep a convention-backed file to one declared namespace so the public var has one unambiguous owner.
 
 ### Maven dependencies in a spool root
 

@@ -29,22 +29,6 @@ Function.
 Materialize Chime's rule kind for dependent module contributions.
 <p><sub><a href="https://github.com/codethread/skein/blob/main/spools/chime/src/skein/spools/chime.clj#L379-L385">Source</a></sub></p>
 
-## <a name="skein.spools.chime/module">`module`</a>
-
-
-
-
-Base module declaration datum for the chime spool (ADR-003.P7).
-
-  The authored `:ns`/`:contribute`/`:reconcile` triple every consumer starts
-  from. A consumer whose config can load this namespace assocs its world's
-  `:spools` guards onto the datum; cold startup config, which runs before
-  spool sources are loadable, mirrors it literally under the init.clj parity
-  test; bare-test fixtures assoc `:load :image`. Every variant is `module!`
-  input, validated against `skein.api.runtime.alpha`'s `::module-opts`
-  grammar.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/chime/src/skein/spools/chime.clj#L448-L460">Source</a></sub></p>
-
 ## <a name="skein.spools.chime/mutation-registration-barrier!">`mutation-registration-barrier!`</a>
 ``` clojure
 (mutation-registration-barrier! _context)
@@ -188,6 +172,21 @@ Bind the local notifier command for this weaver lifetime.
   final argument and writes the body to stdin. Rebinding replaces the prior
   value; pass a valid binding after every weaver startup or config reload.
 <p><sub><a href="https://github.com/codethread/skein/blob/main/spools/chime/src/skein/spools/chime.clj#L133-L141">Source</a></sub></p>
+
+## <a name="skein.spools.chime/spool">`spool`</a>
+
+
+
+
+Entry-point declaration for the chime spool (PROP-Dsp-001 `def spool`
+  convention).
+
+  The refresh coordinator resolves `:contribute`/`:reconcile` from this public
+  var at every module evaluation, so a consumer declares only a source target
+  and world policy (`{:ns 'skein.spools.chime :spools [...]}`) and never mirrors
+  the pair. Unqualified symbols resolve against this namespace; fn values are
+  rejected (ADR-002.O1).
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/chime/src/skein/spools/chime.clj#L448-L458">Source</a></sub></p>
 
 ## <a name="skein.spools.chime/unregister!">`unregister!`</a>
 ``` clojure

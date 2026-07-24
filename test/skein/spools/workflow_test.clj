@@ -17,7 +17,7 @@
 (deftest workflow-module-declares-workflow-attr-namespace
   (with-runtime
     (fn [rt _]
-      (test-support/activate-spool! rt :skein/spools-workflow workflow/module)
+      (test-support/activate-spool! rt :skein/spools-workflow 'skein.spools.workflow)
       (let [decl (some #(when (= [:attr-namespace "workflow"] [(:kind %) (:name %)]) %)
                        (vocab/declarations rt))]
         (is (= :attr-namespace (:kind decl)))
@@ -1535,7 +1535,7 @@
   ;; state (DELTA-OlrDrt-001.CC8), not as owner-partition declaration data.
   (with-runtime
     (fn [rt _]
-      (test-support/activate-spool! rt :skein/spools-workflow workflow/module)
+      (test-support/activate-spool! rt :skein/spools-workflow 'skein.spools.workflow)
       (let [pred (constantly {:raw true})]
         (workflow/register-executor! :raw-exec pred)
         (is (identical? pred (get @(wf-registry/executor-fns rt) "raw-exec")))
@@ -1550,7 +1550,7 @@
   ;; value already captured for an in-flight call keeps its snapshot (CC10).
   (with-runtime
     (fn [rt _]
-      (test-support/activate-spool! rt :skein/spools-workflow workflow/module)
+      (test-support/activate-spool! rt :skein/spools-workflow 'skein.spools.workflow)
       (workflow/register-executor! :exec-snap 'skein.spools.workflow-test/exec-detail-a)
       (let [snapshot (wf-registry/executor-for rt "exec-snap")]
         (is (= {:by :a} (snapshot {})))
@@ -1566,7 +1566,7 @@
   ;; removing the owner clears the rest — no global reload.
   (with-runtime
     (fn [rt _]
-      (test-support/activate-spool! rt :skein/spools-workflow workflow/module)
+      (test-support/activate-spool! rt :skein/spools-workflow 'skein.spools.workflow)
       (let [handle (wf-registry/registry-handle rt)
             spools-constructors (fn [entries]
                                   (registry/replace-owner!
@@ -1599,7 +1599,7 @@
   ;; shadowed entry.
   (with-runtime
     (fn [rt _]
-      (test-support/activate-spool! rt :skein/spools-workflow workflow/module)
+      (test-support/activate-spool! rt :skein/spools-workflow 'skein.spools.workflow)
       (let [handle (wf-registry/registry-handle rt)]
         (registry/replace-owner! handle workflow/constructor-kind :spools/pkg
                                  {:layer :spools

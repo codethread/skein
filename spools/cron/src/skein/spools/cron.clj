@@ -402,19 +402,17 @@
                            :jobs (vec (sort (keys effective)))}
                           t)))))))
 
-(def module
-  "Base module declaration datum for the cron spool (ADR-003.P7).
+(def spool
+  "Entry-point declaration for the cron spool (PROP-Dsp-001 `def spool`
+  convention).
 
-  The authored `:ns`/`:contribute`/`:reconcile` triple every consumer starts
-  from. A consumer whose config can load this namespace assocs its world's
-  `:spools` guards onto the datum; cold startup config, which runs before
-  spool sources are loadable, mirrors it literally under the init.clj parity
-  test; bare-test fixtures assoc `:load :image`. Every variant is `module!`
-  input, validated against `skein.api.runtime.alpha`'s `::module-opts`
-  grammar."
-  {:ns 'skein.spools.cron
-   :contribute 'skein.spools.cron/contribute
-   :reconcile 'skein.spools.cron/reconcile})
+  The refresh coordinator resolves `:contribute`/`:reconcile` from this public
+  var at every module evaluation, so a consumer declares only a source target
+  and world policy (`{:ns 'skein.spools.cron :spools [...]}`) and never mirrors
+  the pair. Unqualified symbols resolve against this namespace; fn values are
+  rejected (ADR-002.O1)."
+  {:contribute 'contribute
+   :reconcile 'reconcile})
 
 (defn jobs
   "Return the cron jobs registered on `runtime` as status maps, sorted by id.

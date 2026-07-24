@@ -7,12 +7,14 @@
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.java.shell :as sh]
+            [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [skein.core.db-test :as db-test]
             [skein.api.current.alpha :as current]
             [skein.api.format.alpha :as format-alpha]
             [skein.api.runtime.alpha :as runtime]
+            [skein.api.spool.alpha :as spool-api]
             [skein.api.graph.alpha :as graph]
             [skein.api.patterns.alpha :as patterns]
             [skein.api.weaver.alpha :as weaver]
@@ -21,13 +23,7 @@
             [skein.core.weaver.module-publication :as publication]
             [skein.core.weaver.runtime :as weaver-runtime]
             [skein.core.weaver.spool-sync :as spool-sync]
-            [skein.spools.batteries :as batteries]
-            [skein.spools.chime :as chime]
-            [skein.spools.cron :as cron]
-            [skein.spools.executors.shell :as shell]
-            [skein.spools.test-support :as test-support]
-            [skein.spools.unsafe-text-search :as unsafe-text-search]
-            [skein.spools.workflow :as workflow]))
+            [skein.spools.test-support :as test-support]))
 
 (defn- delete-directory!
   "Delete a directory tree rooted at `path` if it exists."
@@ -1372,36 +1368,73 @@
                     (str key " requires " required-ns " (coordinate " coord
                          ") but its :spools guard " spools " does not declare it"))))))))))
 
-(def ^:private in-tree-spool-modules
+(def ^:private in-tree-spool-vars
   "The in-tree spool modules `.skein/init.clj` activates, keyed as init.clj
-  keys them, each mapped to the spool's exported base declaration datum.
+  keys them, each mapped to the namespace's public `def spool` declaration var.
   Guild ships in-tree but is not activated in this workspace."
-  {:skein/spools-batteries batteries/module
-   :skein/spools-workflow workflow/module
-   :skein/spools-shell shell/module
-   :skein/spools-unsafe-text-search unsafe-text-search/module
-   :skein/spools-chime chime/module
-   :skein/spools-cron cron/module})
+  {:skein/spools-batteries 'skein.spools.batteries/spool
+   :skein/spools-workflow 'skein.spools.workflow/spool
+   :skein/spools-shell 'skein.spools.executors.shell/spool
+   :skein/spools-unsafe-text-search 'skein.spools.unsafe-text-search/spool
+   :skein/spools-chime 'skein.spools.chime/spool
+   :skein/spools-cron 'skein.spools.cron/spool})
 
-(deftest init-in-tree-declarations-match-exported-spool-datums
-  ;; ADR-003.P7 (as amended): the cold-start init.clj cannot deref the spool
-  ;; datums (the production classpath carries no spool sources at collection
-  ;; time), so its literal declaration maps are recorded duplication guarded
-  ;; here — the checked-in baseline only; gitignored init.local.clj overrides
-  ;; are out of scope. Cardinality is asserted first, so a deleted,
-  ;; duplicated, or re-keyed declaration fails before any triple comparison.
-  (let [declared (filter #(some-> (:ns %) str (str/starts-with? "skein.spools."))
-                         (map parse-module-form
-                              (filter module-form? (read-all-forms ".skein/init.clj"))))
-        by-key (group-by :key declared)]
-    (is (= (set (keys in-tree-spool-modules)) (set (keys by-key)))
+(deftest init-in-tree-modules-resolve-entry-points-by-convention
+  ;; PROP-Dsp-001.G7/P7.1 (Phase A): the in-tree literal-mirror triples are
+  ;; retired — init.clj names only a source target and world policy, and the
+  ;; coordinator resolves each in-tree module's entry points from its namespace's
+  ;; public `def spool` var. This guards that conversion from both sides: every
+  ;; in-tree spool init.clj activates declares no `:contribute`/`:reconcile`
+  ;; (relying on the convention), and each backing `spool` var is a valid
+  ;; `::spool-api/spool` carrying at least a `:contribute` entry point. The
+  ;; narrowed sibling mirror below still polices the remaining literal triples
+  ;; until Phase C. Cardinality is asserted first, so a deleted, duplicated, or
+  ;; re-keyed declaration fails before any per-module comparison.
+  (let [by-key (->> (read-all-forms ".skein/init.clj")
+                    (filter module-form?)
+                    (map parse-module-form)
+                    (filter #(some-> (:ns %) str (str/starts-with? "skein.spools.")))
+                    (group-by :key))]
+    (is (= (set (keys in-tree-spool-vars)) (set (keys by-key)))
         "init.clj's in-tree spool module keys drifted from the expected set")
     (is (every? #(= 1 (count %)) (vals by-key))
         "an in-tree module key is declared more than once in init.clj")
-    (doseq [[key datum] in-tree-spool-modules]
-      (let [literal (select-keys (first (get by-key key)) [:ns :contribute :reconcile])
-            expected {:ns (:ns datum)
-                      :contribute (:contribute datum)
-                      :reconcile (:reconcile datum)}]
-        (is (= expected literal)
-            (str key " init.clj literal drifted from the exported datum"))))))
+    (doseq [[key spool-sym] in-tree-spool-vars]
+      (let [decl (first (get by-key key))
+            spool-var (requiring-resolve spool-sym)]
+        (is (and (nil? (:contribute decl)) (nil? (:reconcile decl)))
+            (str key " still declares an explicit entry-point key in init.clj"))
+        (is (s/valid? ::spool-api/spool @spool-var)
+            (str key " backing " spool-sym " is not a valid ::spool: "
+                 (s/explain-str ::spool-api/spool @spool-var)))
+        (is (contains? @spool-var :contribute)
+            (str key " backing " spool-sym
+                 " declares no :contribute entry point"))))))
+
+(def ^:private sibling-spool-datum-modules
+  "The sibling-backed init.clj modules that still mirror a peer spool's exported
+  `module` base datum in Phase A. Only devflow and kanban export such a datum;
+  the agent-harness peers declare their entry points solely in init.clj, so they
+  never had a datum to mirror. These literal triples drop in Phase C."
+  {:skein/spools-devflow 'ct.spools.devflow/module
+   :skein/spools-kanban 'ct.spools.kanban/module})
+
+(deftest init-sibling-declarations-match-exported-spool-datums
+  ;; PROP-Dsp-001.P7.1: the literal-mirror parity test, narrowed to the sibling
+  ;; modules whose peer namespace still exports a `module` base datum init.clj
+  ;; duplicates (precedence hides drift, so mirroring still needs its guard). It
+  ;; runs inside a started world so the pinned sibling roots are on the classpath
+  ;; and their datums resolve; it dies in Phase C with the literals it polices.
+  (with-startup-config-runtime
+    (fn [_rt]
+      (let [by-key (->> (read-all-forms ".skein/init.clj")
+                        (filter module-form?)
+                        (map parse-module-form)
+                        (group-by :key))]
+        (doseq [[key datum-sym] sibling-spool-datum-modules]
+          (let [decl (first (get by-key key))
+                datum @(requiring-resolve datum-sym)]
+            (is (some? decl) (str key " is no longer declared in init.clj"))
+            (is (= {:contribute (:contribute datum) :reconcile (:reconcile datum)}
+                   {:contribute (:contribute decl) :reconcile (:reconcile decl)})
+                (str key " init.clj literal drifted from " datum-sym))))))))

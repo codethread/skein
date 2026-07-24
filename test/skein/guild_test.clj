@@ -33,7 +33,7 @@
 (deftest declarations-are-owned-and-delete-by-omission
   (with-runtime
     (fn [rt _]
-      (test-support/activate-spool! rt :skein/spools-guild guild/module)
+      (test-support/activate-spool! rt :skein/spools-guild 'skein.spools.guild)
       (guild/register-op! rt 'gate.close.v1 {:doc "Close" :returns close-return
                                              :hook-class :mutating :deadline-class :standard}
                           'skein.guild-test/close-handler)
@@ -64,7 +64,7 @@
 (deftest production-return-coverage-is-derived-from-guild-provenance
   (with-runtime
     (fn [rt _]
-      (test-support/activate-spool! rt :skein/spools-guild guild/module)
+      (test-support/activate-spool! rt :skein/spools-guild 'skein.spools.guild)
       (guild/set-fallback-guild-name! rt "coverage-guild")
       (guild/register-op! rt 'gate.close.v1 {:doc "Close" :returns close-return
                                              :hook-class :mutating :deadline-class :standard}
@@ -83,7 +83,7 @@
 (deftest register-op-registers-and-invokes-through-op-registry
   (with-runtime
     (fn [rt _]
-      (test-support/activate-spool! rt :skein/spools-guild guild/module)
+      (test-support/activate-spool! rt :skein/spools-guild 'skein.spools.guild)
       (guild/register-op! rt 'gate.close.v1
                           {:doc "Close a peer gate" :input-spec ::close-input :returns close-return
                            :hook-class :mutating :deadline-class :standard}
@@ -102,7 +102,7 @@
 (deftest input-spec-invalid-input-fails-loudly-with-structured-data
   (with-runtime
     (fn [rt _]
-      (test-support/activate-spool! rt :skein/spools-guild guild/module)
+      (test-support/activate-spool! rt :skein/spools-guild 'skein.spools.guild)
       (guild/register-op! rt 'gate.close.v1
                           {:doc "Close a peer gate" :input-spec ::close-input :returns close-return
                            :hook-class :mutating :deadline-class :standard}
@@ -118,7 +118,7 @@
 (deftest guild-list-reports-active-and-deprecated-ops
   (with-runtime
     (fn [rt _]
-      (test-support/activate-spool! rt :skein/spools-guild guild/module)
+      (test-support/activate-spool! rt :skein/spools-guild 'skein.spools.guild)
       (guild/set-fallback-guild-name! rt "fallback-guild")
       (is (= "fallback-guild" (:guild (guild/ops {:op/runtime rt}))))
       (guild/register-op! rt 'gate.close.v1
@@ -146,7 +146,7 @@
 (deftest deprecated-op-throws-structured-error-and-never-succeeds
   (with-runtime
     (fn [rt _]
-      (test-support/activate-spool! rt :skein/spools-guild guild/module)
+      (test-support/activate-spool! rt :skein/spools-guild 'skein.spools.guild)
       (guild/register-op! rt 'gate.close.v1 {:doc "Close v1" :returns close-return
                                              :hook-class :mutating :deadline-class :standard}
                           'skein.guild-test/close-handler)
@@ -163,7 +163,7 @@
 (deftest malformed-guild-declarations-fail-loudly
   (with-runtime
     (fn [rt _]
-      (test-support/activate-spool! rt :skein/spools-guild guild/module)
+      (test-support/activate-spool! rt :skein/spools-guild 'skein.spools.guild)
       (testing "unknown register-op! opts"
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"guild/register-op! received unknown keys"
                               (guild/register-op! rt 'gate.close.v1 {:doc "x" :extra true

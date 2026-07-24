@@ -28,6 +28,7 @@
             [skein.core.specs :as specs]
             [skein.core.weaver.access :as access]
             [skein.core.weaver.module-graph :as module-graph]
+            [skein.core.weaver.module-refresh.entry-points :as entry-points]
             [skein.core.weaver.runtime :as weaver-runtime]
             [skein.core.weaver.spool-sync :as spool-sync]))
 
@@ -208,7 +209,6 @@
          #(or (not (contains? % :ns)) (symbol? (:ns %)))
          #(or (not (contains? % :file)) (string? (:file %)))
          #(or (not (contains? % :load)) (= :image (:load %)))
-         #(or (not (contains? % :load)) (contains? % :contribute))
          #(or (not (contains? % :load)) (not (contains? % :file)))
          #(or (not (contains? % :contribute)) (qualified-symbol? (:contribute %)))
          #(or (not (contains? % :reconcile)) (qualified-symbol? (:reconcile %)))
@@ -218,16 +218,23 @@
               (and (coll? (:after %)) (every? keyword? (:after %))))
          #(or (not (contains? % :required?)) (boolean? (:required? %)))))
 
-;; This result shape only asserts the normalized declaration carries exactly
-;; one source target and policy vectors; `::module-opts` owns the input grammar.
+;; This result shape owns the closed normalized declaration returned by
+;; `module!`; `::module-opts` owns the less-normalized public input grammar.
 (s/def ::module-declaration
   (s/and map?
+         #(every? #{:ns :file :load :spools :after :contribute :reconcile
+                    :required?}
+                  (keys %))
          #(not= (contains? % :ns) (contains? % :file))
          #(or (not (contains? % :ns)) (symbol? (:ns %)))
          #(or (not (contains? % :file)) (string? (:file %)))
          #(or (not (contains? % :load)) (= :image (:load %)))
-         #(vector? (:spools %))
-         #(vector? (:after %))
+         #(or (not (contains? % :contribute))
+              (qualified-symbol? (:contribute %)))
+         #(or (not (contains? % :reconcile))
+              (qualified-symbol? (:reconcile %)))
+         #(and (vector? (:spools %)) (every? symbol? (:spools %)))
+         #(and (vector? (:after %)) (every? keyword? (:after %)))
          #(boolean? (:required? %))))
 
 ;; `::refresh-opts` is the named public option grammar `refresh!` and `plan`
@@ -242,12 +249,15 @@
 
 (s/def ::refresh-status #{:applied :partial :unchanged :refused})
 (s/def ::refresh-mode #{:full :targeted})
+(s/def ::resolved-entry-points
+  (s/map-of ::module-key ::entry-points/resolved-entry-points))
 (s/def ::refresh-result
   (s/and map?
          #(s/valid? ::refresh-status (:status %))
          #(s/valid? ::refresh-mode (:mode %))
          #(map? (:modules %))
          #(map? (:roots %))
+         #(s/valid? ::resolved-entry-points (:resolved/entry-points %))
          #(vector? (:residuals %))
          #(vector? (:conflicts %))
          #(vector? (:remedies %))))
@@ -262,6 +272,7 @@
   (s/and map?
          #(map? (:modules %))
          #(map? (:contributions %))
+         #(s/valid? ::resolved-entry-points (:resolved/entry-points %))
          #(map? (:loaded %))
          #(contains? % :last-refresh)))
 
@@ -289,20 +300,37 @@
   namespace symbol — synced for ordinary source-loading declarations — or
   workspace-relative `:file` string; exactly one is required), an optional
   `:load :image` mode, optional approved `:spools` root prerequisites,
-  optional module-key `:after` dependencies, an optional fully qualified
-  `:contribute` symbol, an optional fully qualified `:reconcile` symbol, and
-  an optional boolean `:required?`. When `:contribute` is omitted the module's
-  contribution is the declaration data collected from the authoring forms
-  evaluated in its source, so a plain file of authoring forms is a complete
-  module (DELTA-OlrRepl-001.CC3).
+  optional module-key `:after` dependencies, and an optional boolean
+  `:required?`.
+
+  Entry points follow the `def spool` convention (PROP-Dsp-001): the module's
+  namespace declares a public `(def spool {:contribute … :reconcile …})` var
+  whose symbols the coordinator uses for fields absent from the module
+  declaration. Every effective symbol is resolved and root-value-validated at
+  every module evaluation. During Phase A the legacy explicit
+  `:contribute`/`:reconcile` opt keys remain accepted and win per key over the
+  `spool` var; when both are explicit, the transitional path does not consult
+  or validate `spool`. A target with no `spool` var therefore works from a
+  complete explicit declaration. When neither the resolved
+  `:contribute` nor an explicit one is present, the module's contribution is the
+  declaration data collected from the authoring forms evaluated in its source,
+  so a plain file of authoring forms is a complete module
+  (DELTA-OlrRepl-001.CC3). A `spool` var supplying `:contribute` while the same
+  source load collected authoring forms is a loud conflict; a legacy explicit
+  `:contribute` retains its Phase A behavior, and a `:reconcile`-only `spool`
+  var composes with authoring forms.
 
   `:load :image` (SPEC-004.C45/C46, ADR-003.P4) trusts the
   already-loaded JVM image for the `:ns` target: refresh performs no source
-  load for that module, so it requires an explicit `:contribute` and accepts
-  no `:file` target — violations are refused at declaration time. A declared
-  namespace not loaded in the image is that module's `:failed` outcome at
-  evaluation. The outcome reports `:source/status :image` and carries no
-  source stamp.
+  load for that module, and it accepts no `:file` target — that violation is
+  refused at declaration time. Its entry points resolve from the namespace's
+  `spool` var (or an explicit `:contribute`) in the image; a declared namespace
+  not loaded in the image, or one with no resolvable `:contribute`, is that
+  module's `:failed` outcome at evaluation. The outcome reports
+  `:source/status :image` and carries no source stamp. Image mode never loads
+  the declared target namespace's source; an entry-point symbol deliberately
+  qualified to a different namespace follows ordinary symbol resolution and may
+  require that callable namespace.
 
   A `:reconcile` fn receives the contribution status under
   `[:module/contribution :status]` and branches: `:applied` ensures its live
@@ -381,7 +409,8 @@
   staged contributions skip publication and reconcile. The atomic multi-phase
   reconcile is the coordinator that startup also drives; this surface owns the
   arities, request classification, and result validation. The joined result
-  conforms to `::refresh-result` (DELTA-OlrRepl-001.CC7)."
+  conforms to `::refresh-result`, whose `:resolved/entry-points` projection
+  conforms to `::resolved-entry-points` (DELTA-OlrRepl-001.CC7)."
   ([runtime] (refresh! runtime {}))
   ([runtime opts]
    (validate-refresh-opts! opts)
@@ -422,7 +451,8 @@
   loaded-code picture (current bindings, prior bindings, residuals, hard
   conflicts) with the last refresh result. It performs no network access, file
   write, source load, registration, or reconcile. The result conforms to
-  `::status-result` (DELTA-OlrRepl-001.CC8, DELTA-OlrDrt-001.CC15)."
+  `::status-result`, including `::resolved-entry-points`
+  (DELTA-OlrRepl-001.CC8, DELTA-OlrDrt-001.CC15)."
   [runtime]
   (validate-status-result! (weaver-runtime/module-status runtime)))
 

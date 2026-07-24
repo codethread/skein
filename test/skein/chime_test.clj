@@ -22,7 +22,7 @@
   (test-support/with-runtime
     {:prefix "skein-chime-config"}
     (fn [rt config-dir]
-      (test-support/activate-spool! rt :skein/spools-chime chime/module)
+      (test-support/activate-spool! rt :skein/spools-chime 'skein.spools.chime)
       (f rt config-dir))))
 
 (defn- write-notifier! [dir out-file]
@@ -52,7 +52,9 @@
   []
   (doseq [^Thread t (keys (Thread/getAllStackTraces))
           :when (str/starts-with? (.getName t) "chime-notify-")]
-    (.join t (test-support/await-budget-ms 5000))))
+    (.join t (test-support/await-budget-ms 5000))
+    (is (not (.isAlive t))
+        (str "Notifier thread did not terminate: " (.getName t)))))
 
 (defn- bind-file-notifier! [dir]
   (let [out-file (io/file dir "notifications.txt")
@@ -233,7 +235,7 @@
           (weaver-runtime/with-runtime-binding
             second-rt
             (fn []
-              (test-support/activate-spool! second-rt :skein/spools-chime chime/module)
+              (test-support/activate-spool! second-rt :skein/spools-chime 'skein.spools.chime)
               (chime/register! :phase-failed 'skein.chime-test/phase-failed-rule)
               (let [out-file (bind-file-notifier! second-config)]
                 (weaver/add! second-rt {:title "unrelated mutation"})
@@ -455,7 +457,7 @@
     {:prefix "skein-chime-module"}
     (fn [rt config-dir]
       (is (= :applied
-             (:status (runtime/module! rt :chime chime/module))))
+             (:status (runtime/module! rt :chime {:ns 'skein.spools.chime}))))
       (is (= 1 (count (engine-handler-entries rt))))
       (is (= 1 (count (barrier-hook-entries rt))))
       (chime/register! :phase-failed 'skein.chime-test/phase-failed-rule)

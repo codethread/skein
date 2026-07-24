@@ -66,12 +66,10 @@ failing files fail loudly with file context. The generated `init.clj` is intenti
 
 (runtime/module! runtime :skein/spools-batteries
   {:ns 'skein.spools.batteries
-   :spools ['skein.spools/batteries]
-   :contribute 'skein.spools.batteries/contribute
-   :reconcile 'skein.spools.batteries/reconcile})
+   :spools ['skein.spools/batteries]})
 ```
 
-The source-root coordinate is relative to the mill-selected Skein checkout, so bootstrap persists no absolute checkout path. Delete the seeded entry to opt out of batteries; the guarded module then publishes no batteries ops.
+The declaration names only a source target and world policy; batteries declares its `:contribute`/`:reconcile` entry points in a `(def spool …)` var in its own namespace, which the coordinator resolves by convention ([ADR-004](../../devflow/adrs/0004-def-spool-convention.md)). The source-root coordinate is relative to the mill-selected Skein checkout, so bootstrap persists no absolute checkout path. Delete the seeded entry to opt out of batteries; the guarded module then publishes no batteries ops.
 
 `skein.api.runtime.alpha` is a privileged built-in runtime loader/config helper namespace shipped with Skein —
 not an ordinary user spool, which is why loader/config helpers do not live under `skein.spools.*`.
@@ -225,15 +223,16 @@ module's complete declaration, so every refresh and startup publishes it from on
 
 (defn contribute [_ctx]
   {:queries {"mine" [:= [:attr :owner] "ct"]}})
+
+(def spool {:contribute 'contribute})
 ```
 
-Declare it from `init.clj`:
+The `spool` var is where the module's entry points live; the coordinator resolves it by convention, so `init.clj` names only a source target and world policy:
 
 ```clojure
 (runtime/module! runtime :my/workflow
   {:ns 'my.workflow
-   :spools ['my/workflow]
-   :contribute 'my.workflow/contribute})
+   :spools ['my/workflow]})
 ```
 
 Each piece has one job. `spools.edn` approves source. `runtime/module!` declares

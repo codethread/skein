@@ -7,8 +7,7 @@
   perform source loads, registry publication, or resource reconciliation."
   (:require [clojure.java.io :as io]
             [clojure.set :as set]
-            [clojure.string :as str]
-            [skein.core.format :as format]))
+            [clojure.string :as str]))
 
 (def ^:private declaration-keys
   #{:ns :file :load :spools :after :contribute :reconcile :required?})
@@ -61,7 +60,8 @@
   one `:ns` or workspace-relative `:file`, and carry normalized `:spools`,
   `:after`, and `:required?` values. `:load :image` (the only accepted `:load`
   value) trusts the already-loaded JVM image: it requires an `:ns` target and
-  an explicit `:contribute`, and refresh never source-loads that module."
+  refresh never source-loads that module, so its entry points resolve from the
+  namespace's `spool` var (or an explicit Phase A `:contribute`) at evaluation."
   [key opts]
   (when-not (keyword? key)
     (fail! "Module key must be a keyword" {:module/key key}))
@@ -93,13 +93,7 @@
     (when (contains? opts :file)
       (fail! "Module :load :image accepts only an :ns source target"
              {:module/key key :load :image :file (:file opts)
-              :allowed [:ns]}))
-    (when-not (contains? opts :contribute)
-      (fail! (format/reflow
-              "|Module :load :image requires an explicit :contribute (no source
-               |evaluation happens, so no authoring-form collection can exist)")
-             {:module/key key :load :image
-              :required :contribute})))
+              :allowed [:ns]})))
   (when (and (contains? opts :required?)
              (not (boolean? (:required? opts))))
     (fail! "Module :required? must be boolean"

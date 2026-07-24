@@ -305,3 +305,10 @@
   {agents/roster-kind {:change-review change-review
                        :complex-patch-review complex-patch-review
                        :docs-review docs-review}})
+
+(def spool
+  "Entry-point declaration for the reviewers file module.
+
+  This roster owns no live resource, so it declares no `:reconcile`.
+  Unqualified symbols resolve against this namespace (PROP-Dsp-001.G1/Q4)."
+  {:contribute 'contribute})
