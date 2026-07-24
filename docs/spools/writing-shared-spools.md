@@ -608,7 +608,7 @@ Beside `contribute`/`reconcile`, declare the spool's activation entry points in 
    :reconcile 'reconcile})
 ```
 
-The refresh coordinator resolves this `spool` var from the loaded namespace at every module evaluation ([ADR-004](../../devflow/adrs/0004-def-spool-convention.md)), so a consumer names only a source target and world policy and never mirrors the pair. The public name is the point: it is the grep-friendly surface spool authors own, so a reader finds a spool's entry points by searching `def spool` in its source, and every consumer reads the same contract from the docs rather than re-deriving it from a `module!` call.
+The refresh coordinator resolves this `spool` var from the loaded namespace at every module evaluation that needs a convention field ([ADR-004](../../devflow/adrs/0004-def-spool-convention.md)), so a consumer names only a source target and world policy and never mirrors the pair. During the Phase A transition, a complete legacy explicit declaration bypasses convention lookup; Phase C removes those keys and makes the public name unconditional. The public name is the point: it is the grep-friendly surface spool authors own, so a reader finds a spool's entry points by searching `def spool` in its source, and every consumer reads the same contract from the docs rather than re-deriving it from a `module!` call.
 
 The shape is `skein.api.spool.alpha/::spool`: a map with optional `:contribute` and `:reconcile` symbols, at least one present, and no `:ns` key — the namespace is implicit in where the var lives. Symbols are qualified against the spool namespace, so unqualified `'contribute` and fully qualified `'acme.priority.alpha/contribute` both resolve; fn values are rejected (ADR-002.O1), because the published declaration must stay printable data for `plan`, `status`, and shadow-by-redeclare. Validate a candidate with plain `s/valid?`/`s/explain-data` against `::spool`; the runtime enforces the same spec loudly at activation.
 
@@ -622,9 +622,13 @@ A workspace-relative `:file` module can use the same convention when the loaded 
 ;; .skein/acme_priority.clj
 (ns acme.priority.local)
 
-(defn reconcile [{:keys [status]}]
-  ;; Handle :applied and :removed.
-  )
+(defn reconcile [ctx]
+  (case (get-in ctx [:module/contribution :status])
+    :applied {:reconciled :acme/priority}
+    :removed {:reconciled :acme/priority}
+    (throw (ex-info "Unexpected contribution status"
+                    {:module :acme/priority
+                     :status (get-in ctx [:module/contribution :status])}))))
 
 (def spool
   {:reconcile 'reconcile})
