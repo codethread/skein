@@ -52,7 +52,9 @@
   []
   (doseq [^Thread t (keys (Thread/getAllStackTraces))
           :when (str/starts-with? (.getName t) "chime-notify-")]
-    (.join t (test-support/await-budget-ms 5000))))
+    (.join t (test-support/await-budget-ms 5000))
+    (is (not (.isAlive t))
+        (str "Notifier thread did not terminate: " (.getName t)))))
 
 (defn- bind-file-notifier! [dir]
   (let [out-file (io/file dir "notifications.txt")
