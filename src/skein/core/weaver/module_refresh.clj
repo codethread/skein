@@ -8,7 +8,9 @@
   publication; resource reconcilers run afterward with explicit degradation."
   (:require [clojure.java.io :as io]
             [clojure.set :as set]
+            [clojure.spec.alpha :as s]
             [clojure.tools.namespace.parse :as ns-parse]
+            [skein.api.spool.alpha :as spool-api]
             [skein.core.format :as format]
             [skein.core.weaver.dispatch :as dispatch]
             [skein.core.weaver.module-graph :as module-graph]
@@ -30,6 +32,7 @@
    :startup/files []
    :contributions (sorted-map)
    :contribution-sources (sorted-map)
+   :resolved-entry-points (sorted-map)
    :resources (sorted-map)
    :outcomes (sorted-map)
    :root-outcomes (sorted-map)
@@ -69,17 +72,79 @@
   (throw (ex-info message data)))
 
 (defn- resolve-module-fn!
+  "Resolve `callable` to the fn value its Var holds, failing loudly otherwise.
+
+  A clojure Var is itself `ifn?` regardless of what it holds, so the check
+  derefs the resolved Var and tests its root value: an unresolvable symbol, or a
+  Var whose value is not a fn (a plain data Var, a keyword), fails loudly
+  (PROP-Dsp-001.G5)."
   [module-key role callable]
   (let [ns-sym (some-> callable namespace symbol)
         var (or (when-let [loaded-ns (and ns-sym (find-ns ns-sym))]
                   (ns-resolve loaded-ns (symbol (name callable))))
                 (requiring-resolve callable))]
-    (when-not (ifn? var)
+    (when-not (and (var? var) (fn? (deref var)))
       (fail! "Module callable did not resolve to a function"
              {:module/key module-key
               :module/role role
               :module/callable callable}))
-    var))
+    (deref var)))
+
+(defn- validate-spool-value!
+  "Validate a module `spool` var value against the shared `::spool` spec.
+
+  The runtime enforcement path runs over the same spec authors validate with
+  (PROP-Dsp-001.G6), so a non-map value, unknown keys, an absent entry point, or
+  a non-symbol entry point (ADR-002.O1) all fail loudly with explain data."
+  [module-key module-ns value]
+  (when-not (s/valid? ::spool-api/spool value)
+    (fail! (format/reflow
+            "|Module spool declaration is malformed: it must be a map carrying a
+             |:contribute and/or :reconcile symbol and no other keys")
+           {:module/key module-key
+            :module/namespace module-ns
+            :spool value
+            :explain (s/explain-data ::spool-api/spool value)}))
+  value)
+
+(defn- module-namespace
+  "Return the namespace symbol that owns a module's `spool` var, or nil.
+
+  `:ns` and `:load :image` targets own their declared namespace; a `:file`
+  target owns the single namespace its file declares (nil when the file declares
+  no `ns`, which keeps the authoring-forms-only path)."
+  [declaration context]
+  (or (:ns declaration) (:source/namespace context)))
+
+(defn- public-spool-var
+  "Return the module namespace's public `spool` var, or nil.
+
+  Only a public interned var named `spool` in the loaded `module-ns` is the
+  declaration; private and referred vars are ignored (PROP-Dsp-001.G5)."
+  [module-ns]
+  (when (and module-ns (find-ns module-ns))
+    (get (ns-publics module-ns) 'spool)))
+
+(defn- qualify-entry-point [module-ns sym]
+  (if (namespace sym)
+    sym
+    (symbol (name module-ns) (name sym))))
+
+(defn- resolve-entry-points
+  "Return the effective `{:contribute sym :reconcile sym}` for a module.
+
+  Explicit Phase A declaration keys win per key (F14 precedence); every absent
+  field is filled from the module namespace's public `spool` var, whose value is
+  validated against `::spool` and whose unqualified symbols are qualified against
+  the declaring namespace (PROP-Dsp-001.G1/G2). Present keys only."
+  [module-key declaration module-ns]
+  (let [explicit (select-keys declaration [:contribute :reconcile])
+        from-var (when-let [spool-var (public-spool-var module-ns)]
+                   (into {}
+                         (map (fn [[field sym]]
+                                [field (qualify-entry-point module-ns sym)]))
+                         (validate-spool-value! module-key module-ns @spool-var)))]
+    (merge from-var explicit)))
 
 (defn- normalize-kind-contribution [kind-id value]
   (when-not (keyword? kind-id)
@@ -369,9 +434,11 @@
 
 (defn- evaluate-image-module
   "Evaluate a `:load :image` module: trust the already-loaded JVM image for its
-  `:ns` target with no source load and no contribution-collection scope. The
-  contribution always comes from the declared `:contribute` fn; the outcome
-  carries `:source/status :image` and no source stamp."
+  `:ns` target with no source load and no contribution-collection scope. Entry
+  points resolve from the namespace's `spool` var (or an explicit Phase A
+  `:contribute`); image mode collects no authoring forms, so a namespace with no
+  resolvable `:contribute` fails loudly (PROP-Dsp-001.G4/G5). The outcome carries
+  `:source/status :image`, its resolved entry points, and no source stamp."
   [runtime with-loader key declaration]
   (let [ns-sym (:ns declaration)]
     (when-not (find-ns ns-sym)
@@ -379,17 +446,25 @@
               "|Image module namespace is not loaded in the JVM image; load or
                |require it before the module activates")
              {:module/key key :ns ns-sym :load :image}))
-    (let [contribution (with-loader
-                         #(let [contribute-fn (resolve-module-fn!
-                                               key :contribute
-                                               (:contribute declaration))]
-                            (contribute-fn {:runtime runtime
-                                            :module/key key
-                                            :module/declaration declaration})))]
-      {:status :ready
-       :module/key key
-       :source/status :image
-       :contribution (normalize-contribution contribution)})))
+    (let [resolved (resolve-entry-points key declaration ns-sym)
+          contribute (:contribute resolved)]
+      (when-not contribute
+        (fail! (format/reflow
+                "|Image module resolves no :contribute entry point; its namespace
+                 |needs a public spool var (or an explicit :contribute) because
+                 |image mode collects no authoring forms")
+               {:module/key key :ns ns-sym :load :image}))
+      (let [contribution (with-loader
+                           #(let [contribute-fn (resolve-module-fn!
+                                                 key :contribute contribute)]
+                              (contribute-fn {:runtime runtime
+                                              :module/key key
+                                              :module/declaration declaration})))]
+        {:status :ready
+         :module/key key
+         :source/status :image
+         :module/resolved resolved
+         :contribution (normalize-contribution contribution)}))))
 
 (defn- evaluate-module
   [runtime with-loader key declaration previous-contribution previous-source]
@@ -397,24 +472,39 @@
     (if (= :image (:load declaration))
       (evaluate-image-module runtime with-loader key declaration)
       (let [context (collection-context runtime key declaration)
-            {:keys [return contribution]}
+            {:keys [return] collected :contribution}
             (module-graph/with-contribution-collection
               context
               #(load-source! runtime with-loader key declaration previous-source))
             source-status (if (and (:ns declaration) (nil? (:file return)))
                             :unchanged
                             :loaded)
-            contribution (if-let [contribute (:contribute declaration)]
-                           (with-loader
-                             #(let [contribute-fn (resolve-module-fn!
-                                                   key :contribute contribute)]
-                                (contribute-fn {:runtime runtime
-                                                :module/key key
-                                                :module/declaration declaration})))
-                           (if (and (= :unchanged source-status)
-                                    (some? previous-contribution))
-                             previous-contribution
-                             contribution))
+            module-ns (module-namespace declaration context)
+            resolved (resolve-entry-points key declaration module-ns)
+            contribute (:contribute resolved)
+            contribution (cond
+                           contribute
+                           (do
+                             (when (seq collected)
+                               (fail! (format/reflow
+                                       "|Module resolves a :contribute entry point yet its
+                                        |source collected authoring forms; a :contribute fn
+                                        |would silently discard them, so choose one source")
+                                      {:module/key key
+                                       :module/namespace module-ns
+                                       :contribute contribute
+                                       :collected/kinds (vec (keys collected))}))
+                             (with-loader
+                               #(let [contribute-fn (resolve-module-fn!
+                                                     key :contribute contribute)]
+                                  (contribute-fn {:runtime runtime
+                                                  :module/key key
+                                                  :module/declaration declaration}))))
+                           (and (= :unchanged source-status)
+                                (some? previous-contribution))
+                           previous-contribution
+
+                           :else collected)
             normalized (normalize-contribution contribution)]
         {:status :ready
          :module/key key
@@ -422,6 +512,7 @@
          :source/result return
          :source/stamp (when-let [ns-sym (:ns declaration)]
                          (source-stamp (latest-source-binding runtime ns-sym)))
+         :module/resolved resolved
          :contribution normalized}))
     (catch Throwable throwable
       {:status :failed
@@ -524,7 +615,8 @@
          order)]
     (update staged :outcomes #(select-keys % order))))
 
-(defn- provisional-result [mode roots conflicts remedies shadows outcomes removed]
+(defn- provisional-result
+  [mode roots conflicts remedies shadows outcomes removed resolved-entry-points]
   {:status :unchanged
    :mode mode
    :modules (into (sorted-map)
@@ -538,15 +630,17 @@
    :residuals []
    :conflicts conflicts
    :remedies remedies
+   :resolved/entry-points resolved-entry-points
    :declaration/shadows shadows})
 
 (defn- reconcile-one
-  [runtime with-loader state graph result key outcome]
-  (let [removed? (= :removed (:status outcome))
-        declaration (get graph key)
+  [runtime with-loader state graph resolved-entry-points result key outcome]
+  (let [declaration (get graph key)
         previous (previous-module state key)
-        reconcile (or (:reconcile declaration)
-                      (when removed? (get-in previous [:module/declaration :reconcile])))]
+        ;; The reconciler comes from the module's retained resolved entry-point
+        ;; set, so removal-by-omission still tears down (its source is never
+        ;; re-loaded on the removal path) — PROP-Dsp-001.G2a/F11.
+        reconcile (get-in resolved-entry-points [key :reconcile])]
     (if (or (nil? reconcile)
             (not (#{:applied :removed} (:status outcome))))
       {:outcome outcome}
@@ -575,12 +669,12 @@
                       :error (exception-data throwable)}})))))
 
 (defn- reconcile-modules
-  [runtime with-loader state graph result order]
+  [runtime with-loader state graph resolved-entry-points result order]
   (reduce
    (fn [{:keys [outcomes resources]} key]
      (let [{:keys [outcome resource]}
-           (reconcile-one runtime with-loader state graph result key
-                          (get outcomes key))]
+           (reconcile-one runtime with-loader state graph resolved-entry-points
+                          result key (get outcomes key))]
        {:outcomes (assoc outcomes key outcome)
         :resources (cond-> resources resource (assoc key resource))}))
    {:outcomes (:modules result)
@@ -644,7 +738,8 @@
            :publication/kinds (vec (sort-by pr-str changed-kinds)))))
 
 (defn- record-result!
-  [runtime collection contributions contribution-sources resources outcomes roots result]
+  [runtime collection contributions contribution-sources resolved-entry-points
+   resources outcomes roots result]
   (swap! (:module-state runtime)
          (fn [state]
            (-> state
@@ -655,6 +750,7 @@
                                            (:files collection))
                       :contributions (into (sorted-map) contributions)
                       :contribution-sources (into (sorted-map) contribution-sources)
+                      :resolved-entry-points (into (sorted-map) resolved-entry-points)
                       :resources (into (sorted-map) resources)
                       :outcomes (into (sorted-map) outcomes)
                       :root-outcomes (into (sorted-map) roots)
@@ -669,6 +765,7 @@
    :residuals []
    :conflicts [error]
    :remedies []
+   :resolved/entry-points (sorted-map)
    :declaration/shadows (sorted-map)})
 
 (defn- record-refused-result! [runtime opts result]
@@ -770,6 +867,18 @@
                     raw (evaluate-affected runtime with-loader graph order
                                            (:roots sync-result)
                                            previous-contributions previous-sources)
+                    ;; Retain each module's last-good resolved entry-point set:
+                    ;; a failed evaluation keeps the prior set, and removed
+                    ;; modules keep theirs through the removal reconcile before
+                    ;; dropping out of the exposed/stored set (PROP-Dsp-001.G2a).
+                    resolved-entry-points
+                    (merge (:resolved-entry-points state)
+                           (into {}
+                                 (keep (fn [[key outcome]]
+                                         (when (contains? outcome :module/resolved)
+                                           [key (:module/resolved outcome)]))
+                                       raw)))
+                    exposed-resolved (apply dissoc resolved-entry-points removed)
                     backends (publication/backends runtime)
                     base-candidates (reduce publication/remove-owner
                                             (publication/candidates backends)
@@ -782,7 +891,8 @@
                                                     (:remedies sync-result)
                                                     (:shadows collection)
                                                     (:outcomes staged)
-                                                    removed)]
+                                                    removed
+                                                    exposed-resolved)]
                 ;; A dry-run stops here: it has collected, classified, staged and
                 ;; validated candidates but publishes nothing, reconciles nothing,
                 ;; and records no coordinator state (DELTA-OlrRepl-001.CC14).
@@ -795,6 +905,7 @@
                                            (filter removed))
                         reconcile-order (vec (concat removal-order order))
                         reconciled (reconcile-modules runtime with-loader state graph
+                                                      resolved-entry-points
                                                       provisional reconcile-order)
                         _ (try
                             (publication/validate-op-glossary-refs!
@@ -818,7 +929,7 @@
                                                               (:hard-conflicts loaded-status)))
                                       :publication/kinds (vec (sort-by pr-str changed-kinds)))]
                     (record-result! runtime collection contributions contribution-sources
-                                    (:resources reconciled) state-outcomes
+                                    exposed-resolved (:resources reconciled) state-outcomes
                                     (:roots sync-result) result))))
               (catch Throwable throwable
                 ;; Source loads may already have occurred, but no publication
@@ -845,6 +956,9 @@
      :declaration/layers (:layers state)
      :declaration/shadows (:shadows state)
      :contributions (:contributions state)
+     ;; The last-good resolved entry points sit alongside the authored `:modules`
+     ;; graph, never inside it (PROP-Dsp-001.G2a).
+     :resolved/entry-points (:resolved-entry-points state)
      :module/outcomes (:outcomes state)
      :resource/outcomes (:resources state)
      :root/outcomes (:root-outcomes state)

@@ -16,7 +16,12 @@
   and had begun to drift - across most shipped spools, and now share this one
   source instead of re-deriving them per file. `skein.spools.workflow` is a
   deliberate exception: it keeps its own branded `reject-unknown-keys!` rather
-  than adopting this one."
+  than adopting this one.
+
+  This namespace also owns `::spool`, the shape of the `def spool` module
+  declaration convention (PROP-Dsp-001): authors validate their `spool` var with
+  `s/valid?`/`s/explain-data` against it, and the refresh coordinator enforces
+  the same spec at every module evaluation, so the two cannot drift."
   (:require [clojure.spec.alpha :as s]
             [skein.api.clock.alpha :as clock]
             [skein.api.format.alpha :as format-alpha]
@@ -77,6 +82,23 @@
 (s/fdef reject-unknown-keys!
   :args (s/cat :context string? :allowed set? :m map?)
   :ret map?)
+
+;; The `def spool` convention shape (PROP-Dsp-001.G2/G6): a module's namespace
+;; declares its entry points in a public `spool` var, whose value is a map with
+;; an optional `:contribute` and/or `:reconcile` symbol — at least one present,
+;; no other keys, and no `:ns` (the namespace is implicit in where the var
+;; lives). Fn values are rejected on sight (ADR-002.O1); unqualified symbols are
+;; qualified by the coordinator against the declaring namespace at resolution
+;; time, and fully qualified symbols pass through. This one spec is both the
+;; author validation surface (plain `s/valid?`/`s/explain-data`) and the shape
+;; the runtime enforces at every module evaluation, so the convenience surface
+;; and the enforcement path cannot drift.
+(s/def ::spool
+  (s/and map?
+         #(every? #{:contribute :reconcile} (keys %))
+         #(or (contains? % :contribute) (contains? % :reconcile))
+         #(or (not (contains? % :contribute)) (symbol? (:contribute %)))
+         #(or (not (contains? % :reconcile)) (symbol? (:reconcile %)))))
 
 ;; Anything `s/valid?` accepts: a registered spec name, a spec object, or a
 ;; bare predicate.

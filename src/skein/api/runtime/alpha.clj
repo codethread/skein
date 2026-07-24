@@ -208,7 +208,6 @@
          #(or (not (contains? % :ns)) (symbol? (:ns %)))
          #(or (not (contains? % :file)) (string? (:file %)))
          #(or (not (contains? % :load)) (= :image (:load %)))
-         #(or (not (contains? % :load)) (contains? % :contribute))
          #(or (not (contains? % :load)) (not (contains? % :file)))
          #(or (not (contains? % :contribute)) (qualified-symbol? (:contribute %)))
          #(or (not (contains? % :reconcile)) (qualified-symbol? (:reconcile %)))
@@ -289,20 +288,30 @@
   namespace symbol — synced for ordinary source-loading declarations — or
   workspace-relative `:file` string; exactly one is required), an optional
   `:load :image` mode, optional approved `:spools` root prerequisites,
-  optional module-key `:after` dependencies, an optional fully qualified
-  `:contribute` symbol, an optional fully qualified `:reconcile` symbol, and
-  an optional boolean `:required?`. When `:contribute` is omitted the module's
-  contribution is the declaration data collected from the authoring forms
-  evaluated in its source, so a plain file of authoring forms is a complete
-  module (DELTA-OlrRepl-001.CC3).
+  optional module-key `:after` dependencies, and an optional boolean
+  `:required?`.
+
+  Entry points follow the `def spool` convention (PROP-Dsp-001): the module's
+  namespace declares a public `(def spool {:contribute … :reconcile …})` var
+  whose symbols the coordinator resolves at every module evaluation. During
+  Phase A the legacy explicit `:contribute`/`:reconcile` opt keys remain
+  accepted and win per key over the `spool` var; a target with no `spool` var
+  works from a complete explicit declaration. When neither the resolved
+  `:contribute` nor an explicit one is present, the module's contribution is the
+  declaration data collected from the authoring forms evaluated in its source,
+  so a plain file of authoring forms is a complete module
+  (DELTA-OlrRepl-001.CC3). Resolving a `:contribute` entry point while the same
+  source load collected authoring forms is a loud conflict; a `:reconcile`-only
+  `spool` var composes with authoring forms.
 
   `:load :image` (SPEC-004.C45/C46, ADR-003.P4) trusts the
   already-loaded JVM image for the `:ns` target: refresh performs no source
-  load for that module, so it requires an explicit `:contribute` and accepts
-  no `:file` target — violations are refused at declaration time. A declared
-  namespace not loaded in the image is that module's `:failed` outcome at
-  evaluation. The outcome reports `:source/status :image` and carries no
-  source stamp.
+  load for that module, and it accepts no `:file` target — that violation is
+  refused at declaration time. Its entry points resolve from the namespace's
+  `spool` var (or an explicit `:contribute`) in the image; a declared namespace
+  not loaded in the image, or one with no resolvable `:contribute`, is that
+  module's `:failed` outcome at evaluation. The outcome reports
+  `:source/status :image` and carries no source stamp.
 
   A `:reconcile` fn receives the contribution status under
   `[:module/contribution :status]` and branches: `:applied` ensures its live

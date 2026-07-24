@@ -7,6 +7,7 @@
             [clojure.test :refer [deftest is testing]]
             [skein.api.graph.alpha :as graph]
             [skein.api.runtime.alpha :as runtime]
+            [skein.api.spool.alpha :as spool]
             [skein.core.specs :as specs]
             [skein.core.weaver.config :as weaver-config]
             [skein.core.weaver.runtime :as weaver-runtime]
@@ -274,7 +275,8 @@
                       :contribute 'skein.api.runtime.alpha-test/image-contribute}]
       (is (s/valid? ::runtime/module-opts image-opts))
       (is (s/valid? ::runtime/module-opts {:file "modules/demo.clj"}))
-      (is (not (s/valid? ::runtime/module-opts (dissoc image-opts :contribute))))
+      (is (s/valid? ::runtime/module-opts (dissoc image-opts :contribute))
+          "Phase A image opts no longer require an explicit :contribute (G4)")
       (is (not (s/valid? ::runtime/module-opts
                          (assoc image-opts :file "modules/demo.clj"))))
       (is (not (s/valid? ::runtime/module-opts (assoc image-opts :load :classpath))))
@@ -353,6 +355,20 @@
                                 (runtime/module! rt :bad {:file "modules/demo.clj"
                                                           :ns 'demo.ns}))))))))
 
+(deftest spool-spec-owns-the-def-spool-convention-shape
+  (testing "a map with at least one entry-point symbol and no other keys is valid"
+    (is (s/valid? ::spool/spool {:contribute 'contribute}))
+    (is (s/valid? ::spool/spool {:reconcile 'other.ns/reconcile}))
+    (is (s/valid? ::spool/spool {:contribute 'contribute :reconcile 'reconcile})))
+  (testing "malformed spool values are rejected (G2/G6)"
+    (is (not (s/valid? ::spool/spool {})) "at least one entry point is required")
+    (is (not (s/valid? ::spool/spool [:not :a :map])))
+    (is (not (s/valid? ::spool/spool {:contribute 'contribute :ns 'some.ns}))
+        "the :ns key is dropped in the rename")
+    (is (not (s/valid? ::spool/spool {:contribute :not-a-symbol})))
+    (is (not (s/valid? ::spool/spool {:contribute identity}))
+        "fn values are rejected on sight (ADR-002.O1)")))
+
 (defn image-contribute
   "Return the image-module test contribution."
   [_ctx]
@@ -372,11 +388,14 @@
           (is (s/valid? ::runtime/module-result result))
           (is (= :image (get-in result [:modules :image :source/status])))
           (is (= [:= [:attr :k] :image] (get (graph/queries rt) "image-q")))))
+      (testing "an image namespace with no spool var and no :contribute fails at evaluation"
+        (let [result (runtime/module! rt :image-bare
+                                      {:ns 'skein.api.runtime.alpha-test :load :image})
+              outcome (get-in result [:modules :image-bare])]
+          (is (= :partial (:status result)))
+          (is (= :failed (:status outcome)))
+          (is (= :image (get-in outcome [:error :data :load])))))
       (testing "image grammar refusals throw from module! with actionable data"
-        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"requires an explicit :contribute"
-                              (runtime/module! rt :image-bad
-                                               {:ns 'skein.api.runtime.alpha-test
-                                                :load :image})))
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"accepts only :image"
                               (runtime/module! rt :image-bad
                                                {:ns 'skein.api.runtime.alpha-test
