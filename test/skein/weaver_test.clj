@@ -4194,6 +4194,7 @@
             empty-ns (ns-of "spool-empty")
             nonsym-ns (ns-of "spool-nonsym")
             nonfn-ns (ns-of "spool-nonfn")
+            missing-callable-ns (ns-of "spool-missing-callable")
             conflict-ns (ns-of "spool-conflict")
             compose-ns (ns-of "spool-compose")
             legacy-compose-ns (ns-of "legacy-compose")]
@@ -4212,6 +4213,9 @@
         (write-local-spool-module!
          workspace root-lib nonfn-ns
          "(def data 42) (def spool {:contribute 'data})")
+        (write-local-spool-module!
+         workspace root-lib missing-callable-ns
+         "(def spool {:contribute 'no.such.spool.namespace/contribute})")
         (write-local-spool-module!
          workspace root-lib conflict-ns
          (str "(runtime/collect-module-entry! :queries \"conflict-q\" [:= [:attr :v] 1])\n"
@@ -4248,6 +4252,14 @@
               (is (= :failed (:status o)))
               (is (= :contribute (get-in o [:error :data :module/role])))
               (is (= (symbol (str nonfn-ns) "data")
+                     (get-in o [:error :data :module/callable])))))
+          (testing "a callable in a missing namespace keeps the canonical error shape"
+            (let [o (outcome :spool-missing-callable missing-callable-ns)]
+              (is (= :failed (:status o)))
+              (is (= :spool-missing-callable
+                     (get-in o [:error :data :module/key])))
+              (is (= :contribute (get-in o [:error :data :module/role])))
+              (is (= 'no.such.spool.namespace/contribute
                      (get-in o [:error :data :module/callable])))))
           (testing "a :contribute entry point plus collected authoring forms is a loud conflict"
             (let [o (outcome :spool-conflict conflict-ns)]

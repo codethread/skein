@@ -26,14 +26,19 @@
   (PROP-Dsp-001.G5)."
   [module-key role callable]
   (let [ns-sym (some-> callable namespace symbol)
-        var (or (when-let [loaded-ns (and ns-sym (find-ns ns-sym))]
-                  (ns-resolve loaded-ns (symbol (name callable))))
-                (requiring-resolve callable))]
+        error-data {:module/key module-key
+                    :module/role role
+                    :module/callable callable}
+        var (try
+              (or (when-let [loaded-ns (and ns-sym (find-ns ns-sym))]
+                    (ns-resolve loaded-ns (symbol (name callable))))
+                  (requiring-resolve callable))
+              (catch Throwable throwable
+                (throw (ex-info "Module callable did not resolve to a function"
+                                error-data
+                                throwable))))]
     (when-not (and (var? var) (fn? (deref var)))
-      (fail! "Module callable did not resolve to a function"
-             {:module/key module-key
-              :module/role role
-              :module/callable callable}))
+      (fail! "Module callable did not resolve to a function" error-data))
     (deref var)))
 
 (defn- validate-spool-value!
