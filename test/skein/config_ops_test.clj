@@ -152,7 +152,13 @@
 (deftest kanban-tree-builds-on-the-canonical-entity-projection
   (run-with-config-world
    (fn [runtime]
-     ((requiring-resolve 'ct.spools.kanban/install!))
+     ;; The synced spool classloader has already loaded ct.spools.kanban's root;
+     ;; require makes the ns image-present so the module declaration may trust it.
+     (require 'ct.spools.kanban)
+     (test-support/activate-spool! runtime :kanban
+                                   {:ns 'ct.spools.kanban
+                                    :contribute 'ct.spools.kanban/contribute
+                                    :reconcile 'ct.spools.kanban/reconcile})
      (publish-authoring! runtime :config ".skein/config.clj")
      (let [card (weaver/add! runtime
                              {:title "Feature"
