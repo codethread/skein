@@ -279,15 +279,17 @@ the old lifecycle over aliases and compatibility shims, and the epic executed it
   test fixtures, activation helpers, and docs stop declaring explicit entry-point keys for
   any namespace that now carries a `spool` var (F14's precedence rule keeps the old shape
   working during the window, but the siblings' own releases ship converted). Each
-  convention-dependent release **raises its `:skein/min` floor to the skein-src marker
-  that ships Phase A**, so an older runtime cannot select it. New `v<int>` markers with
+  convention-dependent release **raises its `:skein/min` floor to `v1`**, which must include
+  landed Phase A, so an older runtime cannot select it. The separate hitl card `b3v1r` owns
+  that Skein stamp; this feature must not create it, and Phase B remains blocked until
+  `b3v1r` closes with the verified marker. New `v<int>` sibling markers carry
   `release-exception.md` records per each repo's precedent (removing an exported name is a
   break; breaks take new names/markers, never aliases). The cutover feature bumps pins,
   converts the sibling-backed init.clj entries, removes the grammar keys (Phase C),
   refreshes the canonical world, and verifies live — the same close-out shape feature
   `rtnfv` performed for epic `waq0l` (pin bumps + canonical-world refresh + live chime
   verification). Sibling suites hard-code `../skein-src` (recorded in `waq0l` note
-  `5bae1`), so skein-src lands first.
+  `5bae1`), so Phase A lands before the external stamp and sibling releases.
 
 ## PROP-Dsp-001.P5 Non-goals
 
@@ -356,9 +358,11 @@ and it fixes the transitional rule's shape:
    remaining sibling-backed literal triples against the sibling exports while both exist
    (precedence hides var/key drift, so mirroring still needs its guard), and dies in
    Phase C with the literals it polices.
-2. **Phase B (siblings):** devflow/kanban/agent-harness export `spool`, delete `module`,
-   convert their own fixtures/configs/helpers/docs, raise `:skein/min` floors to the
-   Phase A skein-src marker, and release new markers per G10.
+2. **Phase B (siblings, after external Skein v1 stamp):** after Phase A lands and hitl card
+   `b3v1r` closes with the Skein `v1` marker, devflow/kanban/agent-harness export `spool`,
+   delete `module`, convert their own fixtures/configs/helpers/docs, raise `:skein/min`
+   floors to `v1`, and release new markers per G10. The coordinator may prepare this work
+   earlier, but must not publish convention-dependent releases against an unmarked core.
 3. **Phase C (cutover):** bump pins, drop the remaining sibling triples from init.clj,
    convert the remaining core tests and fixtures that exercise or generate explicit
    entry-point keys — known inventory to sweep: `test/skein/weaver_test.clj`,
@@ -391,9 +395,9 @@ end state. TEN-000@1 covers the break; sibling `:skein/min` floors gate their co
 - **S2 (in-tree):** 7 datum renames, 5 file-module `def spool` additions, init.clj in-tree
   conversion, parity-test narrowing, `activate-spool!` new signature and fixture sweep,
   docs (testing.md / writing-shared-spools.md / customisation.md), `make api-docs`.
-- **S3 (siblings):** `spool` exports + `module` deletions + own-surface conversions +
-  `:skein/min` floor raises + markers + release-exception records, suites green against
-  skein-src main.
+- **S3 (siblings, blocked on `b3v1r`):** `spool` exports + `module` deletions + own-surface
+  conversions + `:skein/min "v1"` floor raises + markers + release-exception records,
+  suites green against skein-src main after the external Skein v1 stamp.
 - **S4 (cutover):** pin bumps, init.clj sibling conversion, core test/fixture sweep,
   grammar-key removal + narrowed-parity-test deletion, Phase C spec delta, canonical world
   refresh + live verification.
