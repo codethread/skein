@@ -26,9 +26,11 @@
   so the findings logic loads on the test classpath; file reading mirrors
   the source reader surface conventions-check already scans."
   (:require [clojure.java.io :as io]
+            [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [clojure.tools.reader :as reader]
-            [clojure.tools.reader.reader-types :as reader-types]))
+            [clojure.tools.reader.reader-types :as reader-types]
+            [skein.api.spool.alpha :as spool-api]))
 
 (def ^:private entry-point-keys #{:contribute :reconcile})
 (def ^:private public-var-forms #{'def 'defonce 'defn 'defmacro})
@@ -47,25 +49,32 @@
 
 (defn spool-value-problem
   "Return a short reason string when `value` — the literal read from a
-  `(def spool …)` site — does not match the `::spool` shape, or nil when
-  it conforms. Structural only: symbols are not resolved and vars are not
-  deref'd, so this cannot replace the runtime spec (G6a)."
+    `(def spool …)` site — does not match the `::spool` shape, or nil when
+    it conforms. Structural only: quoted source symbols are normalized to the
+    values evaluation produces, then the authoritative runtime `::spool` spec
+    decides validity; symbols are never resolved and vars are never deref'd
+    (G6a)."
   [value]
   (when-not (map? value)
     (throw (ex-info "spool-value-problem expects a non-map guard upstream" {})))
-  (let [unknown (remove entry-point-keys (keys value))
-        present (filter #(contains? value %) entry-point-keys)]
-    (cond
-      (seq unknown)
-      (str "has unsupported key" (when (next unknown) "s") " "
-           (str/join ", " (sort-by str unknown)))
+  (let [normalized (into {} (map (fn [[field form]]
+                                   [field (authored-symbol form)]))
+                         value)]
+    (when-not (s/valid? ::spool-api/spool normalized)
+      (let [unknown (remove entry-point-keys (keys value))
+            present (filter #(contains? value %) entry-point-keys)]
+        (cond
+          (seq unknown)
+          (str "has unsupported key" (when (next unknown) "s") " "
+               (str/join ", " (sort-by str unknown)))
 
-      (empty? present)
-      "declares neither :contribute nor :reconcile"
+          (empty? present)
+          "declares neither :contribute nor :reconcile"
 
-      :else
-      (when-let [bad (first (remove #(authored-symbol (get value %)) present))]
-        (str "entry point " bad " must be a quoted symbol (e.g. `'my.ns/fn`)")))))
+          :else
+          (when-let [bad (first (remove #(authored-symbol (get value %)) present))]
+            (str "entry point " bad
+                 " must be a quoted symbol (e.g. `'my.ns/fn`)")))))))
 
 (defn- value-problem
   "Reason string for any authored `value`, mapping a non-map to its own
