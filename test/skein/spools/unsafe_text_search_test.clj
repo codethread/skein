@@ -14,7 +14,7 @@
 (deftest production-return-coverage-is-derived-from-unsafe-text-search-provenance
   (with-runtime
     (fn [rt _]
-      (test-support/activate-spool! rt :skein/spools-unsafe-text-search unsafe-text-search/module)
+      (test-support/activate-spool! rt :skein/spools-unsafe-text-search 'skein.spools.unsafe-text-search)
       (repl/strand! "Search return coverage" {"topic" "returns"})
       (let [entries (filterv #(= 'skein.spools.unsafe-text-search (:provenance %)) (weaver/ops rt))
             missing (mapv :name (filter #(not (contains? % :returns)) entries))

@@ -161,16 +161,23 @@
 (defn activate-spool!
   "Activate a spool module on a bare test runtime from the JVM image.
 
-  Assocs `:load :image` (plus an optional `:after` edge) onto the spool's
-  exported base declaration and declares it under `key` via `runtime/module!`,
-  which refreshes the module immediately outside startup collection
-  (ADR-003.P7: tests pass the base datum; production carries `:spools` guards
-  instead). Throws with the full refresh result unless the module's outcome is
-  applied or unchanged, so a fixture failure names the refusal instead of
-  cascading into unrelated assertions. Returns the refresh result."
-  [rt key base-decl & {:keys [after]}]
-  (let [result (runtime/module! rt key (cond-> (assoc base-decl :load :image)
-                                         after (assoc :after after)))
+  `target` is normally the spool's namespace symbol: `activate-spool!` requires
+  it and declares an image module `{:ns <ns> :load :image}` under `key`, so the
+  coordinator resolves the entry points from the namespace's `def spool` var and
+  the fixture needs no incidental `:require` just to reach a datum
+  (PROP-Dsp-001.G8). During the Phase A window `target` may instead be an
+  explicit declaration map for a namespace with no `spool` var yet (a pinned
+  sibling); the caller loads that namespace and its keys are used directly. Either
+  way `:load :image` (plus an optional `:after` edge) is assoc'd and
+  `runtime/module!` refreshes the module immediately outside startup collection.
+  Throws with the full refresh result unless the module's outcome is applied or
+  unchanged, so a fixture failure names the refusal instead of cascading into
+  unrelated assertions. Returns the refresh result."
+  [rt key target & {:keys [after]}]
+  (let [decl (if (symbol? target)
+               (do (require target) {:ns target :load :image})
+               (assoc target :load :image))
+        result (runtime/module! rt key (cond-> decl after (assoc :after after)))
         status (get-in result [:modules key :status])]
     (when-not (contains? #{:applied :unchanged} status)
       (throw (ex-info "Spool module activation failed"

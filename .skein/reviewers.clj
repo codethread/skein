@@ -305,3 +305,11 @@
   {agents/roster-kind {:change-review change-review
                        :complex-patch-review complex-patch-review
                        :docs-review docs-review}})
+
+;; Entry-point declaration under the uniform `def spool` convention
+;; (PROP-Dsp-001.G1/Q4): a file module is not a spool, but one name and one rule
+;; cover every module-loadable namespace. This roster owns no live resource, so
+;; it declares no `:reconcile`. Unqualified symbols resolve against this file's
+;; namespace.
+(def spool
+  {:contribute 'contribute})

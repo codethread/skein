@@ -445,16 +445,14 @@
                 :module/key (:module/key ctx)
                 :reconciler 'skein.spools.chime/reconcile})))))
 
-(def module
-  "Base module declaration datum for the chime spool (ADR-003.P7).
+(def spool
+  "Entry-point declaration for the chime spool (PROP-Dsp-001 `def spool`
+  convention).
 
-  The authored `:ns`/`:contribute`/`:reconcile` triple every consumer starts
-  from. A consumer whose config can load this namespace assocs its world's
-  `:spools` guards onto the datum; cold startup config, which runs before
-  spool sources are loadable, mirrors it literally under the init.clj parity
-  test; bare-test fixtures assoc `:load :image`. Every variant is `module!`
-  input, validated against `skein.api.runtime.alpha`'s `::module-opts`
-  grammar."
-  {:ns 'skein.spools.chime
-   :contribute 'skein.spools.chime/contribute
-   :reconcile 'skein.spools.chime/reconcile})
+  The refresh coordinator resolves `:contribute`/`:reconcile` from this public
+  var at every module evaluation, so a consumer declares only a source target
+  and world policy (`{:ns 'skein.spools.chime :spools [...]}`) and never mirrors
+  the pair. Unqualified symbols resolve against this namespace; fn values are
+  rejected (ADR-002.O1)."
+  {:contribute 'contribute
+   :reconcile 'reconcile})

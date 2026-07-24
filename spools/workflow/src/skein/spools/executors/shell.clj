@@ -393,17 +393,15 @@
                 :module/key (:module/key ctx)
                 :reconciler 'skein.spools.executors.shell/reconcile})))))
 
-(def module
-  "Base module declaration datum for the shell executor (ADR-003.P7).
+(def spool
+  "Entry-point declaration for the shell executor (PROP-Dsp-001 `def spool`
+  convention).
 
-  The authored `:ns`/`:contribute`/`:reconcile` triple every consumer starts
-  from. Callers order it after the workflow module with an `:after` edge on
-  the workflow module's key (the executor kind must exist before this
-  contribution publishes) and assoc their world's `:spools` guards or
-  `:load :image` — cold startup config, which runs before spool sources are
-  loadable, mirrors it literally under the init.clj parity test. Every
-  variant is `module!` input, validated against `skein.api.runtime.alpha`'s
-  `::module-opts` grammar."
-  {:ns 'skein.spools.executors.shell
-   :contribute 'skein.spools.executors.shell/contribute
-   :reconcile 'skein.spools.executors.shell/reconcile})
+  The refresh coordinator resolves `:contribute`/`:reconcile` from this public
+  var at every module evaluation, so a consumer declares only a source target
+  and world policy and never mirrors the pair. Callers still order it after the
+  workflow module with an `:after` edge on the workflow module's key (the
+  executor kind must exist before this contribution publishes). Unqualified
+  symbols resolve against this namespace; fn values are rejected (ADR-002.O1)."
+  {:contribute 'contribute
+   :reconcile 'reconcile})

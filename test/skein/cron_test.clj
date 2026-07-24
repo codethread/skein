@@ -38,7 +38,7 @@
     {:prefix "skein-cron"}
     (fn [rt _config-dir]
       (test-alpha/set-clock! rt (test-alpha/manual-clock (Instant/ofEpochSecond 0)))
-      (test-support/activate-spool! rt :skein/spools-cron cron/module)
+      (test-support/activate-spool! rt :skein/spools-cron 'skein.spools.cron)
       (f rt))))
 
 (defn- cron-wake
