@@ -191,7 +191,11 @@ the old lifecycle over aliases and compatibility shims, and the epic executed it
   evaluation** from the module's loaded namespace (F2) — for `:ns` targets, `:file` targets
   (via the file's single declared `ns`, F3), and `:load :image` targets (from the JVM
   image). The convention is documented API: stated once in `skein.api.runtime.alpha`'s
-  docstrings and the spool-authoring guide, enforced loudly by the runtime.
+  docstrings and the spool-authoring guide, enforced loudly by the runtime. During Phase A's
+  transitional window, legacy explicit entry-point values remain valid even when the target
+  namespace has no `spool` var. Resolution fills only absent entry-point fields from `spool`;
+  an explicit value wins per key. Phase C removes the explicit keys and therefore removes
+  this transitional merge.
 - **PROP-Dsp-001.G2 (`::spool` shape — settled):** a map with optional `:contribute` and
   `:reconcile` **symbols**, at least one present; **no `:ns` key** (the namespace is
   implicit in where the var lives; the old datum's `:ns` key is dropped in the rename).
@@ -214,7 +218,8 @@ the old lifecycle over aliases and compatibility shims, and the epic executed it
 - **PROP-Dsp-001.G4 (image mode):** delete decision B's explicit-`:contribute` requirement
   (both the `normalize-declaration` refusal at `module_graph.clj:97-102` and the spec
   clause at `alpha.clj:211`); image evaluation resolves `<ns>/spool` from the JVM image; a
-  missing var or unloaded ns is a loud evaluation-time `:failed` outcome. The
+  missing var or unloaded ns is a loud evaluation-time `:failed` outcome once no explicit
+  Phase A entry point supplies the field. The
   declaration→evaluation locality move for this one case is accepted and named (F1).
 - **PROP-Dsp-001.G5 (loud enforcement, enumerated):** evaluation-time failures with
   named-field, actionable errors for: a `spool` var value that is not a map, has unknown
@@ -236,6 +241,13 @@ the old lifecycle over aliases and compatibility shims, and the epic executed it
   validate with plain `s/valid?`/`s/explain-data` against `::spool`; no separate helper fn
   ships unless the implementer finds the spec alone insufficient for actionable errors, in
   which case the helper is a thin named wrapper over the same spec, not a second validator.
+- **PROP-Dsp-001.G6a (repository lint — settled):** `lint-conventions` rejects a public
+  `spool` var in this repository's module-loadable namespaces when its authored value does
+  not satisfy `::spool`. The rule uses the existing scan and aggregation seams in
+  `scripts/quality/conventions_check.clj`, with ratchet coverage in
+  `test/skein/quality/conventions_check_test.clj`. It is a repository guard, not a second
+  runtime contract and not protection for external consumers; runtime validation remains
+  authoritative everywhere.
 - **PROP-Dsp-001.G7 (in-tree conversion):** rename the 7 in-tree `def module` datums to
   `def spool` and drop their `:ns` keys; the 5 entry-point-carrying file modules (P1
   inventory) gain `(def spool …)` in their file ns; every `.skein/init.clj` entry drops
@@ -307,12 +319,10 @@ the old lifecycle over aliases and compatibility shims, and the epic executed it
 - **PROP-Dsp-001.Q1 (settled — recorded for history):** symbols vs. fn values was open in
   the first draft; ADR-002.O1 settles it (F12, G2). Fn values are rejected; unqualified
   symbols are coordinator-qualified.
-- **PROP-Dsp-001.Q2 (reserve the name):** should `lint-conventions` flag a `spool` var
-  outside the `::spool` shape in module-loadable namespaces, so an incidental
-  `(def spool …)` cannot silently become (or corrupt) a module declaration? Cheap and
-  probably worth it; decide in the core feature. (The runtime contract itself is G5's
-  public-var rule; the lint is belt-and-braces for this repo only — it cannot protect
-  external consumers, F8.)
+- **PROP-Dsp-001.Q2 (settled — reserve the name):** the user approved the repository-only
+  `lint-conventions` guard in G6a. It catches an incidental or malformed public
+  `(def spool …)` in module-loadable namespaces before merge. The runtime contract remains
+  G5's public-var rule; the lint cannot protect external consumers (F8).
 - **PROP-Dsp-001.Q3 (C19 supersession wording — needs user sign-off):** G9 requires the
   SPEC-003 delta to record the deliberate break of C19's accretion promise for
   `skein.api.runtime.alpha/module!`. The recommended shape: a one-paragraph C19 exception
@@ -334,9 +344,11 @@ and it fixes the transitional rule's shape:
 
 1. **Phase A (skein-src, core + in-tree):** coordinator resolves `spool` per G1/G2/G2a;
    grammar *temporarily* still accepts `:contribute`/`:reconcile`, and during the window an
-   **explicitly declared key takes precedence over the `spool` var** — silently, documented
-   in the Phase A spec delta as transitional (a hard conflict here would fail the pinned
-   sibling suites the moment in-tree namespaces gain `spool` vars, F14). The G5
+   **explicitly declared key takes precedence over the `spool` var per key** — silently,
+   documented in the Phase A spec delta as transitional. A complete legacy explicit
+   declaration remains valid when its target has no `spool` var; the coordinator consults
+   the var only for absent fields. A hard conflict here would fail the pinned sibling suites
+   the moment in-tree namespaces gain `spool` vars (F14). The G5
    forms-vs-`:contribute` conflict is unaffected (it involves the var and collected forms,
    not declared keys). In-tree spools rename to `def spool`; in-tree init.clj entries drop
    their triples. The parity test is **narrowed, not deleted**: it keeps asserting the
@@ -363,9 +375,18 @@ end state. TEN-000@1 covers the break; sibling `:skein/min` floors gate their co
 
 - **S1 (core):** coordinator resolution (G1/G2) + resolved-state retention and
   status/plan exposure (G2a) + Phase A transitional precedence + G5 loud paths + `::spool`
-  spec in `skein.api.spool.alpha` (G6) + Phase A SPEC deltas (G9, including the Q3 C19
-  wording for user review) + coordinator tests (including a removal-by-omission teardown
-  test through the retained entry points, and a precedence-window test).
+  spec in `skein.api.spool.alpha` (G6) + repository lint and ratchet tests (G6a) + Phase A
+  SPEC deltas (G9, including the Q3 C19 wording for user review) + coordinator tests. The
+  coordinator gates include:
+  - a precedence-window matrix proving explicit values win per key, absent fields come from
+    `spool`, and complete legacy explicit declarations still work with no `spool` var;
+  - a true `:load :image` path with only a preloaded namespace as setup, no source
+    collection/load and no injected callable, covering both success and missing-`spool`
+    failure;
+  - a last-good sequence in which entry points resolve successfully, a later evaluation
+    fails, `reload-code!` runs, and the module is then removed by omission. The prior
+    reconciler must run exactly once with `:removed`; teardown, dependency ordering, and
+    exposed last-good status must remain intact.
 - **S2 (in-tree):** 7 datum renames, 5 file-module `def spool` additions, init.clj in-tree
   conversion, parity-test narrowing, `activate-spool!` new signature and fixture sweep,
   docs (testing.md / writing-shared-spools.md / customisation.md), `make api-docs`.
