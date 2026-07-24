@@ -300,9 +300,10 @@
   `:contribute` nor an explicit one is present, the module's contribution is the
   declaration data collected from the authoring forms evaluated in its source,
   so a plain file of authoring forms is a complete module
-  (DELTA-OlrRepl-001.CC3). Resolving a `:contribute` entry point while the same
-  source load collected authoring forms is a loud conflict; a `:reconcile`-only
-  `spool` var composes with authoring forms.
+  (DELTA-OlrRepl-001.CC3). A `spool` var supplying `:contribute` while the same
+  source load collected authoring forms is a loud conflict; a legacy explicit
+  `:contribute` retains its Phase A behavior, and a `:reconcile`-only `spool`
+  var composes with authoring forms.
 
   `:load :image` (SPEC-004.C45/C46, ADR-003.P4) trusts the
   already-loaded JVM image for the `:ns` target: refresh performs no source

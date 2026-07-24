@@ -2,7 +2,7 @@ tasks:
   - id: 1
     description: Phase A core convention resolution and retained last-good
     task_file: tasks/001-core-convention-resolution.md
-    status: in_progress
+    status: complete
     blocked_by: []
   - id: 2
     description: Phase A repository spool-var lint
@@ -12,7 +12,7 @@ tasks:
   - id: 3
     description: Phase A in-tree def spool conversion
     task_file: tasks/003-in-tree-spool-conversion.md
-    status: pending
+    status: in_progress
     blocked_by: [1]
   - id: 4
     description: Phase A ADR, root specs, authoring docs, and API docs
