@@ -1,0 +1,42 @@
+# REPL API delta for the def-spool convention (Phase A)
+
+**Document ID:** `DELTA-Dsp-001`
+**Root spec:** [repl-api.md](../../../specs/repl-api.md)
+**Feature:** [../proposal.md](../proposal.md) (`PROP-Dsp-001`)
+**Status:** Draft
+**Last Updated:** 2026-07-24
+**Configuration identification:** Document IDs order as document type, short name, sequential id, then optional version: `DELTA-Dsp-001` for v1 and `DELTA-Dsp-001@2` for v2. Omit `@1`. Prefix every nested point ID with the full document ID, for example `DELTA-Dsp-001.CC1`, so references are globally grepable and do not clash across documents.
+
+## DELTA-Dsp-001.P1 Summary
+
+Phase A of the `def spool` convention (PROP-Dsp-001) moves a module's entry points out of its declaration and into a `(def spool …)` var the coordinator resolves by convention. This delta owns the SPEC-003 surface: the `module!` grammar (`::module-opts`), the `::spool` author-validation spec in `skein.api.spool.alpha`, the public-name reservation, the repository lint gate, and the recorded SPEC-003.C19 accretion-break obligation. The runtime resolution mechanics, image-mode change, retained resolved entry points, and loud enforcement live in the Weaver Runtime delta (`DELTA-Dsp-002`).
+
+Phase A is transitional by design: the `module!` grammar still accepts the legacy entry-point keys so the pinned sibling suites stay green while in-tree namespaces gain `spool` vars (PROP-Dsp-001.P7). The accretion promise is not yet broken in Phase A; the break completes in Phase C, and this delta records the exception ahead of it for user sign-off.
+
+## DELTA-Dsp-001.P2 Contract changes
+
+- **DELTA-Dsp-001.CC1 (`module!` entry points become optional, convention-resolved):** In SPEC-003.P5, `runtime/module!`'s `:contribute` and `:reconcile` become optional for every module, not only image modules. When a field is absent the coordinator resolves it from the public `spool` var in the module's namespace (`DELTA-Dsp-002` owns the resolution and its loud failures). During Phase A's transitional window the grammar still accepts an explicit `:contribute`/`:reconcile`, which wins per key over the `spool` var; a complete legacy declaration whose target namespace has no `spool` var still activates. The one-`:ns`-or-`:file` source rule, `:spools`/`:after`/`:required?` policy, and `:load :image` mode are otherwise unchanged; image mode's own `:contribute` requirement is lifted by `DELTA-Dsp-002` against SPEC-004.C45/C46. The SPEC-003.P6 example spool init drops its explicit `:contribute`/`:reconcile` lines: the target consumer shape is source target plus world policy, with the entry points declared once in the module namespace's `spool` var.
+
+- **DELTA-Dsp-001.CC2 (`::spool` author-validation spec, single source):** `skein.api.spool.alpha` gains a registered `s/def ::spool`: a map with optional `:contribute` and `:reconcile` **symbols**, at least one present, and **no `:ns` key** — the namespace is implicit in where the var lives. Fn values are rejected (ADR-002.O1); unqualified symbols are permitted and are qualified by the coordinator at resolution time (`DELTA-Dsp-002.CC1`). Authors validate a candidate declaration with plain `s/valid?`/`s/explain-data` against `::spool`. The runtime's own enforcement (`DELTA-Dsp-002.CC5`) validates over this same spec, so the convenience surface and the enforcement path cannot drift; any thin helper that ships wraps the same spec rather than adding a second validator. This accretes onto the already-blessed `skein.api.spool.alpha` namespace (SPEC-005.C2) within its compatibility tier.
+
+- **DELTA-Dsp-001.CC3 (public-name reservation):** A **public** var named `spool` in a module-loadable namespace *is* that module's declaration, always. Private `spool` vars are ignored, and a namespace that is never activated as a module is unaffected. This reserves the public name `spool` in module namespaces as documented API — stated once in `skein.api.runtime.alpha`'s docstrings and the spool-authoring guide, enforced loudly by the runtime.
+
+- **DELTA-Dsp-001.CC4 (repository lint gate):** `lint-conventions` gains a rule that rejects a public `spool` var in this repository's module-loadable namespaces whose authored value does not satisfy `::spool`, using the existing convention-scan and aggregation seams alongside the `quality.conventions-check` gate SPEC-003.C19a already describes. It is a repository guard that catches an incidental or malformed `(def spool …)` before merge; it is not a second runtime contract and cannot protect external consumers. Runtime validation (`DELTA-Dsp-002.CC5`) remains authoritative everywhere.
+
+- **DELTA-Dsp-001.CC5 (SPEC-003.C19 accretion break — recorded, sign-off-gated, completes in Phase C):** Phase C removes `:contribute` and `:reconcile` from `skein.api.runtime.alpha`'s accepted `::module-opts` grammar. Withdrawing an accepted input key breaks C19's accretion promise for that subnamespace, so the break is recorded now and promoted into SPEC-003.C19 only when Phase C lands, after user sign-off (PROP-Dsp-001.Q3). In Phase A the keys are still accepted, so SPEC-003.C19 is not yet false and this delta stages the exception rather than merging it. The exact wording proposed for the C19 exception, for delegated-user-authority review:
+
+  > **SPEC-003.C19 exception — def-spool convention (Phase C).** Removing `:contribute` and `:reconcile` from `skein.api.runtime.alpha`'s accepted `module!` option grammar (`::module-opts`) withdraws two accepted input keys rather than accreting, breaking C19's accretion promise for that subnamespace. The break is deliberate under TEN-000@1 (alpha software: remove, never shim) and binding ruling PROP-Dsp-001.R5 ("TEN-000 is still valid"). The accretion-preserving alternative — a parallel `module!` under a new `skein.api.*.alpha` subnamespace — was considered and rejected: a second `module!` differing only by dropping two keys is the alias/shim R5 forbids, and it would leave two live declaration grammars for the one activation path. What replaces the keys is documented API of equal standing: a module's entry points live in a `(def spool …)` var resolved from its namespace, so the contract users read from the docs is unchanged in kind, only in where it is authored. This exception is scoped to the two `module!` keys; it is not a licence to withdraw other `skein.api.*.alpha` surface without its own recorded exception.
+
+## DELTA-Dsp-001.P3 Design decisions
+
+- **DELTA-Dsp-001.D1 (symbols, not fn values):** `::spool` entry points are fully qualified or coordinator-qualified symbols. **Rationale:** ADR-002.O1 requires declarations to stay printable, diffable data so `plan`, `status`, and shadow-by-redeclare work without evaluating anything; a closure voids all three. `def spool` feeds the same published declaration, so the same invariant holds. **Rejected:** fn values in the var (ADR-002.O1, rejected on sight).
+
+- **DELTA-Dsp-001.D2 (spec, not protocol):** Author validation is a registered spec the runtime enforcement shares. **Rationale:** a spec is one source of truth for both surfaces and adds nothing a protocol would (PROP-Dsp-001.NG5). **Rejected:** a `defprotocol` forcing a type where a map suffices.
+
+- **DELTA-Dsp-001.D3 (one `spool` name, including non-spool `:file` modules):** Workspace `:file` modules that are not spools still declare `(def spool …)` under one uniform convention. **Rationale:** one name and one rule beats forking the convention on a second var name (PROP-Dsp-001.Q4). The misnomer is recorded consciously. **Rejected:** a second var name for file modules.
+
+- **DELTA-Dsp-001.D4 (record the C19 exception, do not add a subnamespace):** See CC5. **Rejected:** a parallel `module!` under a new subnamespace, which is the shim-shaped alias R5 forbids and would leave two live grammars.
+
+## DELTA-Dsp-001.P4 Open questions
+
+- **DELTA-Dsp-001.Q1:** The exact SPEC-003.C19 exception wording in CC5 needs user sign-off before it is promoted into the root spec at Phase C (PROP-Dsp-001.Q3). It is not landed silently.
