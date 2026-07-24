@@ -581,12 +581,8 @@ If a prerequisite is a blessed `skein.api.*.alpha` namespace, document the names
 ### README activation snippet
 
 Include an **Activation** section with the complete trusted `init.clj` snippet.
-The consumer owns the runtime and declares modules explicitly. It names a
-source target and world policy only — `:spools` for every approved root
-prerequisite, `:after` when one module depends on another, `:required?` for a
-loud missing-prerequisite refusal — and never mirrors the spool's
-`:contribute`/`:reconcile` entry points, which the spool declares in its own
-`spool` var (below).
+
+The consumer owns the runtime and declares modules explicitly. It names a source target and world policy only — `:spools` for every approved root prerequisite, `:after` when one module depends on another, `:required?` for a loud missing-prerequisite refusal — and never mirrors the spool's `:contribute`/`:reconcile` entry points, which the spool declares in its own `spool` var (below).
 
 ```clojure
 (require '[skein.api.current.alpha :as current]
@@ -600,9 +596,7 @@ loud missing-prerequisite refusal — and never mirrors the spool's
    :required? true})
 ```
 
-Under `:required? true`, missing or failed root prerequisites refuse refresh.
-Namespace loading, contribution, publication, and reconcile failures are
-reported in the joined refresh result and `runtime/status`.
+Under `:required? true`, missing or failed root prerequisites refuse refresh. Namespace loading, contribution, publication, and reconcile failures are reported in the joined refresh result and `runtime/status`.
 
 ### Declare entry points in a `spool` var
 
