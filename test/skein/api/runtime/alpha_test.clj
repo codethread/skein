@@ -281,7 +281,13 @@
                              :spools [] :after [] :required? false}]
       (is (s/valid? ::runtime/module-declaration image-declaration))
       (is (not (s/valid? ::runtime/module-declaration
-                         (assoc image-declaration :load :classpath))))))
+                         (assoc image-declaration :load :classpath))))
+      (is (not (s/valid? ::runtime/module-declaration
+                         (assoc image-declaration :contribute 'unqualified))))
+      (is (not (s/valid? ::runtime/module-declaration
+                         (assoc image-declaration :reconcile :not-a-symbol))))
+      (is (not (s/valid? ::runtime/module-declaration
+                         (assoc image-declaration :extra :unsupported))))))
   (testing "module-opts names the public input grammar module! consults"
     (let [image-opts {:ns 'skein.api.runtime.alpha-test :load :image
                       :contribute 'skein.api.runtime.alpha-test/image-contribute}]

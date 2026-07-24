@@ -218,14 +218,21 @@
               (and (coll? (:after %)) (every? keyword? (:after %))))
          #(or (not (contains? % :required?)) (boolean? (:required? %)))))
 
-;; This result shape only asserts the normalized declaration carries exactly
-;; one source target and policy vectors; `::module-opts` owns the input grammar.
+;; This result shape owns the closed normalized declaration returned by
+;; `module!`; `::module-opts` owns the less-normalized public input grammar.
 (s/def ::module-declaration
   (s/and map?
+         #(every? #{:ns :file :load :spools :after :contribute :reconcile
+                    :required?}
+                  (keys %))
          #(not= (contains? % :ns) (contains? % :file))
          #(or (not (contains? % :ns)) (symbol? (:ns %)))
          #(or (not (contains? % :file)) (string? (:file %)))
          #(or (not (contains? % :load)) (= :image (:load %)))
+         #(or (not (contains? % :contribute))
+              (qualified-symbol? (:contribute %)))
+         #(or (not (contains? % :reconcile))
+              (qualified-symbol? (:reconcile %)))
          #(vector? (:spools %))
          #(vector? (:after %))
          #(boolean? (:required? %))))
