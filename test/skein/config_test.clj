@@ -1194,6 +1194,8 @@
   (let [decl (get-in (runtime/status rt) [:modules :kanban/tracker])]
     (is (some? decl) ":kanban/tracker is a declared module")
     (is (true? (:required? decl)))
+    (is (nil? (ns-resolve 'kanban-tracker 'install!))
+        "the workspace module exposes no legacy installer")
     (is (re-find #"Bound tracker: devflow" (:tracker (op! "kanban" ["about"]))))))
 
 (deftest kanban-tracker-devflow-projection-contract
