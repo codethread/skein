@@ -4,9 +4,10 @@
 
 > **Cold-read note.** This proposal came out of a live design discussion with the user
 > immediately after epic `waq0l` landed. The user's rulings in P2 are **binding direction**,
-> quoted verbatim so implementers do not re-derive different guidance from the ADR/tenet
-> record alone. Where this proposal and older P7 prose disagree, this proposal wins; the
-> ADR successor decision (G9) makes that supersession durable.
+> quoted verbatim apart from normalizing the alpha tenet's identifier to its current
+> `TEN-000@1` name, so implementers do not re-derive different guidance from the ADR/tenet
+> record alone. Where this proposal and older P7 prose disagree, this proposal wins; the ADR
+> successor decision (G9) makes that supersession durable.
 
 ## PROP-Dsp-001.P1 Problem
 
@@ -69,7 +70,7 @@ the old lifecycle over aliases and compatibility shims, and the epic executed it
   the loudness moves inside the deep module (G5), it does not get relaxed.
 - **R4 (reload semantics inviolable):** "To be clear, i don't want to break any of
   runtime/reload semantics we have worked hard to build." See NG1.
-- **R5 (breakage policy):** "TEN-000 is still valid" — grammar keys are removed, not
+- **R5 (breakage policy):** "TEN-000@1 is still valid" — grammar keys are removed, not
   aliased or shimmed. (The SPEC-003.C19 consequence of this ruling needs explicit
   treatment: G9 and Q3.)
 - **R6 (tests):** "tests absorb the complexity too and have ergonomic handlers for users."
@@ -171,7 +172,7 @@ the old lifecycle over aliases and compatibility shims, and the epic executed it
 - **F13 — SPEC-003.C19 is implicated and must be addressed, not skipped.** C19 promises
   accretion-based back-compat within each `skein.api.*.alpha` subnamespace, with breaking
   rethinks moving to a new subnamespace. Removing accepted `module!` opts keys from
-  `skein.api.runtime.alpha` is a breaking change under C19's own definition. R5 ("TEN-000
+  `skein.api.runtime.alpha` is a breaking change under C19's own definition. R5 ("TEN-000@1
   is still valid") points at recording an explicit exception rather than a new
   subnamespace, but this supersession must be **written into the SPEC-003 delta and the
   ADR successor with user sign-off** (G9, Q3) — never landed silently.
