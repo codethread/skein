@@ -388,9 +388,13 @@
 (deftest unreadable-file-site-is-surfaced-as-a-finding
   (let [findings (spool-var/findings
                   [{:filename "spools/tidy/src/skein/spools/tidy.clj"
-                    :read-error "EOF while reading"}])]
+                    :read-error "EOF while reading"
+                    :read-error/class "clojure.lang.ExceptionInfo"
+                    :read-error/data {:line 7}}])]
     (is (= 1 (count findings)))
-    (is (re-find #"could not read file: EOF while reading" (first findings)))))
+    (is (re-find #"could not read file: EOF while reading" (first findings)))
+    (is (re-find #"clojure.lang.ExceptionInfo" (first findings)))
+    (is (re-find #"data=\{:line 7\}" (first findings)))))
 
 (deftest module-root-enumeration-fails-loudly
   (let [directory-files! (ns-resolve 'quality.spool-var 'directory-files!)

@@ -164,16 +164,21 @@
 
 (defn findings
   "Turn `sites` ({:filename :line :form-kind :private? :value :has-value?
-  :read-error})
+  :read-error :read-error/class :read-error/data})
   into finding strings. Public sites whose authored value fails the shape
   check, or that carry no value at all, are findings; private sites are
   ignored, and a file the scanner could not read is itself a finding."
   [sites]
-  (for [{:keys [filename line form-kind private? value has-value? read-error]} sites
-        :let [finding
+  (for [{:keys [filename line form-kind private? value has-value? read-error]
+         :as site} sites
+        :let [error-class (:read-error/class site)
+              error-data (:read-error/data site)
+              finding
               (cond
                 read-error
-                (str filename ": spool-var scan could not read file: " read-error)
+                (str filename ": spool-var scan could not read file: " read-error
+                     (when error-class (str " [" error-class "]"))
+                     (when (seq error-data) (str " data=" (pr-str error-data))))
 
                 private? nil
 
@@ -229,7 +234,10 @@
         site (try
                (map #(assoc % :filename (.getPath file)) (def-spool-sites file))
                (catch Exception e
-                 [{:filename (.getPath file) :read-error (ex-message e)}]))]
+                 [{:filename (.getPath file)
+                   :read-error (ex-message e)
+                   :read-error/class (.getName (class e))
+                   :read-error/data (ex-data e)}]))]
     site))
 
 (defn check
