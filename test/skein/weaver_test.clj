@@ -4389,7 +4389,22 @@
           (let [result (runtime/module! rt :aliased-keyword-file {:file source})]
             (is (= :applied (:status result)))
             (is (= :applied
-                   (get-in result [:modules :aliased-keyword-file :status])))))))))
+                   (get-in result [:modules :aliased-keyword-file :status])))))
+        (let [source "modules/repeated-owner.clj"
+              file (io/file workspace source)]
+          (io/make-parents file)
+          (spit file
+                (str "(ns " aliased-ns ")\n"
+                     "(ns " aliased-ns ")\n"
+                     "(defn contribute [_ctx] {})\n"
+                     "(def spool {:contribute 'contribute})\n"))
+          (let [result (runtime/module! rt :repeated-owner-file {:file source})]
+            (is (= :applied (:status result)))
+            (is (= (symbol (str aliased-ns) "contribute")
+                   (get-in result
+                           [:resolved/entry-points
+                            :repeated-owner-file
+                            :contribute])))))))))
 
 (deftest targeted-refresh-retains-prior-contribution-and-isolates-collisions
   (with-runtime

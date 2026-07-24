@@ -345,7 +345,7 @@
             (recur (into namespaces (namespaces-in-form form)))))))))
 
 (defn- declared-file-namespace [key file]
-  (let [namespaces (declared-file-namespaces file)]
+  (let [namespaces (vec (distinct (declared-file-namespaces file)))]
     (when (< 1 (count namespaces))
       (fail! (format/reflow
               "|Module :file source declares more than one namespace; convention
