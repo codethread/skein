@@ -139,11 +139,15 @@
   the declaring namespace (PROP-Dsp-001.G1/G2). Present keys only."
   [module-key declaration module-ns]
   (let [explicit (select-keys declaration [:contribute :reconcile])
-        from-var (when-let [spool-var (public-spool-var module-ns)]
-                   (into {}
-                         (map (fn [[field sym]]
-                                [field (qualify-entry-point module-ns sym)]))
-                         (validate-spool-value! module-key module-ns @spool-var)))]
+        absent (remove #(contains? explicit %) [:contribute :reconcile])
+        from-var (when (seq absent)
+                   (when-let [spool-var (public-spool-var module-ns)]
+                     (into {}
+                           (map (fn [[field sym]]
+                                  [field (qualify-entry-point module-ns sym)]))
+                           (select-keys
+                            (validate-spool-value! module-key module-ns @spool-var)
+                            absent))))]
     (merge from-var explicit)))
 
 (defn- normalize-kind-contribution [kind-id value]
@@ -485,11 +489,13 @@
             contribution (cond
                            contribute
                            (do
-                             (when (seq collected)
+                             (when (and (seq collected)
+                                        (not (contains? declaration :contribute)))
                                (fail! (format/reflow
-                                       "|Module resolves a :contribute entry point yet its
-                                        |source collected authoring forms; a :contribute fn
-                                        |would silently discard them, so choose one source")
+                                       "|Module's spool var supplies a :contribute entry
+                                        |point yet its source collected authoring forms; the
+                                        |function would silently discard them, so choose one
+                                        |source")
                                       {:module/key key
                                        :module/namespace module-ns
                                        :contribute contribute

@@ -4066,7 +4066,8 @@
             root-lib 'test/module-root
             explicit-ns (symbol (str "test.module.prec-explicit-" suffix))
             absent-ns (symbol (str "test.module.prec-absent-" suffix))
-            legacy-ns (symbol (str "test.module.prec-legacy-" suffix))]
+            legacy-ns (symbol (str "test.module.prec-legacy-" suffix))
+            malformed-legacy-ns (symbol (str "test.module.prec-malformed-legacy-" suffix))]
         (write-local-spool-module!
          workspace root-lib explicit-ns
          (str "(defn explicit-contribute [_ctx]"
@@ -4086,6 +4087,12 @@
          (str "(defn contribute [_ctx]"
               " {:queries {\"prec-legacy\" [:= [:attr :src] \"legacy\"]}})\n"
               "(defn reconcile [_ctx] {:reconciled true})"))
+        (write-local-spool-module!
+         workspace root-lib malformed-legacy-ns
+         (str "(defn contribute [_ctx]"
+              " {:queries {\"prec-malformed-legacy\" [:= [:attr :src] \"legacy\"]}})\n"
+              "(defn reconcile [_ctx] {:reconciled true})\n"
+              "(def spool [:malformed :but :unconsulted])"))
         (testing "an explicit :contribute wins per key while :reconcile fills from the spool var"
           (let [result (runtime/module!
                         rt :prec-explicit
@@ -4118,7 +4125,20 @@
             (is (= [:= [:attr :src] "legacy"] (get (graph/queries rt) "prec-legacy")))
             (is (= {:contribute (symbol (str legacy-ns) "contribute")
                     :reconcile (symbol (str legacy-ns) "reconcile")}
-                   (get-in result [:resolved/entry-points :prec-legacy])))))))))
+                   (get-in result [:resolved/entry-points :prec-legacy])))))
+        (testing "complete explicit keys do not consult or validate a public spool var"
+          (let [result (runtime/module!
+                        rt :prec-malformed-legacy
+                        {:ns malformed-legacy-ns :spools [root-lib]
+                         :contribute (symbol (str malformed-legacy-ns) "contribute")
+                         :reconcile (symbol (str malformed-legacy-ns) "reconcile")})]
+            (is (= :applied (:status result)))
+            (is (= [:= [:attr :src] "legacy"]
+                   (get (graph/queries rt) "prec-malformed-legacy")))
+            (is (= {:contribute (symbol (str malformed-legacy-ns) "contribute")
+                    :reconcile (symbol (str malformed-legacy-ns) "reconcile")}
+                   (get-in result
+                           [:resolved/entry-points :prec-malformed-legacy])))))))))
 
 (deftest image-module-resolves-spool-var-with-no-source-load-or-injected-callable
   (with-runtime
@@ -4175,7 +4195,8 @@
             nonsym-ns (ns-of "spool-nonsym")
             nonfn-ns (ns-of "spool-nonfn")
             conflict-ns (ns-of "spool-conflict")
-            compose-ns (ns-of "spool-compose")]
+            compose-ns (ns-of "spool-compose")
+            legacy-compose-ns (ns-of "legacy-compose")]
         (write-local-spool-module!
          workspace root-lib nonmap-ns
          "(defn contribute [_ctx] {}) (def spool [:not :a :map])")
@@ -4201,6 +4222,13 @@
          (str "(runtime/collect-module-entry! :queries \"compose-q\" [:= [:attr :v] 1])\n"
               "(defn reconcile [_ctx] {:reconciled true})\n"
               "(def spool {:reconcile 'reconcile})"))
+        (write-local-spool-module!
+         workspace root-lib legacy-compose-ns
+         (str "(runtime/collect-module-entry! :queries \"legacy-form\" [:= [:attr :v] 1])\n"
+              "(defn contribute [_ctx]"
+              " {:queries {\"legacy-explicit\" [:= [:attr :v] 2]}})\n"
+              "(defn reconcile [_ctx] {:reconciled true})\n"
+              "(def spool {:contribute 'contribute :reconcile 'reconcile})"))
         (letfn [(outcome [key ns-sym]
                   (get-in (runtime/module! rt key {:ns ns-sym :spools [root-lib]})
                           [:modules key]))]
@@ -4235,7 +4263,20 @@
               (is (= :applied (:reconcile/status o))
                   "the reconcile-only entry point still runs")
               (is (= {:reconcile (symbol (str compose-ns) "reconcile")}
-                     (get-in result [:resolved/entry-points :spool-compose]))))))))))
+                     (get-in result [:resolved/entry-points :spool-compose])))))
+          (testing "a legacy explicit :contribute remains legal beside collected forms"
+            (let [result (runtime/module!
+                          rt :legacy-compose
+                          {:ns legacy-compose-ns :spools [root-lib]
+                           :contribute (symbol (str legacy-compose-ns) "contribute")})
+                  o (get-in result [:modules :legacy-compose])]
+              (is (= :applied (:status o)))
+              (is (= [:= [:attr :v] 2] (get (graph/queries rt) "legacy-explicit")))
+              (is (not (contains? (graph/queries rt) "legacy-form"))
+                  "Phase A retains the legacy explicit-key behavior")
+              (is (= {:contribute (symbol (str legacy-compose-ns) "contribute")
+                      :reconcile (symbol (str legacy-compose-ns) "reconcile")}
+                     (get-in result [:resolved/entry-points :legacy-compose]))))))))))
 
 (deftest targeted-refresh-retains-prior-contribution-and-isolates-collisions
   (with-runtime
