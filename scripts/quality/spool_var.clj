@@ -78,10 +78,9 @@
 (defn- declaration-site
   "Return a site when `form` declares the public var name `spool`.
 
-  This only recognizes the var forms themselves. Traversal through the
-  small set of executable top-level wrappers belongs to
-  `declaration-sites` so ordinary call arguments, function bodies,
-  unrelated var values, and quoted data stay out of scope."
+  This only recognizes the var forms themselves. Traversal through evaluated
+  positions belongs to `declaration-sites`; quoted data and deferred function
+  bodies stay out of scope."
   [form]
   (when (and (seq? form)
              (contains? public-var-forms (first form))
@@ -101,23 +100,30 @@
        :value value
        :has-value? has-value?})))
 
-(def ^:private executable-wrapper-forms
-  '#{do when when-not if if-not cond})
+(def ^:private deferred-body-forms
+  '#{comment defn defmacro fn fn* quote var})
 
 (defn- declaration-sites
   "Return declaration sites in one reader form.
 
-  A top-level executable wrapper may contain the actual `def`, so descend
-  recursively through its executable child forms. No other form is
-  traversed: in particular `quote`, ordinary calls, function bodies, and
-  unrelated `def` values remain inert to this structural repository
-  check."
+  Descend through evaluated positions, including ordinary call arguments,
+  collection literals, and unrelated var initializers. Quoted data and
+  deferred function/macro bodies are not evaluated while a module loads, so
+  stop at those forms. This remains a structural repository check rather than
+  a macro-expansion or runtime-resolution pass."
   [form]
   (if-let [site (declaration-site form)]
     [site]
-    (if (and (seq? form) (contains? executable-wrapper-forms (first form)))
-      (mapcat declaration-sites (rest form))
-      [])))
+    (cond
+      (seq? form)
+      (if (contains? deferred-body-forms (first form))
+        []
+        (mapcat declaration-sites (rest form)))
+
+      (coll? form)
+      (mapcat declaration-sites form)
+
+      :else [])))
 
 (defn def-spool-sites
   "Return declaration sites for every public-var form named `spool` in a
@@ -126,9 +132,8 @@
   A valid site uses `def`; `defonce`, `defn`, and `defmacro` sites are
   returned so `findings` can reject them as malformed declarations. The
   var name must be exactly `spool`; `def-spool` and `spooler` are not it.
-  Executable wrappers (`do`, `when`, `when-not`, `if`, `if-not`, `cond`)
-  are traversed recursively, while quotes, function bodies, ordinary call
-  arguments, and unrelated `def` values are not.
+  Evaluated forms and collection literals are traversed recursively, while
+  quotes and deferred function/macro bodies are not.
   A docstring form (`(def spool \"doc\" value)`) reports the value, not
   the docstring."
   [^java.io.File file]

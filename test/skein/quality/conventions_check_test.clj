@@ -358,19 +358,22 @@
       (is (map? (:value site))))))
 
 (deftest executable-wrapper-spool-vars-are-declaration-sites
-  (testing "nested executable wrappers do not hide a malformed declaration"
+  (testing "evaluated nested positions do not hide a malformed declaration"
     (doseq [content ["(do (def spool {:contribute 42}))"
                      "(when true (do (def spool {:contribute 42})))"
                      "(if true :ok (def spool {:contribute 42}))"
-                     "(cond false :ok :else (def spool {:contribute 42}))"]]
+                     "(cond false :ok :else (def spool {:contribute 42}))"
+                     "(identity (do (def spool {:contribute 42})))"
+                     "(def held (do (def spool {:contribute 42})))"
+                     "[{:declaration (def spool {:contribute 42})}]"]]
       (let [findings (findings-for content)]
         (is (= 1 (count findings)))
         (is (re-find #"entry point :contribute must be a quoted symbol"
                      (first findings))))))
-  (testing "quoted data, ordinary calls, function bodies, and unrelated var values stay inert"
+  (testing "quoted data and deferred function bodies stay inert"
     (doseq [content ["'(do (def spool {:contribute 42}))"
-                     "(identity (do (def spool {:contribute 42})))"
-                     "(def held (do (def spool {:contribute 42})))"
+                     "(def held '(def spool {:contribute 42}))"
+                     "(fn [] (do (def spool {:contribute 42})))"
                      "(defn factory [] (do (def spool {:contribute 42})))"]]
       (is (empty? (def-spool-sites content))))))
 
