@@ -4,6 +4,7 @@
             [clojure.set :as set]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
+            [skein.api.runtime.alpha :as runtime]
             [skein.api.weaver.alpha :as weaver]
             [skein.core.weaver.module-graph :as module-graph]
             [skein.core.weaver.module-publication :as publication]
@@ -155,10 +156,14 @@
      ;; The synced spool classloader has already loaded ct.spools.kanban's root;
      ;; require makes the ns image-present so the module declaration may trust it.
      (require 'ct.spools.kanban)
-     (test-support/activate-spool! runtime :kanban
-                                   {:ns 'ct.spools.kanban
-                                    :contribute 'ct.spools.kanban/contribute
-                                    :reconcile 'ct.spools.kanban/reconcile})
+     (let [result (runtime/module!
+                   runtime :kanban
+                   {:ns 'ct.spools.kanban
+                    :load :image
+                    :contribute 'ct.spools.kanban/contribute
+                    :reconcile 'ct.spools.kanban/reconcile})]
+       (is (= :applied (get-in result [:modules :kanban :status]))
+           "the Phase A pinned sibling remains valid through explicit keys"))
      (publish-authoring! runtime :config ".skein/config.clj")
      (let [card (weaver/add! runtime
                              {:title "Feature"

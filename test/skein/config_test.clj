@@ -23,13 +23,7 @@
             [skein.core.weaver.module-publication :as publication]
             [skein.core.weaver.runtime :as weaver-runtime]
             [skein.core.weaver.spool-sync :as spool-sync]
-            [skein.spools.batteries :as batteries]
-            [skein.spools.chime :as chime]
-            [skein.spools.cron :as cron]
-            [skein.spools.executors.shell :as shell]
-            [skein.spools.test-support :as test-support]
-            [skein.spools.unsafe-text-search :as unsafe-text-search]
-            [skein.spools.workflow :as workflow]))
+            [skein.spools.test-support :as test-support]))
 
 (defn- delete-directory!
   "Delete a directory tree rooted at `path` if it exists."
@@ -1378,12 +1372,12 @@
   "The in-tree spool modules `.skein/init.clj` activates, keyed as init.clj
   keys them, each mapped to the namespace's public `def spool` declaration var.
   Guild ships in-tree but is not activated in this workspace."
-  {:skein/spools-batteries #'batteries/spool
-   :skein/spools-workflow #'workflow/spool
-   :skein/spools-shell #'shell/spool
-   :skein/spools-unsafe-text-search #'unsafe-text-search/spool
-   :skein/spools-chime #'chime/spool
-   :skein/spools-cron #'cron/spool})
+  {:skein/spools-batteries 'skein.spools.batteries/spool
+   :skein/spools-workflow 'skein.spools.workflow/spool
+   :skein/spools-shell 'skein.spools.executors.shell/spool
+   :skein/spools-unsafe-text-search 'skein.spools.unsafe-text-search/spool
+   :skein/spools-chime 'skein.spools.chime/spool
+   :skein/spools-cron 'skein.spools.cron/spool})
 
 (deftest init-in-tree-modules-resolve-entry-points-by-convention
   ;; PROP-Dsp-001.G7/P7.1 (Phase A): the in-tree literal-mirror triples are
@@ -1405,15 +1399,17 @@
         "init.clj's in-tree spool module keys drifted from the expected set")
     (is (every? #(= 1 (count %)) (vals by-key))
         "an in-tree module key is declared more than once in init.clj")
-    (doseq [[key spool-var] in-tree-spool-vars]
-      (let [decl (first (get by-key key))]
+    (doseq [[key spool-sym] in-tree-spool-vars]
+      (let [decl (first (get by-key key))
+            spool-var (requiring-resolve spool-sym)]
         (is (and (nil? (:contribute decl)) (nil? (:reconcile decl)))
             (str key " still declares an explicit entry-point key in init.clj"))
         (is (s/valid? ::spool-api/spool @spool-var)
-            (str key " backing spool var is not a valid ::spool: "
+            (str key " backing " spool-sym " is not a valid ::spool: "
                  (s/explain-str ::spool-api/spool @spool-var)))
         (is (contains? @spool-var :contribute)
-            (str key " backing spool var declares no :contribute entry point"))))))
+            (str key " backing " spool-sym
+                 " declares no :contribute entry point"))))))
 
 (def ^:private sibling-spool-datum-modules
   "The sibling-backed init.clj modules that still mirror a peer spool's exported
