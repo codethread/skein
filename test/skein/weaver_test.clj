@@ -4931,6 +4931,71 @@
       (finally
         (delete-tree! (io/file workspace ".."))))))
 
+(deftest g2a-invalid-reconcile-on-unchanged-contribution-retains-last-good
+  (doseq [{:keys [label key invalid-definition invalid-name]}
+          [{:label "missing reconciler"
+            :key :missing-reconciler
+            :invalid-definition ""
+            :invalid-name "missing-reconcile"}
+           {:label "non-function reconciler"
+            :key :nonfn-reconciler
+            :invalid-definition "(def reconcile-data :not-a-function)\n"
+            :invalid-name "reconcile-data"}]]
+    (testing label
+      (let [world (temp-world)
+            workspace (:config-dir world)
+            suffix (str/replace (str (random-uuid)) "-" "")
+            root-lib 'test/module-root
+            module-ns (symbol (str "test.module.invalid-reconcile-" suffix))
+            contribute (symbol (str module-ns) "contribute")
+            invalid-reconcile (symbol (str module-ns) invalid-name)
+            retained {:contribute contribute
+                      :reconcile 'skein.weaver-test/module-reconcile}]
+        (try
+          (write-local-spool-module!
+           workspace root-lib module-ns
+           (str "(defn contribute [_ctx]"
+                " {:queries {\"stable\" [:= [:attr :owner] \"stable\"]}})\n"
+                "(def spool {:contribute 'contribute "
+                ":reconcile 'skein.weaver-test/module-reconcile})"))
+          (spit (io/file workspace "init.clj")
+                (str "(skein.core.weaver.runtime/declare-module! "
+                     "skein.core.weaver.runtime/*runtime* " key
+                     " {:ns '" module-ns " :spools ['" root-lib "]})\n"))
+          (let [rt (weaver-runtime/start! nil {:world world :publish? false})]
+            (try
+              (is (= retained
+                     (get-in (weaver-runtime/module-status rt)
+                             [:resolved/entry-points key])))
+              (write-local-spool-module!
+               workspace root-lib module-ns
+               (str "(defn contribute [_ctx]"
+                    " {:queries {\"stable\" [:= [:attr :owner] \"stable\"]}})\n"
+                    invalid-definition
+                    "(def spool {:contribute 'contribute :reconcile '"
+                    invalid-name "})"))
+              (let [result (weaver-runtime/refresh-modules! rt)]
+                (is (= :partial (:status result)))
+                (is (= :failed (get-in result [:modules key :status])))
+                (is (= :reconcile
+                       (get-in result [:modules key :error :data :module/role])))
+                (is (= invalid-reconcile
+                       (get-in result [:modules key :error :data :module/callable])))
+                (is (= retained (get-in result [:resolved/entry-points key]))
+                    "an invalid reconciler cannot replace the last-good set"))
+              (reset! module-reconcile-statuses [])
+              (spit (io/file workspace "init.clj") "")
+              (let [result (weaver-runtime/refresh-modules! rt)]
+                (is (= :applied (:status result)))
+                (is (= :removed (get-in result [:modules key :status])))
+                (is (= [[key :removed]] @module-reconcile-statuses)
+                    "later removal still runs the retained reconciler")
+                (is (empty? (:resolved/entry-points result))))
+              (finally
+                (weaver-runtime/stop! rt))))
+          (finally
+            (delete-tree! (io/file workspace ".."))))))))
+
 (deftest g2a-first-refresh-after-live-upgrade-retains-explicit-removal-reconciler
   (let [world (temp-world)
         workspace (:config-dir world)

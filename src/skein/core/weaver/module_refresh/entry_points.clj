@@ -110,3 +110,41 @@
                   (when (seq resolved)
                     [key resolved]))))
         (:graph state)))
+
+(s/def ::module-key keyword?)
+(s/def ::role #{:contribute :reconcile})
+(s/def ::callable qualified-symbol?)
+(s/def ::contribute qualified-symbol?)
+(s/def ::reconcile qualified-symbol?)
+(s/def ::resolved-entry-points
+  (s/and (s/keys :opt-un [::contribute ::reconcile])
+         #(every? #{:contribute :reconcile} (keys %))))
+(s/def ::declaration
+  (s/and map?
+         #(or (nil? (:ns %)) (symbol? (:ns %)))
+         #(or (nil? (:contribute %)) (qualified-symbol? (:contribute %)))
+         #(or (nil? (:reconcile %)) (qualified-symbol? (:reconcile %)))))
+(s/def ::context
+  (s/and map?
+         #(or (nil? (:source/namespace %))
+              (symbol? (:source/namespace %)))))
+(s/def ::state
+  (s/and map? #(map? (:graph %))))
+
+(s/fdef resolve-fn!
+  :args (s/cat :module-key ::module-key :role ::role :callable ::callable)
+  :ret fn?)
+
+(s/fdef module-namespace
+  :args (s/cat :declaration ::declaration :context ::context)
+  :ret (s/nilable symbol?))
+
+(s/fdef resolve-entry-points
+  :args (s/cat :module-key ::module-key
+               :declaration ::declaration
+               :module-ns (s/nilable symbol?))
+  :ret ::resolved-entry-points)
+
+(s/fdef legacy-resolved-entry-points
+  :args (s/cat :state ::state)
+  :ret (s/map-of ::module-key ::resolved-entry-points))

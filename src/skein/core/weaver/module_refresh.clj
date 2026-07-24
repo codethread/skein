@@ -356,6 +356,14 @@
     (let [file (spool-sync/module-file runtime (:file declaration))]
       (with-loader #(load-module-file! runtime file {:file file})))))
 
+(defn- resolve-entry-point-fns! [with-loader key resolved]
+  (with-loader
+    #(into {}
+           (keep (fn [role]
+                   (when-let [callable (get resolved role)]
+                     [role (entry-points/resolve-fn! key role callable)])))
+           [:contribute :reconcile])))
+
 (defn- evaluate-image-module
   "Evaluate a `:load :image` module: trust the already-loaded JVM image for its
   `:ns` target with no source load and no contribution-collection scope. Entry
@@ -378,16 +386,18 @@
                  |needs a public spool var (or an explicit :contribute) because
                  |image mode collects no authoring forms")
                {:module/key key :ns ns-sym :load :image}))
-      (let [contribution (with-loader
-                           #(let [contribute-fn (entry-points/resolve-fn!
-                                                 key :contribute contribute)]
-                              (contribute-fn {:runtime runtime
-                                              :module/key key
-                                              :module/declaration declaration})))]
+      (let [resolved-fns (resolve-entry-point-fns! with-loader key resolved)
+            contribution
+            (with-loader
+              #((:contribute resolved-fns)
+                {:runtime runtime
+                 :module/key key
+                 :module/declaration declaration}))]
         {:status :ready
          :module/key key
          :source/status :image
          :module/resolved resolved
+         :module/reconcile-fn (:reconcile resolved-fns)
          :contribution (normalize-contribution contribution)}))))
 
 (defn- evaluate-module
@@ -405,9 +415,10 @@
                             :loaded)
             module-ns (entry-points/module-namespace declaration context)
             resolved (entry-points/resolve-entry-points key declaration module-ns)
-            contribute (:contribute resolved)
+            resolved-fns (resolve-entry-point-fns! with-loader key resolved)
+            contribute-fn (:contribute resolved-fns)
             contribution (cond
-                           contribute
+                           contribute-fn
                            (do
                              (when (and (seq collected)
                                         (not (contains? declaration :contribute)))
@@ -418,14 +429,13 @@
                                         |source")
                                       {:module/key key
                                        :module/namespace module-ns
-                                       :contribute contribute
+                                       :contribute (:contribute resolved)
                                        :collected/kinds (vec (keys collected))}))
                              (with-loader
-                               #(let [contribute-fn (entry-points/resolve-fn!
-                                                     key :contribute contribute)]
-                                  (contribute-fn {:runtime runtime
-                                                  :module/key key
-                                                  :module/declaration declaration}))))
+                               #(contribute-fn
+                                 {:runtime runtime
+                                  :module/key key
+                                  :module/declaration declaration})))
                            (and (= :unchanged source-status)
                                 (some? previous-contribution))
                            previous-contribution
@@ -439,6 +449,7 @@
          :source/stamp (when-let [ns-sym (:ns declaration)]
                          (source-stamp (latest-source-binding runtime ns-sym)))
          :module/resolved resolved
+         :module/reconcile-fn (:reconcile resolved-fns)
          :contribution normalized}))
     (catch Throwable throwable
       {:status :failed
@@ -482,7 +493,7 @@
     (update result :source-stamps dissoc key)))
 
 (defn- publishable-outcome [raw-outcome]
-  (dissoc raw-outcome :contribution :source/stamp))
+  (dissoc raw-outcome :contribution :source/stamp :module/reconcile-fn))
 
 (defn- stage-publications
   [backends candidate-map graph order raw previous-contributions previous-sources]
@@ -560,27 +571,31 @@
    :declaration/shadows shadows})
 
 (defn- reconcile-one
-  [runtime with-loader state graph resolved-entry-points result key outcome]
+  [runtime with-loader state graph resolved-entry-points reconcile-fns result key
+   outcome]
   (let [declaration (get graph key)
         previous (previous-module state key)
         ;; The reconciler comes from the module's retained resolved entry-point
         ;; set, so removal-by-omission still tears down (its source is never
         ;; re-loaded on the removal path) — PROP-Dsp-001.G2a/F11.
-        reconcile (get-in resolved-entry-points [key :reconcile])]
+        reconcile (get-in resolved-entry-points [key :reconcile])
+        evaluated-reconcile-fn (get reconcile-fns key)]
     (if (or (nil? reconcile)
             (not (#{:applied :removed} (:status outcome))))
       {:outcome outcome}
       (try
-        (let [return (with-loader
-                       #(let [reconcile-fn (entry-points/resolve-fn!
-                                            key :reconcile reconcile)]
-                          (reconcile-fn
-                           {:runtime runtime
-                            :module/key key
-                            :module/declaration declaration
-                            :module/previous previous
-                            :module/contribution outcome
-                            :refresh/result result})))]
+        (let [reconcile-fn
+              (or evaluated-reconcile-fn
+                  (with-loader
+                    #(entry-points/resolve-fn! key :reconcile reconcile)))
+              return (with-loader
+                       #(reconcile-fn
+                         {:runtime runtime
+                          :module/key key
+                          :module/declaration declaration
+                          :module/previous previous
+                          :module/contribution outcome
+                          :refresh/result result}))]
           (when-not (dispatch/data-first-value? return)
             (fail! "Module reconcile return must be data-first"
                    {:module/key key :return return}))
@@ -595,11 +610,11 @@
                       :error (exception-data throwable)}})))))
 
 (defn- reconcile-modules
-  [runtime with-loader state graph resolved-entry-points result order]
+  [runtime with-loader state graph resolved-entry-points reconcile-fns result order]
   (reduce
    (fn [{:keys [outcomes resources]} key]
      (let [{:keys [outcome resource]}
-           (reconcile-one runtime with-loader state graph resolved-entry-points
+           (reconcile-one runtime with-loader state graph resolved-entry-points reconcile-fns
                           result key (get outcomes key))]
        {:outcomes (assoc outcomes key outcome)
         :resources (cond-> resources resource (assoc key resource))}))
@@ -793,6 +808,13 @@
                     raw (evaluate-affected runtime with-loader graph order
                                            (:roots sync-result)
                                            previous-contributions previous-sources)
+                    reconcile-fns
+                    (into {}
+                          (keep (fn [[key outcome]]
+                                  (when-let [reconcile-fn
+                                             (:module/reconcile-fn outcome)]
+                                    [key reconcile-fn])))
+                          raw)
                     ;; Retain each module's last-good resolved entry-point set:
                     ;; a failed evaluation keeps the prior set, and removed
                     ;; modules keep theirs through the removal reconcile before
@@ -831,9 +853,9 @@
                                            reverse
                                            (filter removed))
                         reconcile-order (vec (concat removal-order order))
-                        reconciled (reconcile-modules runtime with-loader state graph
-                                                      resolved-entry-points
-                                                      provisional reconcile-order)
+                        reconciled (reconcile-modules
+                                    runtime with-loader state graph resolved-entry-points
+                                    reconcile-fns provisional reconcile-order)
                         _ (try
                             (publication/validate-op-glossary-refs!
                              runtime backends (:candidates staged))
