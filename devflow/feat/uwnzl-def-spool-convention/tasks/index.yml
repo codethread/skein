@@ -12,12 +12,12 @@ tasks:
   - id: 3
     description: Phase A in-tree def spool conversion
     task_file: tasks/003-in-tree-spool-conversion.md
-    status: in_progress
+    status: complete
     blocked_by: [1]
   - id: 4
     description: Phase A ADR, root specs, authoring docs, and API docs
     task_file: tasks/004-records-specs-docs.md
-    status: pending
+    status: in_progress
     blocked_by: [1, 3]
   - id: 5
     description: Phase A atomic acceptance and adversarial review
