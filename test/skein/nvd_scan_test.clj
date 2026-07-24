@@ -11,7 +11,7 @@
 ;; nvd_scan.clj is a .skein weaver file (ns `nvd-scan`), not a classpath
 ;; namespace, so load it once exactly as config_test does and resolve its
 ;; (public and private) vars by symbol. Loading it defines vars only; it never
-;; calls install! or seeds against gh.
+;; activates modules or seeds against gh.
 (defn- load-config-once [f]
   (load-file ".skein/nvd_scan.clj")
   (f))

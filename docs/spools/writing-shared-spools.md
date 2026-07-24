@@ -604,6 +604,24 @@ Under `:required? true`, missing or failed root prerequisites refuse refresh.
 Namespace loading, contribution, publication, and reconcile failures are
 reported in the joined refresh result and `runtime/status`.
 
+### Export the base declaration as data
+
+Beside `contribute`/`reconcile`, export the declaration triple itself as a datum (the in-tree spools name it `module`):
+
+```clojure
+(def module
+  "Base module declaration datum (ADR-003.P7)."
+  {:ns 'acme.priority.alpha
+   :contribute 'acme.priority.alpha/contribute
+   :reconcile 'acme.priority.alpha/reconcile})
+```
+
+The datum is the authored source of the triple. A consumer whose config evaluates while the namespace is loadable assocs its world onto it — `(runtime/module! rt :acme/priority (assoc acme/module :spools ['acme/priority] :required? true))` — and the spool's own tests assoc `{:load :image}` to activate from the test classpath without a source reload. Every variant is `module!` input, validated at declaration time against the named `::module-opts` grammar in `skein.api.runtime.alpha`. Rationale and the conversion conventions: [ADR-003](../../devflow/adrs/0003-spool-activation-lifecycle.md) (P7) and [testing.md](./testing.md).
+
+One consumer cannot deref the datum: cold startup config that collects module declarations before any spool source is loadable (a weaver world's `init.clj` runs exactly there). Such config mirrors the triple as a literal declaration map and pins the copy to the datum with a parity test — skein-src's `init-in-tree-declarations-match-exported-spool-datums` is the worked example. The literal is a documented exception, not a second source of truth: the parity test is what keeps it honest (ADR-003 P7 records the rationale).
+
+There is no imperative `install!` companion: the module lifecycle is the one activation path, and a reconciler follows the SPEC-004.C46b status contract — branch on `:applied`/`:removed` and fail loudly on anything else.
+
 ### Maven dependencies in a spool root
 
 A spool root may declare ordinary JVM library dependencies in its top-level `deps.edn :deps`. Those

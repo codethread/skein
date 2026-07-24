@@ -121,8 +121,8 @@ Honest source: adapted from the end-to-end example that formerly lived in `workf
 ```clojure
 (require '[skein.spools.workflow :as workflow])
 
-;; Register every stage under a stable name once (devflow does this on load and
-;; again from install!, so a reload re-points in-flight runs).
+;; Register every stage under a stable name once (devflow does this from its
+;; module contribution, so a reload re-points in-flight runs).
 (def stage-workflows
   {:proposal  'my.ns/proposal-workflow
    :spec-plan 'my.ns/spec-plan-workflow

@@ -7,14 +7,14 @@
             [clojure.test :refer [deftest is testing]]
             [skein.api.weaver.alpha :as weaver]
             [skein.repl :as repl]
-            [skein.spools.test-support :refer [with-runtime]]
+            [skein.spools.test-support :as test-support :refer [with-runtime]]
             [skein.spools.unsafe-text-search :as unsafe-text-search]
             [skein.test.alpha :as t]))
 
 (deftest production-return-coverage-is-derived-from-unsafe-text-search-provenance
   (with-runtime
     (fn [rt _]
-      (unsafe-text-search/install!)
+      (test-support/activate-spool! rt :skein/spools-unsafe-text-search unsafe-text-search/module)
       (repl/strand! "Search return coverage" {"topic" "returns"})
       (let [entries (filterv #(= 'skein.spools.unsafe-text-search (:provenance %)) (weaver/ops rt))
             missing (mapv :name (filter #(not (contains? % :returns)) entries))

@@ -60,7 +60,7 @@ strand search "widget" --limit 200            # raise the row cap
 |---|---|
 | `strand search <substring> [--archived] [--attr-key <k>] [--limit <n>]` | Substring search; JSON rows `{id, title, attr-key, snippet}`. |
 | `(search rt opts)` | Explicit-runtime core; `opts` is `{:substring :archived? :attr-key :limit}`. |
-| `(install!)` | Register the `search` op; returns metadata carrying `:unsafe true`. |
+| `module` | Base module declaration datum; activate with `(runtime/module! rt :key (assoc module ...))`. |
 
 Flags:
 

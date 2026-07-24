@@ -13,10 +13,10 @@
           skein.spools/cron {:skein/source-root "spools/cron"}
           skein.macros/macros {:local/root "spools/macros"}
           codethread/devflow {:git/url "https://github.com/codethread/devflow.spool.git"
-                              :git/sha "b966e540624a19c547093b6f2468fa3bb5d71103"
-                              :git/tag "v3"
+                              :git/sha "7135d8c296ec712ff48ec8cc48c5ff0e058e2088"
+                              :git/tag "v4"
                               :roots {codethread/devflow "."}}
           codethread/kanban {:git/url "https://github.com/codethread/kanban.spool.git"
-                             :git/sha "aed7d441c1e5a236a6c29cea635bab66bac5a7d6"
-                             :git/tag "v7"
+                             :git/sha "af95849a2109e619e398b7d4a6dd3af4dfb041c8"
+                             :git/tag "v8"
                              :roots {codethread/kanban "."}}}}

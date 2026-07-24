@@ -17,7 +17,6 @@
             [skein.spools.workflow :as workflow]
             [skein.api.spool.alpha :refer [fail! attr-get]]
             [skein.api.weaver.alpha :as weaver]
-            [skein.api.graph.alpha :as graph]
             [skein.api.events.alpha :as events]
             [skein.api.current.alpha :as current]
             [skein.api.runtime.alpha :as runtime]
@@ -379,28 +378,32 @@
   (DELTA-OlrDrt-001.CC7/CC8)."
   [{:keys [runtime] :as ctx}]
   (binding [*runtime* runtime]
-    (case (get-in ctx [:module/contribution :status])
-      :applied (do (declare-shell-vocab! runtime)
-                   (register-shell-handler! runtime)
-                   (state)
-                   (scan!)
-                   {:reconciled :applied})
-      :removed (do (events/unregister-handler! runtime :shell/engine)
-                   {:reconciled :removed})
-      {:reconciled :noop})))
+    (let [status (get-in ctx [:module/contribution :status])]
+      (case status
+        :applied (do (declare-shell-vocab! runtime)
+                     (register-shell-handler! runtime)
+                     (state)
+                     (scan!)
+                     {:reconciled :applied})
+        :removed (do (events/unregister-handler! runtime :shell/engine)
+                     {:reconciled :removed})
+        (fail! "Unsupported module contribution status"
+               {:status status
+                :allowed #{:applied :removed}
+                :module/key (:module/key ctx)
+                :reconciler 'skein.spools.executors.shell/reconcile})))))
 
-(defn install!
-  "Install the shell executor eagerly (pre-module lifecycle): register its event
-  handler, the `:shell` workflow executor, and the `stalled-shell-gates`
-  coordinator query, then perform an initial scan.
+(def module
+  "Base module declaration datum for the shell executor (ADR-003.P7).
 
-  The module lifecycle uses `contribute`/`reconcile` above instead."
-  []
-  (let [runtime (rt)]
-    (declare-shell-vocab! runtime)
-    (register-shell-handler! runtime)
-    (workflow/register-executor! :shell gate-stalled-symbol)
-    (graph/register-query! runtime 'stalled-shell-gates stalled-shell-gates-query)
-    (scan!)
-    {:installed true
-     :namespace 'skein.spools.executors.shell}))
+  The authored `:ns`/`:contribute`/`:reconcile` triple every consumer starts
+  from. Callers order it after the workflow module with an `:after` edge on
+  the workflow module's key (the executor kind must exist before this
+  contribution publishes) and assoc their world's `:spools` guards or
+  `:load :image` — cold startup config, which runs before spool sources are
+  loadable, mirrors it literally under the init.clj parity test. Every
+  variant is `module!` input, validated against `skein.api.runtime.alpha`'s
+  `::module-opts` grammar."
+  {:ns 'skein.spools.executors.shell
+   :contribute 'skein.spools.executors.shell/contribute
+   :reconcile 'skein.spools.executors.shell/reconcile})

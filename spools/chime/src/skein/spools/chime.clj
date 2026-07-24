@@ -440,25 +440,21 @@
                    (reconcile-rule-view! visible {})
                    {:reconciled :removed})
         (fail! "Unsupported module contribution status"
-               {:status status :allowed #{:applied :removed}})))))
+               {:status status
+                :allowed #{:applied :removed}
+                :module/key (:module/key ctx)
+                :reconciler 'skein.spools.chime/reconcile})))))
 
-(defn install!
-  "Install chime's mutation barrier and event handler into the active weaver.
+(def module
+  "Base module declaration datum for the chime spool (ADR-003.P7).
 
-  Chime ships no rules and no notifier: trusted config supplies rules with
-  `register!` and a notifier with `set-notifier!`."
-  []
-  (let [runtime (rt)]
-    (runtime/spool-state runtime ::state {:version state-version} new-state)
-    (rule-kinds)
-    (hooks/register-hook! runtime :chime/registration-barrier mutation-hook-types
-                     'skein.spools.chime/mutation-registration-barrier!
-                     {:order Long/MAX_VALUE :spool "chime"})
-    (events/register-handler! runtime :chime/engine event-types
-                      'skein.spools.chime/on-event
-                      {:spool "chime"})
-    {:installed true
-     :namespace 'skein.spools.chime
-     :handler :chime/engine
-     :rules (mapv :key (rules))
-     :notifier-bound? (boolean @(notifier-binding))}))
+  The authored `:ns`/`:contribute`/`:reconcile` triple every consumer starts
+  from. A consumer whose config can load this namespace assocs its world's
+  `:spools` guards onto the datum; cold startup config, which runs before
+  spool sources are loadable, mirrors it literally under the init.clj parity
+  test; bare-test fixtures assoc `:load :image`. Every variant is `module!`
+  input, validated against `skein.api.runtime.alpha`'s `::module-opts`
+  grammar."
+  {:ns 'skein.spools.chime
+   :contribute 'skein.spools.chime/contribute
+   :reconcile 'skein.spools.chime/reconcile})

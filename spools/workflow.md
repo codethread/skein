@@ -235,7 +235,7 @@ Executor registration is keyed by gate `waiter` name via `register-executor!` (a
 This keeps the workflow namespace free of any executor's vocabulary: a waiter with no registered
 executor always surfaces as `:gate` immediately, and adapters such as the
 [external subagent executor][subagent-contract] register their own predicate for their own waiter
-name at install time. There is no more named "stall predicate" independent of a waiter, and no
+name at activation time. There is no more named "stall predicate" independent of a waiter, and no
 shipped default predicate — `register-stall-predicate!` and the old `:stall-predicate` await option
 are gone.
 
@@ -487,9 +487,6 @@ The test suite in [`test/skein/spools/workflow_test.clj`](../test/skein/spools/w
   contracts for `:workflow`, `:step`, `:gate`, `:checkpoint`, and `:call`,
   intended for agents to call before constructing workflow data instead of
   relying on this document alone.
-- `(skein.spools.workflow/install!)` — installation metadata: the builder and
-  runtime fns of this namespace as symbol-valued maps, for trusted
-  registration by name (mirrors devflow's registries in `devflow.md` §5).
 - [README.md](./README.md) — shipped spools index and loading notes.
 - [`ct.spools.executors.subagent`][subagent-contract] — external adapter that binds workflow
   `:subagent` gates to agent-run runs.

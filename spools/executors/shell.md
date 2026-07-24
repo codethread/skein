@@ -52,7 +52,7 @@ All `shell/*` values are plain JSON `TEXT` on the gate strand, authored in the t
 
 ## Outcome attributes
 
-The shell executor records the outcome on the gate itself. It **owns** the `shell/*` namespace (declared by `install!`) and **inherits** `gate/error` — the executor-side gate-failure stamp published and owned by the subagent executor. One word means one thing across both executors: a gate carrying a `gate/error` attribute is stalled and skipped until a coordinator removes the key, whichever executor stamped it. Presence — not a non-blank value — is the stall; a blank string is present data and does not re-arm the gate. Here the detail spans every shell failure — non-zero exit and timeout as well as spawn errors — not only the spawn-side failures of the subagent's gates.
+The shell executor records the outcome on the gate itself. It **owns** the `shell/*` namespace (declared by its module reconcile) and **inherits** `gate/error` — the executor-side gate-failure stamp published and owned by the subagent executor. One word means one thing across both executors: a gate carrying a `gate/error` attribute is stalled and skipped until a coordinator removes the key, whichever executor stamped it. Presence — not a non-blank value — is the stall; a blank string is present data and does not re-arm the gate. Here the detail spans every shell failure — non-zero exit and timeout as well as spawn errors — not only the spawn-side failures of the subagent's gates.
 
 | Attribute | On | Meaning |
 |---|---|---|
@@ -105,7 +105,7 @@ Crash-window recovery is strictly simpler than the subagent executor's, because 
 
 ## Coordination attention
 
-`install!` calls `(workflow/register-executor! :shell gate-stalled?)`, registering the shell executor as the executor for every gate whose `waiter` is `:shell`. Because an executor is registered, `await!` stays silent (`:waiting`) on a healthy `:shell` gate instead of surfacing it immediately as unattended; `gate-stalled?` reports a ready `:shell` gate as stalled (returning `{:gate id :error detail}`) when the gate carries `gate/error`, else it reports nothing. No wall-clock hang policy is applied — a stall is a graph fact.
+The module's `contribute` publishes `gate-stalled?` under the workflow executor kind for every gate whose `waiter` is `:shell`. Because an executor is registered, `await!` stays silent (`:waiting`) on a healthy `:shell` gate instead of surfacing it immediately as unattended; `gate-stalled?` reports a ready `:shell` gate as stalled (returning `{:gate id :error detail}`) when the gate carries `gate/error`, else it reports nothing. No wall-clock hang policy is applied — a stall is a graph fact.
 
 The spool also registers the `stalled-shell-gates` named query for coordinator inspection: active gates with `workflow/gate` = `"shell"` that carry a `gate/error`. It is the SQL-side mirror of the stall predicate, and — unlike the subagent executor's `stalled-subagent-gates` — it needs no `delegates`-edge join back to a run row, because the failure detail lives on the gate itself.
 

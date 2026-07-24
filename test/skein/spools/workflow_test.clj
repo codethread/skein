@@ -7,22 +7,22 @@
             [skein.api.graph.alpha :as graph]
             [skein.api.registry.alpha :as registry]
             [skein.api.vocab.alpha :as vocab]
-            [skein.spools.test-support :refer [assert-state-shape with-runtime]]
+            [skein.spools.test-support :as test-support :refer [assert-state-shape with-runtime]]
             [skein.spools.workflow :as workflow]
             [skein.spools.workflow.internal.registry :as wf-registry]
             [skein.repl :as repl]
             [skein.test.alpha :as test-alpha])
   (:import [java.time Instant]))
 
-(deftest workflow-install-declares-workflow-attr-namespace
+(deftest workflow-module-declares-workflow-attr-namespace
   (with-runtime
     (fn [rt _]
-      (workflow/install!)
+      (test-support/activate-spool! rt :skein/spools-workflow workflow/module)
       (let [decl (some #(when (= [:attr-namespace "workflow"] [(:kind %) (:name %)]) %)
                        (vocab/declarations rt))]
         (is (= :attr-namespace (:kind decl)))
         (is (= :skein/spools-workflow (:owner decl))
-            "workflow install! owns the workflow/* namespace via its use-key")))))
+            "workflow module reconcile owns the workflow/* namespace via its module key")))))
 
 (deftest workflow-spool-explains-public-input-shapes
   (let [contract (workflow/explain)]
@@ -1535,7 +1535,7 @@
   ;; state (DELTA-OlrDrt-001.CC8), not as owner-partition declaration data.
   (with-runtime
     (fn [rt _]
-      (workflow/install!)
+      (test-support/activate-spool! rt :skein/spools-workflow workflow/module)
       (let [pred (constantly {:raw true})]
         (workflow/register-executor! :raw-exec pred)
         (is (identical? pred (get @(wf-registry/executor-fns rt) "raw-exec")))
@@ -1550,7 +1550,7 @@
   ;; value already captured for an in-flight call keeps its snapshot (CC10).
   (with-runtime
     (fn [rt _]
-      (workflow/install!)
+      (test-support/activate-spool! rt :skein/spools-workflow workflow/module)
       (workflow/register-executor! :exec-snap 'skein.spools.workflow-test/exec-detail-a)
       (let [snapshot (wf-registry/executor-for rt "exec-snap")]
         (is (= {:by :a} (snapshot {})))
@@ -1566,7 +1566,7 @@
   ;; removing the owner clears the rest — no global reload.
   (with-runtime
     (fn [rt _]
-      (workflow/install!)
+      (test-support/activate-spool! rt :skein/spools-workflow workflow/module)
       (let [handle (wf-registry/registry-handle rt)
             spools-constructors (fn [entries]
                                   (registry/replace-owner!
@@ -1599,7 +1599,7 @@
   ;; shadowed entry.
   (with-runtime
     (fn [rt _]
-      (workflow/install!)
+      (test-support/activate-spool! rt :skein/spools-workflow workflow/module)
       (let [handle (wf-registry/registry-handle rt)]
         (registry/replace-owner! handle workflow/constructor-kind :spools/pkg
                                  {:layer :spools

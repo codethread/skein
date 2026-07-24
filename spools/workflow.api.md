@@ -255,7 +255,7 @@ Module contribution for the workflow spool.
   register — so it contributes no declarative entries. It materializes the
   registry handle so a dependent module contributing to the workflow kinds finds
   them already declared (DELTA-OlrDrt-001.CC4).
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/workflow.clj#L716-L726">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/workflow.clj#L668-L678">Source</a></sub></p>
 
 ## <a name="skein.spools.workflow/current-root">`current-root`</a>
 ``` clojure
@@ -351,19 +351,21 @@ Return a workflow gate step definition — a step whose completion belongs to
   opts as `step`.
 <p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/workflow.clj#L88-L106">Source</a></sub></p>
 
-## <a name="skein.spools.workflow/install!">`install!`</a>
-``` clojure
-(install!)
-```
-Function.
+## <a name="skein.spools.workflow/module">`module`</a>
 
-Materialize the workflow registries and return installation metadata.
 
-  Realizes the owner-partition registry handle (declaring its constructor and
-  executor kinds) and seeds the `workflow/*` attribute namespace. This is the
-  eager entry point for the pre-module lifecycle; the module lifecycle uses
-  `contribute`/`reconcile` below.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/workflow.clj#L703-L714">Source</a></sub></p>
+
+
+Base module declaration datum for the workflow spool (ADR-003.P7).
+
+  The authored `:ns`/`:contribute`/`:reconcile` triple every consumer starts
+  from. A consumer whose config can load this namespace assocs its world's
+  `:spools` guards onto the datum; cold startup config, which runs before
+  spool sources are loadable, mirrors it literally under the init.clj parity
+  test; bare-test fixtures assoc `:load :image`. Every variant is `module!`
+  input, validated against `skein.api.runtime.alpha`'s `::module-opts`
+  grammar.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/workflow.clj#L700-L712">Source</a></sub></p>
 
 ## <a name="skein.spools.workflow/molecule-id">`molecule-id`</a>
 ``` clojure
@@ -445,12 +447,18 @@ Return the single ready workflow step for run-id, or fail if ambiguous.
 
 ## <a name="skein.spools.workflow/reconcile">`reconcile`</a>
 ``` clojure
-(reconcile {:keys [runtime]})
+(reconcile {:keys [runtime], :as ctx})
 ```
 Function.
 
-Reconcile the workflow spool's resources: seed the `workflow/*` vocabulary.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/workflow.clj#L728-L732">Source</a></sub></p>
+Reconcile the workflow spool's resources per the module contract.
+
+  An applied contribution seeds the `workflow/*` vocabulary. The removal
+  branch is deliberately effect-free: vocabulary ownership has no retraction
+  API — declarations are process-lifetime seeds (SPEC-004.C46b,
+  DELTA-Itr-001) — and re-declaring on removal is the defect the contract
+  names. Any other status is a direct-call error and fails loudly.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/workflow.clj#L680-L698">Source</a></sub></p>
 
 ## <a name="skein.spools.workflow/register-executor!">`register-executor!`</a>
 ``` clojure

@@ -35,9 +35,7 @@
   state."
   (:require [clojure.spec.alpha :as s]
             [clojure.string :as str]
-            [skein.api.current.alpha :as current]
             [skein.api.format.alpha :as format-alpha]
-            [skein.api.weaver.alpha :as weaver]
             ;; UNSAFE: physical-table access. A blessed spool builds on
             ;; skein.api.*.alpha only; this one reaches past the contract on
             ;; purpose (see the ns docstring).
@@ -195,11 +193,13 @@
            :attr-key {:type :string
                       :doc "Scope the attribute-value search to one attribute key (skips the title branch)."}
            :limit {:type :int
-                   :doc (str "Row cap (default " default-search-limit "). "
-                             (format-alpha/reflow
-                              "|Overflow fails loudly rather than truncating. Search does not
-                               |consult batteries' set-read-limit! — that runtime-owned cap
-                               |governs list/ready, not this op."))}}
+                   :doc (format
+                         (format-alpha/reflow
+                          "|Row cap (default %d). Overflow fails loudly rather
+                           |than truncating. Search does not consult batteries'
+                           |set-read-limit! — that runtime-owned cap governs
+                           |list/ready, not this op.")
+                         default-search-limit)}}
    :positionals [{:name :substring :type :string :required? true
                   :doc "Substring to search for, matched literally."}]
    :hook-class :read
@@ -212,24 +212,6 @@
                       :title :string
                       :attr-key [:nullable :string]
                       :snippet :string}}})
-
-(defn install!
-  "Install the UNSAFE `search` op into the active weaver.
-
-  Resolving the ambient runtime here matches the activation boundary used by the
-  other shipped spools; the op handler and `search` itself take the runtime
-  explicitly. Returns installation metadata carrying `:unsafe true` so callers
-  can see what they activated."
-  []
-  (let [rt (current/runtime)]
-    {:installed true
-     :namespace 'skein.spools.unsafe-text-search
-     :unsafe true
-     :ops [(weaver/register-op! rt 'search
-                                {:doc search-doc
-                                 :arg-spec search-arg-spec
-                                 :returns search-return}
-                                'skein.spools.unsafe-text-search/search-op)]}))
 
 (defn contribute
   "Return unsafe-text-search's complete unsafe search-operation contribution.
@@ -251,3 +233,16 @@
                              :doc search-doc
                              :arg-spec search-arg-spec
                              :returns search-return}}}})
+
+(def module
+  "Base module declaration datum for the unsafe-text-search spool (ADR-003.P7).
+
+  The authored `:ns`/`:contribute` pair every consumer starts from. A consumer
+  whose config can load this namespace assocs its world's `:spools` guards
+  onto the datum; cold startup config, which runs before spool sources are
+  loadable, mirrors it literally under the init.clj parity test; bare-test
+  fixtures assoc `:load :image`. Every variant is `module!` input, validated
+  against `skein.api.runtime.alpha`'s `::module-opts` grammar. The spool owns
+  no live resources, so it declares no `:reconcile`."
+  {:ns 'skein.spools.unsafe-text-search
+   :contribute 'skein.spools.unsafe-text-search/contribute})

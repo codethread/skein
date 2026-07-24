@@ -757,7 +757,8 @@
   The unconditional glossary-ref existence check (DELTA-Dtf-003.CC2), run at
   registration because that is where the runtime glossary is in hand. It enforces
   the load-order contract: an op's outcomes must be registered — from the owning
-  spool's `install!` or trusted config — before the op that references them."
+  spool's module reconcile or trusted config — before the op that references
+  them."
   [runtime entry]
   (doseq [outcome-name (entry-failure-modes entry)]
     (when-not (glossary/outcome-registered? runtime outcome-name)
