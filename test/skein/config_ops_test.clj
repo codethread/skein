@@ -4,6 +4,7 @@
             [clojure.set :as set]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
+            [skein.api.runtime.alpha :as runtime]
             [skein.api.weaver.alpha :as weaver]
             [skein.core.weaver.module-graph :as module-graph]
             [skein.core.weaver.module-publication :as publication]
@@ -152,7 +153,14 @@
 (deftest kanban-tree-builds-on-the-canonical-entity-projection
   (run-with-config-world
    (fn [runtime]
-     ((requiring-resolve 'ct.spools.kanban/install!))
+     ;; The synced spool classloader has already loaded ct.spools.kanban's root;
+     ;; require makes the ns image-present so the module declaration may trust it.
+     (require 'ct.spools.kanban)
+     (runtime/module! runtime :kanban
+                      {:ns 'ct.spools.kanban
+                       :load :image
+                       :contribute 'ct.spools.kanban/contribute
+                       :reconcile 'ct.spools.kanban/reconcile})
      (publish-authoring! runtime :config ".skein/config.clj")
      (let [card (weaver/add! runtime
                              {:title "Feature"
