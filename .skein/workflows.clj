@@ -1289,10 +1289,9 @@
                               :story-fold 'workflows/story-fold-workflow
                               :story-keep 'workflows/story-keep-workflow}})
 
-;; Entry-point declaration under the uniform `def spool` convention
-;; (PROP-Dsp-001.G1/Q4): a file module is not a spool, but one name and one rule
-;; cover every module-loadable namespace. The workflow constructors and ops
-;; publish through `contribute`. Unqualified symbols resolve against this file's
-;; namespace.
 (def spool
+  "Entry-point declaration for the workflows file module.
+
+  The workflow constructors and ops publish through `contribute`. Unqualified
+  symbols resolve against this namespace (PROP-Dsp-001.G1/Q4)."
   {:contribute 'contribute})

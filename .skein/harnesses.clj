@@ -361,10 +361,11 @@
     (shuttle/set-default-task-contract! agents/worker-contract))
   {:reconciled :harnesses})
 
-;; Entry-point declaration under the uniform `def spool` convention
-;; (PROP-Dsp-001.G1/Q4): a file module is not a spool, but one name and one rule
-;; cover every module-loadable namespace. Unqualified symbols resolve against
-;; this file's namespace.
 (def spool
+  "Entry-point declaration for the harnesses file module.
+
+  The uniform convention covers every module-loadable namespace even when the
+  file is not itself a spool. Unqualified symbols resolve against this
+  namespace (PROP-Dsp-001.G1/Q4)."
   {:contribute 'contribute
    :reconcile 'reconcile})

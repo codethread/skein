@@ -51,9 +51,9 @@
                           :project 'kanban-tracker/devflow-projection}))
   {:reconciled :kanban-tracker})
 
-;; Entry-point declaration under the uniform `def spool` convention
-;; (PROP-Dsp-001.G1/Q4): a file module is not a spool, but one name and one rule
-;; cover every module-loadable namespace. The tracker binding lives entirely in
-;; `reconcile`. Unqualified symbols resolve against this file's namespace.
 (def spool
+  "Entry-point declaration for the kanban-tracker file module.
+
+  The tracker binding lives entirely in `reconcile`. Unqualified symbols
+  resolve against this namespace (PROP-Dsp-001.G1/Q4)."
   {:reconcile 'reconcile})

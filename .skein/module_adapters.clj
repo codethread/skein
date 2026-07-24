@@ -24,10 +24,10 @@
       :owner 'skein.spools.batteries}))
   {:reconciled :help-transform})
 
-;; Entry-point declaration under the uniform `def spool` convention
-;; (PROP-Dsp-001.G1/Q4): this file module is not a spool, but one name and one
-;; rule cover every module-loadable namespace, so its `:reconcile` entry point
-;; lives here instead of in the init.clj declaration. Unqualified symbols
-;; resolve against this file's namespace.
 (def spool
+  "Entry-point declaration for the module-adapters file module.
+
+  Its `:reconcile` entry point lives here instead of in the init.clj
+  declaration. Unqualified symbols resolve against this namespace
+  (PROP-Dsp-001.G1/Q4)."
   {:reconcile 'reconcile-help-transform})

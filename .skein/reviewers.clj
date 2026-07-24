@@ -306,10 +306,9 @@
                        :complex-patch-review complex-patch-review
                        :docs-review docs-review}})
 
-;; Entry-point declaration under the uniform `def spool` convention
-;; (PROP-Dsp-001.G1/Q4): a file module is not a spool, but one name and one rule
-;; cover every module-loadable namespace. This roster owns no live resource, so
-;; it declares no `:reconcile`. Unqualified symbols resolve against this file's
-;; namespace.
 (def spool
+  "Entry-point declaration for the reviewers file module.
+
+  This roster owns no live resource, so it declares no `:reconcile`.
+  Unqualified symbols resolve against this namespace (PROP-Dsp-001.G1/Q4)."
   {:contribute 'contribute})
