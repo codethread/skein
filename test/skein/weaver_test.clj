@@ -4114,6 +4114,9 @@
                     :reconcile (symbol (str absent-ns) "reconcile")}
                    (get-in result [:resolved/entry-points :prec-absent]))
                 "unqualified spool-var symbols are qualified against the declaring namespace")
+            (is (not (contains? (get-in result [:modules :prec-absent])
+                                :module/resolved))
+                "the raw resolution carrier is not duplicated into public outcomes")
             (is (= :applied (get-in result [:modules :prec-absent :reconcile/status])))))
         (testing "a complete legacy explicit declaration works with no spool var"
           (let [result (runtime/module!
@@ -4147,7 +4150,9 @@
             suffix (str/replace (str (random-uuid)) "-" "")
             root-lib 'test/module-root
             spool-ns (symbol (str "test.module.image-spool-" suffix))
-            bare-ns (symbol (str "test.module.image-bare-" suffix))]
+            bare-ns (symbol (str "test.module.image-bare-" suffix))
+            foreign-ns (symbol (str "test.module.image-foreign-" suffix))
+            foreign-owner-ns (symbol (str "test.module.image-foreign-owner-" suffix))]
         (write-local-spool-module!
          workspace root-lib spool-ns
          (str "(defn contribute [_ctx]"
@@ -4156,9 +4161,16 @@
         (write-local-spool-module!
          workspace root-lib bare-ns
          "(defn contribute [_ctx] {:queries {\"image-bare-q\" [:= [:attr :owner] \"bare\"]}})")
+        (write-local-spool-module!
+         workspace root-lib foreign-ns
+         (str "(defn contribute [_ctx]"
+              " {:queries {\"image-foreign-q\" [:= [:attr :owner] \"foreign\"]}})"))
+        (write-local-spool-module!
+         workspace root-lib foreign-owner-ns
+         (str "(def spool {:contribute '" foreign-ns "/contribute})"))
         (spool-sync/sync-approved-spools rt)
         (weaver-runtime/with-runtime-and-spool-classloader
-          rt #(do (require spool-ns) (require bare-ns)))
+          rt #(do (require spool-ns) (require bare-ns) (require foreign-owner-ns)))
         (testing "the entry point resolves from the preloaded image with no source load"
           (let [ledger-before (spool-sync/namespace-load-ledger rt)
                 result (runtime/module! rt :image-spool
@@ -4172,6 +4184,15 @@
             (is (= [:= [:attr :owner] "image-spool"] (get (graph/queries rt) "image-spool-q")))
             (is (= {:contribute (symbol (str spool-ns) "contribute")}
                    (get-in result [:resolved/entry-points :image-spool])))))
+        (testing "a cross-namespace entry point may require its own namespace"
+          (is (nil? (find-ns foreign-ns)))
+          (let [result (runtime/module!
+                        rt :image-foreign
+                        {:ns foreign-owner-ns :load :image :spools [root-lib]})]
+            (is (= :applied (:status result)))
+            (is (some? (find-ns foreign-ns)))
+            (is (= [:= [:attr :owner] "foreign"]
+                   (get (graph/queries rt) "image-foreign-q")))))
         (testing "an image namespace with no spool var fails at evaluation"
           (let [result (runtime/module! rt :image-bare
                                         {:ns bare-ns :load :image :spools [root-lib]})

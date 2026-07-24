@@ -47,6 +47,8 @@ The OLR record closed the following. Each entry cites its source; the archive ho
 
 **Decision: adopt the grammar amendment** (working name `{:load :image}`; the core feature owns the final spelling). Constraints, all of which fail loudly per TEN-003:
 
+**Superseded in part on 2026-07-24 by [ADR-004.P3](0004-def-spool-convention.md):** the explicit-`:contribute` requirement and its declaration-time refusal below are historical. Image evaluation now resolves contribution from the loaded target namespace's public `spool` var, with a Phase A explicit key still accepted; when neither supplies contribution, activation fails through the per-module evaluation channel. The remaining P4 constraints still govern.
+
 - Valid only with an `:ns` target — combined with `:file` it is refused; the declared namespace must already be loaded in the JVM image, else refusal.
 - Requires an explicit `:contribute` symbol: no source evaluation happens, so no authoring-form collection can happen; a `:load :image` declaration without `:contribute` is refused at declaration time.
 - Every refusal carries the failing declaration's module key and offending value plus the allowed alternatives — which target kinds are accepted, that the namespace must be loaded first, that `:contribute` is required — per TEN-003's message discipline. A refusal a caller cannot act on from its own text is a defect in the core feature, not an acceptable stub.
@@ -86,6 +88,8 @@ The remaining epic features convert every `install!` fixture to module activatio
 - **Guild's fallback name needs a runtime-state setter.** `install!` took an optional fallback guild name held in runtime-owned state; module reconcile resets it and reads runtime metadata. Tests of the fallback behavior get an exported runtime-state setter instead of keeping an installer alive for one argument.
 
 ## ADR-003.P8 Consequences
+
+The consequences below record the original delivery. ADR-004.P3 supersedes decision B's explicit-`:contribute` consequence and moves its missing-contribution failure from declaration time to module evaluation; current behavior is owned by ADR-004.P3 and SPEC-004.C45/C46.
 
 - The core feature (`fbr4m`) ships decision B's grammar delta and decision D's contract text and enforcement.
 - The in-tree feature (`rrvnn`) deletes the 7 installers, converts the 28 call sites, and regenerates the affected docs (7 `spools/*.api.md`, prose in `guild.md` and `unsafe-text-search.md`). It also moves P7's operational guidance — fixture activation rules and the exported-base-declaration pattern — into the maintained guides (`docs/spools/testing.md`, and `docs/spools/writing-shared-spools.md` where it touches spool authors), linking back here for rationale, so the discoverable authoring surface cannot drift from an ADR-only record.

@@ -320,7 +320,10 @@
   `spool` var (or an explicit `:contribute`) in the image; a declared namespace
   not loaded in the image, or one with no resolvable `:contribute`, is that
   module's `:failed` outcome at evaluation. The outcome reports
-  `:source/status :image` and carries no source stamp.
+  `:source/status :image` and carries no source stamp. Image mode never loads
+  the declared target namespace's source; an entry-point symbol deliberately
+  qualified to a different namespace follows ordinary symbol resolution and may
+  require that callable namespace.
 
   A `:reconcile` fn receives the contribution status under
   `[:module/contribution :status]` and branches: `:applied` ensures its live

@@ -100,6 +100,9 @@
        :value value
        :has-value? has-value?})))
 
+;; Keep this evaluated/deferred traversal policy aligned with
+;; skein.core.weaver.module-refresh/namespaces-in-form. This scanner is only the
+;; structural pre-merge guard; runtime validation remains authoritative.
 (def ^:private deferred-body-forms
   '#{comment defn defmacro fn fn* quote var})
 

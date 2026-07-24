@@ -47,6 +47,8 @@ ADR-003.P4 decision B required a `:load :image` module to carry an explicit `:co
 
 A `:load :image` module whose namespace is unloaded fails at evaluation. A loaded image namespace with no public `spool` var may still use an explicit Phase A `:contribute`; when neither source supplies contribution, the module is a loud evaluation-time `:failed` outcome on the per-module evaluation-failure channel, never a top-level `:refused` and never a throw out of `module!`, with error data naming `:module/key`, the offending `:ns`, and `:load :image`.
 
+Image mode never loads the declared target namespace's source: that namespace must already be present in the JVM image. Entry-point symbols retain the ordinary G2 resolution contract, so a deliberately fully qualified symbol naming a different, unloaded namespace may require that callable's namespace; this does not re-evaluate the image module's target source.
+
 This is the one place where a refusal moves from declaration time to evaluation time, and it is named as such (`DELTA-Dsp-002.D1`). For ordinary modules nothing about failure locality changes: declared entry-point symbols already resolve at evaluation time after source load. Image mode is the exception because a namespace cannot be inspected for its `spool` var before it is loaded, so the check has no honest declaration-time form once the entry point lives in the image. The revisit trigger is resolved **without** relaxing any loud failure — an unloaded namespace, or a loaded namespace with no contribution from either the convention or the transitional explicit key, fails instead of defaulting silently (ADR-003.P9: "Do not revisit by relaxing the loud failures").
 
 ## ADR-004.P4 Decision C — the transitional per-key precedence window (Phase A)

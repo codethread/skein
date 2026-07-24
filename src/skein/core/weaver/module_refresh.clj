@@ -298,6 +298,9 @@
         synced)
       (classpath-source-file (classpath-binding runtime ns-sym))))
 
+;; Keep this evaluated/deferred traversal policy aligned with
+;; quality.spool-var/declaration-sites. Runtime evaluation owns the authoritative
+;; failure; the repository scanner remains a structural pre-merge guard.
 (def ^:private deferred-reader-forms
   '#{comment defn defmacro fn fn* quote var})
 
@@ -533,7 +536,11 @@
     (update result :source-stamps dissoc key)))
 
 (defn- publishable-outcome [raw-outcome]
-  (dissoc raw-outcome :contribution :source/stamp :module/reconcile-fn))
+  (dissoc raw-outcome
+          :contribution
+          :source/stamp
+          :module/reconcile-fn
+          :module/resolved))
 
 (defn- stage-publications
   [backends candidate-map graph order raw previous-contributions previous-sources]
