@@ -8,6 +8,12 @@ Type: AFK
 
 Run the final acceptance matrix over the Phase C cutover and prepare the branch for the coordinator landing workflow. This proves the whole feature is green end to end against bumped pins; it does not adopt anything new into the live world beyond the Phase C refresh already verified. Tracked as kanban task `nws2o`.
 
+Run read-only acceptance in Task 9's integrated
+`/Users/ct/dev/projects/skein-src__uwnzl-phase-c` worktree on
+`codex/uwnzl-phase-c-cutover`. This task owns no code or documentation files;
+any failure returns to its owning Task 7, 8, or 9 branch and must be
+re-integrated before the acceptance matrix restarts.
+
 ## TASK-Dsp-010.P2 Must implement exactly
 
 - **TASK-Dsp-010.MI1:** Rerun cold focused tests per slice, `(cd cli && go test ./...)`, `clojure -M:smoke`, and `make fmt-check lint reflect-check docs-check` against the bumped sibling pins.
@@ -30,4 +36,4 @@ Run the final acceptance matrix over the Phase C cutover and prepare the branch 
 ## TASK-Dsp-010.P5 References
 
 - **TASK-Dsp-010.REF1:** `PLAN-Dsp-001.V3`, `.V4`; CLAUDE.md validation and landing discipline; `strand land about`.
-- **TASK-Dsp-010.REF2:** Kanban task `nws2o`; epic card `uwnzl` DONE-WHEN; Task 9 cutover.
+- **TASK-Dsp-010.REF2:** Kanban task `nws2o`; epic card `uwnzl` DONE-WHEN; Task 9 cutover worktree and branch.

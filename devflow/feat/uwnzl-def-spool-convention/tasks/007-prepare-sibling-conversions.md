@@ -8,9 +8,36 @@ Type: AFK
 
 Prepare the Phase B branches for devflow.spool, kanban.spool, and agent-harness.spool: export `def spool`, delete the `module` export, and convert each repo's own consuming surfaces. This is the pre-stamp work the coordinator may run before the Skein `v1` stamp exists. It stops short of raising `:skein/min` floors and publishing markers, so nothing here assumes a marked core.
 
+Provision these linked worktrees from each repo's then-current main after
+Phase A lands:
+
+- `/Users/ct/dev/projects/devflow.spool__uwnzl-def-spool-convention` on
+  `codex/uwnzl-def-spool-convention`
+- `/Users/ct/dev/projects/kanban.spool__uwnzl-def-spool-convention` on
+  `codex/uwnzl-def-spool-convention`
+- `/Users/ct/dev/projects/agent-harness.spool__uwnzl-def-spool-convention` on
+  `codex/uwnzl-def-spool-convention`
+
+Owned files are the exported spool namespaces, `.skein/init.clj`, their direct
+fixtures/helpers, and the repo-local prose that documents activation:
+
+- devflow: `src/ct/spools/devflow.clj`, `.skein/init.clj`,
+  `test/ct/spools/devflow_test.clj`, `README.md`, and `devflow.md`
+- kanban: `src/ct/spools/kanban.clj`, `.skein/init.clj`,
+  `.skein/peering_adapter.clj`, `test/ct/spools/kanban_peering_test.clj`,
+  `README.md`, `kanban.md`, and `kanban.cookbook.md`
+- agent-harness: `agent-run/src/ct/spools/agent_run.clj`,
+  `delegation/src/ct/spools/delegation.clj`,
+  `bench/src/ct/spools/bench.clj`, `.skein/init.clj`,
+  `test/ct/spools/test_support.clj`, and the four component `README.md` files
+
+Before editing, refresh this inventory with `git grep` in each worktree and
+record any additional direct fixture or activation caller on `l5lwo`; do not
+expand into unrelated sibling code.
+
 ## TASK-Dsp-007.P2 Must implement exactly
 
-- **TASK-Dsp-007.MI1:** In each of the three sibling repos, add the `(def spool …)` export and delete the `module` export.
+- **TASK-Dsp-007.MI1:** In each of the three sibling repos, add the required `(def spool …)` export and delete every existing `module` export; record a missing expected legacy export rather than inventing a compatibility alias.
 - **TASK-Dsp-007.MI2:** Convert each repo's own consuming surfaces — workspace config, fixtures, activation helpers, and docs — to the convention.
 - **TASK-Dsp-007.MI3:** Run each repo's own suite and quality gates against Phase-A skein-src to prove the conversion holds under per-key precedence.
 - **TASK-Dsp-007.MI4:** Leave each branch prepared and reviewed but unpublished; record the exact candidate commits for Task 8.
@@ -29,4 +56,4 @@ Prepare the Phase B branches for devflow.spool, kanban.spool, and agent-harness.
 ## TASK-Dsp-007.P5 References
 
 - **TASK-Dsp-007.REF1:** `PLAN-Dsp-001.PH-B`, `.AA7`, `.CM3`; kanban task `l5lwo`.
-- **TASK-Dsp-007.REF2:** Sibling repos devflow.spool, kanban.spool, agent-harness.spool; close-out shape from epic `waq0l` (`rtnfv`).
+- **TASK-Dsp-007.REF2:** Sibling repos and worktrees listed in P1; close-out shape from epic `waq0l` (`rtnfv`).

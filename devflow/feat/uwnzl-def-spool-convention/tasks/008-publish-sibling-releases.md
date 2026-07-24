@@ -8,6 +8,12 @@ Type: AFK
 
 With the Skein `v1` stamp confirmed (Task 6) and the branches prepared (Task 7), raise each sibling's `:skein/min` floor to `v1`, cut new ordered `v<int>` markers, and record a `release-exception.md` per repo. This runs under the coordinator's delegated release authority and only after the stamp exists.
 
+Continue in the three prepared Task 7 worktrees and branches. This task owns
+only each repo's root `spool.edn`, its root `release-exception.md`, and release
+metadata required by that repo's documented marker ceremony. Any code or
+activation correction returns to Task 7 and receives another review before
+publication.
+
 ## TASK-Dsp-008.P2 Must implement exactly
 
 - **TASK-Dsp-008.MI1:** On the prepared candidate commits, raise `:skein/min` to `v1` in devflow.spool, kanban.spool, and agent-harness.spool.
@@ -29,4 +35,4 @@ With the Skein `v1` stamp confirmed (Task 6) and the branches prepared (Task 7),
 ## TASK-Dsp-008.P5 References
 
 - **TASK-Dsp-008.REF1:** `PLAN-Dsp-001.PH-B`, `.CM3`; kanban task `l5lwo`; peer release precedent from epic `waq0l`.
-- **TASK-Dsp-008.REF2:** Task 6 stamp confirmation; Task 7 candidate commits.
+- **TASK-Dsp-008.REF2:** Task 6 stamp confirmation; Task 7 candidate commits and worktrees.
