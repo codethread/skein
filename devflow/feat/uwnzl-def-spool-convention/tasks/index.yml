@@ -22,7 +22,7 @@ tasks:
   - id: 5
     description: Phase A atomic acceptance and adversarial review
     task_file: tasks/005-phase-a-atomic-acceptance.md
-    status: in_progress
+    status: complete
     blocked_by: [1, 2, 3, 4]
   - id: 6
     description: "[HITL] External Skein v1 stamp gate (card b3v1r)"
