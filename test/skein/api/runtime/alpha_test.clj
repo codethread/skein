@@ -219,21 +219,29 @@
    :residuals []
    :conflicts []
    :remedies []
+   :resolved/entry-points
+   {:demo {:contribute 'demo.module/contribute
+           :reconcile 'demo.module/reconcile}}
    :declaration/shadows {}
    :publication/kinds [:queries]})
 
 (deftest live-module-result-specs-own-public-shapes
-  (testing "refresh-result requires a known status/mode and vector projections"
+  (testing "refresh-result requires status, mode, vectors, and resolved entry points"
     (is (s/valid? ::runtime/refresh-result applied-refresh-result))
     (is (s/valid? ::runtime/refresh-result
                   {:status :refused :mode :targeted :modules {} :roots {}
-                   :residuals [] :conflicts [{:reason :boom}] :remedies []}))
+                   :residuals [] :conflicts [{:reason :boom}] :remedies []
+                   :resolved/entry-points {}}))
     (is (not (s/valid? ::runtime/refresh-result
                        (assoc applied-refresh-result :status :bogus))))
     (is (not (s/valid? ::runtime/refresh-result
                        (dissoc applied-refresh-result :mode))))
     (is (not (s/valid? ::runtime/refresh-result
-                       (assoc applied-refresh-result :residuals nil)))))
+                       (assoc applied-refresh-result :residuals nil))))
+    (is (not (s/valid? ::runtime/refresh-result
+                       (assoc applied-refresh-result
+                              :resolved/entry-points
+                              {:demo {:reconcile :not-a-symbol}})))))
   (testing "plan-result is a refresh-result flagged dry-run with a caveat"
     (let [planned (assoc applied-refresh-result :dry-run? true :caveat "loads recorded")]
       (is (s/valid? ::runtime/plan-result planned))
@@ -242,10 +250,14 @@
   (testing "status-result requires joined maps and a last-refresh slot"
     (let [status {:modules {} :declaration/layers {} :declaration/shadows {}
                   :contributions {} :module/outcomes {} :resource/outcomes {}
-                  :root/outcomes {} :loaded {} :last-refresh nil}]
+                  :root/outcomes {} :resolved/entry-points {}
+                  :loaded {} :last-refresh nil}]
       (is (s/valid? ::runtime/status-result status))
       (is (not (s/valid? ::runtime/status-result (dissoc status :last-refresh))))
-      (is (not (s/valid? ::runtime/status-result (assoc status :loaded :nope))))))
+      (is (not (s/valid? ::runtime/status-result (assoc status :loaded :nope))))
+      (is (not (s/valid? ::runtime/status-result
+                         (assoc status :resolved/entry-points
+                                {:demo {:contribute 'unqualified}}))))))
   (testing "reload-code-result names the reloaded root plus residual outcomes"
     (let [result {:root-lib 'demo/root
                   :root "/tmp/root"

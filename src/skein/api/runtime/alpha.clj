@@ -28,6 +28,7 @@
             [skein.core.specs :as specs]
             [skein.core.weaver.access :as access]
             [skein.core.weaver.module-graph :as module-graph]
+            [skein.core.weaver.module-refresh.entry-points :as entry-points]
             [skein.core.weaver.runtime :as weaver-runtime]
             [skein.core.weaver.spool-sync :as spool-sync]))
 
@@ -241,12 +242,15 @@
 
 (s/def ::refresh-status #{:applied :partial :unchanged :refused})
 (s/def ::refresh-mode #{:full :targeted})
+(s/def ::resolved-entry-points
+  (s/map-of ::module-key ::entry-points/resolved-entry-points))
 (s/def ::refresh-result
   (s/and map?
          #(s/valid? ::refresh-status (:status %))
          #(s/valid? ::refresh-mode (:mode %))
          #(map? (:modules %))
          #(map? (:roots %))
+         #(s/valid? ::resolved-entry-points (:resolved/entry-points %))
          #(vector? (:residuals %))
          #(vector? (:conflicts %))
          #(vector? (:remedies %))))
@@ -261,6 +265,7 @@
   (s/and map?
          #(map? (:modules %))
          #(map? (:contributions %))
+         #(s/valid? ::resolved-entry-points (:resolved/entry-points %))
          #(map? (:loaded %))
          #(contains? % :last-refresh)))
 
@@ -293,10 +298,13 @@
 
   Entry points follow the `def spool` convention (PROP-Dsp-001): the module's
   namespace declares a public `(def spool {:contribute … :reconcile …})` var
-  whose symbols the coordinator resolves at every module evaluation. During
-  Phase A the legacy explicit `:contribute`/`:reconcile` opt keys remain
-  accepted and win per key over the `spool` var; a target with no `spool` var
-  works from a complete explicit declaration. When neither the resolved
+  whose symbols the coordinator uses for fields absent from the module
+  declaration. Every effective symbol is resolved and root-value-validated at
+  every module evaluation. During Phase A the legacy explicit
+  `:contribute`/`:reconcile` opt keys remain accepted and win per key over the
+  `spool` var; when both are explicit, the transitional path does not consult
+  or validate `spool`. A target with no `spool` var therefore works from a
+  complete explicit declaration. When neither the resolved
   `:contribute` nor an explicit one is present, the module's contribution is the
   declaration data collected from the authoring forms evaluated in its source,
   so a plain file of authoring forms is a complete module
@@ -391,7 +399,8 @@
   staged contributions skip publication and reconcile. The atomic multi-phase
   reconcile is the coordinator that startup also drives; this surface owns the
   arities, request classification, and result validation. The joined result
-  conforms to `::refresh-result` (DELTA-OlrRepl-001.CC7)."
+  conforms to `::refresh-result`, whose `:resolved/entry-points` projection
+  conforms to `::resolved-entry-points` (DELTA-OlrRepl-001.CC7)."
   ([runtime] (refresh! runtime {}))
   ([runtime opts]
    (validate-refresh-opts! opts)
@@ -432,7 +441,8 @@
   loaded-code picture (current bindings, prior bindings, residuals, hard
   conflicts) with the last refresh result. It performs no network access, file
   write, source load, registration, or reconcile. The result conforms to
-  `::status-result` (DELTA-OlrRepl-001.CC8, DELTA-OlrDrt-001.CC15)."
+  `::status-result`, including `::resolved-entry-points`
+  (DELTA-OlrRepl-001.CC8, DELTA-OlrDrt-001.CC15)."
   [runtime]
   (validate-status-result! (weaver-runtime/module-status runtime)))
 
