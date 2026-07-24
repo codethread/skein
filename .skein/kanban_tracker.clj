@@ -9,11 +9,6 @@
 
 (s/def ::run-id (s/and string? (complement str/blank?)))
 (s/def ::projection :ct.spools.kanban/tracker-projection)
-(s/def ::binding :ct.spools.kanban/tracker-binding)
-(s/def ::install-result
-  (s/and map?
-         #(= #{:tracker} (set (keys %)))
-         #(s/valid? ::binding (:tracker %))))
 
 (defn- active-stage
   "Return the active root's non-blank stage, or nil when no root is active."
@@ -43,16 +38,6 @@
   :args (s/cat :run-id ::run-id)
   :ret ::projection)
 
-(defn install!
-  "Bind devflow as the required kanban tracker for this runtime."
-  []
-  (kanban/set-tracker! {:name "devflow"
-                        :project 'kanban-tracker/devflow-projection}))
-
-(s/fdef install!
-  :args (s/cat)
-  :ret ::install-result)
-
 ;; The devflow<->kanban tracker binding is a singleton slot, not a partitioned
 ;; kind: kanban exposes one tracker per runtime through `set-tracker!`, so there
 ;; is no owner partition to contribute and nothing for deletion-by-omission to
@@ -60,5 +45,8 @@
 (defn reconcile
   "Bind devflow as this runtime's required kanban tracker."
   [{:keys [runtime]}]
-  (current/with-runtime runtime (install!))
+  (current/with-runtime
+    runtime
+    (kanban/set-tracker! {:name "devflow"
+                          :project 'kanban-tracker/devflow-projection}))
   {:reconciled :kanban-tracker})
