@@ -391,3 +391,19 @@
                     :read-error "EOF while reading"}])]
     (is (= 1 (count findings)))
     (is (re-find #"could not read file: EOF while reading" (first findings)))))
+
+(deftest module-root-enumeration-fails-loudly
+  (let [directory-files! (ns-resolve 'quality.spool-var 'directory-files!)
+        root (java.io.File/createTempFile "spool-var-root" ".not-a-directory")]
+    (try
+      (let [error (try
+                    (directory-files! root)
+                    nil
+                    (catch clojure.lang.ExceptionInfo e e))]
+        (is (some? error))
+        (is (= (.getPath root) (:root (ex-data error))))
+        (is (= :list-module-loadable-roots
+               (:operation (ex-data error))))
+        (is (= :readable-directory (:expected (ex-data error)))))
+      (finally
+        (.delete root)))))

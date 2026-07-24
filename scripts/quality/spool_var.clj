@@ -185,14 +185,29 @@
         :when finding]
     finding))
 
+(defn- directory-files!
+  "List `root`, failing loudly when it is missing, not a directory, unreadable,
+  or otherwise cannot be enumerated."
+  [root]
+  (let [^java.io.File root (io/file root)
+        files (.listFiles root)]
+    (when (nil? files)
+      (throw (ex-info "spool-var scan root could not be enumerated"
+                      {:root (.getPath root)
+                       :operation :list-module-loadable-roots
+                       :expected :readable-directory})))
+    files))
+
 (defn- module-loadable-roots
   "Return the roots where a repository namespace can be activated as a
   module: every shipped spool's `src` plus the `.skein` workspace config."
   []
-  (conj (vec (for [^java.io.File dir (sort (or (.listFiles (io/file spools-root)) []))
-                   :when (and (.isDirectory dir) (.isDirectory (io/file dir "src")))]
-               (.getPath (io/file dir "src"))))
-        config-root))
+  (let [spool-dirs (directory-files! spools-root)
+        _ (directory-files! config-root)]
+    (conj (vec (for [^java.io.File dir (sort spool-dirs)
+                     :when (and (.isDirectory dir) (.isDirectory (io/file dir "src")))]
+                 (.getPath (io/file dir "src"))))
+          config-root)))
 
 (defn- scan
   "Read every `.clj` under the module-loadable roots into sites, tagging

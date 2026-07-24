@@ -6,8 +6,9 @@
   Source/contribution failures retain the affected owner's prior declarations;
   changed contributions prevalidate across all registered kinds before
   publication; resource reconcilers run afterward with explicit degradation."
-  (:require [clojure.java.io :as io]
-            [clojure.set :as set]
+  (:require [clojure.set :as set]
+            [clojure.tools.reader :as reader]
+            [clojure.tools.reader.reader-types :as reader-types]
             [skein.core.format :as format]
             [skein.core.weaver.dispatch :as dispatch]
             [skein.core.weaver.module-graph :as module-graph]
@@ -326,14 +327,22 @@
 (defn- declared-file-namespaces
   "Return every namespace form evaluated while loading `file`."
   [file]
-  (with-open [reader (java.io.PushbackReader. (io/reader (io/file file)))]
-    (let [eof (Object.)]
-      (binding [*read-eval* false]
-        (loop [namespaces []]
-          (let [form (read {:eof eof :read-cond :allow :features #{:clj}} reader)]
-            (if (identical? eof form)
-              namespaces
-              (recur (into namespaces (namespaces-in-form form))))))))))
+  (let [rdr (reader-types/indexing-push-back-reader (slurp file) 1 file)
+        opts {:eof ::eof :read-cond :allow :features #{:clj}}]
+    (binding [reader/*read-eval* false
+              ;; Namespace aliases declared by the file take effect only as
+              ;; load-file evaluates its leading ns form. This structural
+              ;; pre-scan needs only to read later ::alias/kw forms, not resolve
+              ;; their runtime identity.
+              reader/*alias-map* (fn [alias]
+                                   (symbol (str "module-refresh." alias)))
+              reader/*default-data-reader-fn* (fn [_tag _value]
+                                                ::tagged-literal)]
+      (loop [namespaces []]
+        (let [form (reader/read opts rdr)]
+          (if (= ::eof form)
+            namespaces
+            (recur (into namespaces (namespaces-in-form form)))))))))
 
 (defn- declared-file-namespace [key file]
   (let [namespaces (declared-file-namespaces file)]
@@ -947,14 +956,17 @@
   "Return the coordinator's offline module state joined with loaded-code state."
   [runtime]
   (let [state @(:module-state runtime)
-        loaded (safe-loaded-status runtime)]
+        loaded (safe-loaded-status runtime)
+        resolved-entry-points
+        (or (:resolved-entry-points state)
+            (entry-points/legacy-resolved-entry-points state))]
     {:modules (:graph state)
      :declaration/layers (:layers state)
      :declaration/shadows (:shadows state)
      :contributions (:contributions state)
      ;; The last-good resolved entry points sit alongside the authored `:modules`
      ;; graph, never inside it (PROP-Dsp-001.G2a).
-     :resolved/entry-points (:resolved-entry-points state)
+     :resolved/entry-points resolved-entry-points
      :module/outcomes (:outcomes state)
      :resource/outcomes (:resources state)
      :root/outcomes (:root-outcomes state)

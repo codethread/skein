@@ -4353,6 +4353,7 @@
             ns-of (fn [label] (symbol (str "test.module." label "-" suffix)))
             first-ns (ns-of "file-first")
             second-ns (ns-of "file-second")
+            aliased-ns (ns-of "file-aliased-keyword")
             source-for
             (fn [filename spool-first?]
               (let [source (str "modules/" filename ".clj")
@@ -4377,7 +4378,18 @@
                    (get-in outcome [:error :data :reason])))
             (is (= key (get-in outcome [:error :data :module/key])))
             (is (= [first-ns second-ns]
-                   (get-in outcome [:error :data :namespaces])))))))))
+                   (get-in outcome [:error :data :namespaces])))))
+        (let [source "modules/aliased-keyword.clj"
+              file (io/file workspace source)]
+          (io/make-parents file)
+          (spit file
+                (str "(ns " aliased-ns
+                     " (:require [clojure.string :as text]))\n"
+                     "(def value ::text/example)\n"))
+          (let [result (runtime/module! rt :aliased-keyword-file {:file source})]
+            (is (= :applied (:status result)))
+            (is (= :applied
+                   (get-in result [:modules :aliased-keyword-file :status])))))))))
 
 (deftest targeted-refresh-retains-prior-contribution-and-isolates-collisions
   (with-runtime
@@ -5119,6 +5131,27 @@
           (reset! module-reconcile-statuses [])
           ;; Simulate a coordinator state recorded before Phase A was loaded.
           (swap! (:module-state rt) dissoc :resolved-entry-points)
+          (let [legacy-resolved
+                {:live-upgrade
+                 {:contribute (symbol (str module-ns) "contribute")
+                  :reconcile 'skein.weaver-test/module-reconcile}}]
+            (is (= legacy-resolved
+                   (:resolved/entry-points (runtime/status rt)))
+                "status bootstraps the projection before the first refresh")
+            (spit (io/file workspace "init.clj")
+                  (str "(skein.core.weaver.runtime/declare-module! "
+                       "skein.core.weaver.runtime/*runtime* :cycle-a "
+                       "{:ns '" module-ns " :after [:cycle-b] "
+                       ":contribute '" module-ns "/contribute})\n"
+                       "(skein.core.weaver.runtime/declare-module! "
+                       "skein.core.weaver.runtime/*runtime* :cycle-b "
+                       "{:ns '" module-ns " :after [:cycle-a] "
+                       ":contribute '" module-ns "/contribute})\n"))
+            (let [refused (weaver-runtime/refresh-modules! rt)]
+              (is (= :refused (:status refused)))
+              (is (= legacy-resolved
+                     (:resolved/entry-points (runtime/status rt)))
+                  "a refused first refresh leaves live-pickup status valid")))
           (spit (io/file workspace "init.clj") "")
           (let [result (weaver-runtime/refresh-modules! rt)]
             (is (= :applied (:status result)))
