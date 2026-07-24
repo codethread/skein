@@ -1,6 +1,6 @@
 # Sibling Spools Mechanical Rollout Plan
 
-**Document ID:** `PLAN-Sbl-001` **Feature:** `9snqu-siblings-rollout` **Proposal:** [proposal.md](./proposal.md) **RFC:** none **Root specs:** none amended (SPEC-004.C46b and ADR-003 consumed as-is) **Feature specs:** none **Status:** Draft **Last Updated:** 2026-07-24 **Configuration identification:** Document IDs must be ordered as document type, short name, sequential id, then optional version. Prefix every nested point ID with the full document ID, for example `PLAN-Sbl-001.P1`.
+**Document ID:** `PLAN-Sbl-001` **Feature:** `9snqu-siblings-rollout` **Proposal:** [proposal.md](./proposal.md) **RFC:** none **Root specs:** none amended (SPEC-004.C46b and ADR-003 consumed as-is) **Feature specs:** none **Status:** Reviewed **Last Updated:** 2026-07-24 **Configuration identification:** Document IDs must be ordered as document type, short name, sequential id, then optional version. Prefix every nested point ID with the full document ID, for example `PLAN-Sbl-001.P1`.
 
 ## PLAN-Sbl-001.P1 Goal and scope
 
@@ -29,6 +29,10 @@ Retire the remaining sibling-repo installers on the ADR-003 exported-datum patte
 
 ## PLAN-Sbl-001.P5 Implementation phases
 
+### PLAN-Sbl-001.PH0 skein-src consumer preflight (review-round-1 reorder)
+
+A5's config_ops_test conversion implemented and green focused (`clojure -M:test skein.config-ops-test`) against the pinned kanban v8 BEFORE any release tag exists — the conversion is independent of the new releases and tags are immutable, so declaration/classloader mistakes surface while every publication can still be withheld. The conversion runs inside the existing `run-with-config-world` fixture (it supplies the spool classloader and runtime context): add the `skein.api.runtime.alpha` require, require `ct.spools.kanban` in the body, then the literal v8 image declaration (review-executed by hz41r: top status `:applied`, source `:image`, contribution `:replaced`, reconcile `:applied`).
+
 ### PLAN-Sbl-001.PH1 devflow.spool v5
 
 Branch in-repo; A1; suite green; compat-alarm v4 failing only at archived installer call sites; release-exception.md; merge to main; tag v5 annotated + pushed; peeled sha on card.
@@ -39,11 +43,11 @@ Branch in-repo; A2; suite green; compat-alarm v8 failing only at archived instal
 
 ### PLAN-Sbl-001.PH3 agent-harness.spool v13
 
-Branch in-repo; A3; suite green; compat-alarm v12 green; merge to main; tag v13 annotated + pushed; peeled sha on card.
+Branch in-repo; A3; `PATH="/opt/homebrew/opt/openjdk/bin:$PATH" clojure -M:test` AND `PATH="/opt/homebrew/opt/openjdk/bin:$PATH" clojure -M:format` green (the repo's AGENTS.md contract); compat-alarm v12 green; merge to main; tag v13 annotated + pushed; peeled sha on card.
 
-### PLAN-Sbl-001.PH4 skein-src conversion + land
+### PLAN-Sbl-001.PH4 skein-src land
 
-A5: config_ops_test conversion green focused (`clojure -M:test skein.config-ops-test` or its actual ns); notebook/notes verification note; full locked suite at queue acceptance; land via `strand land`; kanban finish the card.
+Notebook/notes verification note; full locked suite at queue acceptance; land via `strand land`; kanban finish the card with per-repo release records.
 
 ## PLAN-Sbl-001.P6 Validation strategy
 
