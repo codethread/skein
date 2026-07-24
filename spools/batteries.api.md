@@ -118,10 +118,14 @@ List lean-projected strands, optionally filtered by lifecycle state and/or a nam
 
 Base module declaration datum for the batteries spool (ADR-003.P7).
 
-  The authored `:ns`/`:contribute`/`:reconcile` triple production and tests
-  share: production config assocs its `:spools` root guards onto it; bare-test
-  fixtures assoc `:load :image`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/batteries/src/skein/spools/batteries.clj#L1541-L1549">Source</a></sub></p>
+  The authored `:ns`/`:contribute`/`:reconcile` triple every consumer starts
+  from. A consumer whose config can load this namespace assocs its world's
+  `:spools` guards onto the datum; cold startup config, which runs before
+  spool sources are loadable, mirrors it literally under the init.clj parity
+  test; bare-test fixtures assoc `:load :image`. Every variant is `module!`
+  input, validated against `skein.api.runtime.alpha`'s `::module-opts`
+  grammar.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/batteries/src/skein/spools/batteries.clj#L1541-L1553">Source</a></sub></p>
 
 ## <a name="skein.spools.batteries/note-op">`note-op`</a>
 ``` clojure

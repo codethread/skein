@@ -1541,9 +1541,13 @@
 (def module
   "Base module declaration datum for the batteries spool (ADR-003.P7).
 
-  The authored `:ns`/`:contribute`/`:reconcile` triple production and tests
-  share: production config assocs its `:spools` root guards onto it; bare-test
-  fixtures assoc `:load :image`."
+  The authored `:ns`/`:contribute`/`:reconcile` triple every consumer starts
+  from. A consumer whose config can load this namespace assocs its world's
+  `:spools` guards onto the datum; cold startup config, which runs before
+  spool sources are loadable, mirrors it literally under the init.clj parity
+  test; bare-test fixtures assoc `:load :image`. Every variant is `module!`
+  input, validated against `skein.api.runtime.alpha`'s `::module-opts`
+  grammar."
   {:ns 'skein.spools.batteries
    :contribute 'skein.spools.batteries/contribute
    :reconcile 'skein.spools.batteries/reconcile})

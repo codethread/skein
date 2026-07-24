@@ -193,11 +193,13 @@
            :attr-key {:type :string
                       :doc "Scope the attribute-value search to one attribute key (skips the title branch)."}
            :limit {:type :int
-                   :doc (str "Row cap (default " default-search-limit "). "
-                             (format-alpha/reflow
-                              "|Overflow fails loudly rather than truncating. Search does not
-                               |consult batteries' set-read-limit! — that runtime-owned cap
-                               |governs list/ready, not this op."))}}
+                   :doc (format
+                         (format-alpha/reflow
+                          "|Row cap (default %d). Overflow fails loudly rather
+                           |than truncating. Search does not consult batteries'
+                           |set-read-limit! — that runtime-owned cap governs
+                           |list/ready, not this op.")
+                         default-search-limit)}}
    :positionals [{:name :substring :type :string :required? true
                   :doc "Substring to search for, matched literally."}]
    :hook-class :read
@@ -210,16 +212,6 @@
                       :title :string
                       :attr-key [:nullable :string]
                       :snippet :string}}})
-
-(def module
-  "Base module declaration datum for the unsafe-text-search spool (ADR-003.P7).
-
-  The authored `:ns`/`:contribute` pair production and tests share: production
-  config assocs its `:spools` root guards onto it; bare-test fixtures assoc
-  `:load :image`. The spool owns no live resources, so it declares no
-  `:reconcile`."
-  {:ns 'skein.spools.unsafe-text-search
-   :contribute 'skein.spools.unsafe-text-search/contribute})
 
 (defn contribute
   "Return unsafe-text-search's complete unsafe search-operation contribution.
@@ -241,3 +233,16 @@
                              :doc search-doc
                              :arg-spec search-arg-spec
                              :returns search-return}}}})
+
+(def module
+  "Base module declaration datum for the unsafe-text-search spool (ADR-003.P7).
+
+  The authored `:ns`/`:contribute` pair every consumer starts from. A consumer
+  whose config can load this namespace assocs its world's `:spools` guards
+  onto the datum; cold startup config, which runs before spool sources are
+  loadable, mirrors it literally under the init.clj parity test; bare-test
+  fixtures assoc `:load :image`. Every variant is `module!` input, validated
+  against `skein.api.runtime.alpha`'s `::module-opts` grammar. The spool owns
+  no live resources, so it declares no `:reconcile`."
+  {:ns 'skein.spools.unsafe-text-search
+   :contribute 'skein.spools.unsafe-text-search/contribute})

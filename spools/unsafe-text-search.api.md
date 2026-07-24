@@ -56,7 +56,7 @@ Return unsafe-text-search's complete unsafe search-operation contribution.
   because a blessed spool may not reach the weaver's internal op-entry plumbing
   (SPEC-003.C19a) — so the effective op registry stays string-keyed across the
   eager and module paths.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/unsafe-text-search/src/skein/spools/unsafe_text_search.clj#L224-L243">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/unsafe-text-search/src/skein/spools/unsafe_text_search.clj#L216-L235">Source</a></sub></p>
 
 ## <a name="skein.spools.unsafe-text-search/default-search-limit">`default-search-limit`</a>
 
@@ -81,11 +81,14 @@ Default row cap for `search`. Overflow fails loudly rather than truncating,
 
 Base module declaration datum for the unsafe-text-search spool (ADR-003.P7).
 
-  The authored `:ns`/`:contribute` pair production and tests share: production
-  config assocs its `:spools` root guards onto it; bare-test fixtures assoc
-  `:load :image`. The spool owns no live resources, so it declares no
-  `:reconcile`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/unsafe-text-search/src/skein/spools/unsafe_text_search.clj#L214-L222">Source</a></sub></p>
+  The authored `:ns`/`:contribute` pair every consumer starts from. A consumer
+  whose config can load this namespace assocs its world's `:spools` guards
+  onto the datum; cold startup config, which runs before spool sources are
+  loadable, mirrors it literally under the init.clj parity test; bare-test
+  fixtures assoc `:load :image`. Every variant is `module!` input, validated
+  against `skein.api.runtime.alpha`'s `::module-opts` grammar. The spool owns
+  no live resources, so it declares no `:reconcile`.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/unsafe-text-search/src/skein/spools/unsafe_text_search.clj#L237-L248">Source</a></sub></p>
 
 ## <a name="skein.spools.unsafe-text-search/search">`search`</a>
 ``` clojure

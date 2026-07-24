@@ -109,7 +109,7 @@ Return the cron jobs registered on `runtime` as status maps, sorted by id.
   and (once fired) `:last-result`/`:last-fired-at`/`:last-error`. When a job next
   fires lives in its durable `cron/<id>` wake — read scheduler introspection
   (`skein.api.scheduler.alpha/pending`), the single timing view.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L415-L423">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L419-L427">Source</a></sub></p>
 
 ## <a name="skein.spools.cron/module">`module`</a>
 
@@ -118,10 +118,14 @@ Return the cron jobs registered on `runtime` as status maps, sorted by id.
 
 Base module declaration datum for the cron spool (ADR-003.P7).
 
-  The authored `:ns`/`:contribute`/`:reconcile` triple production and tests
-  share: production config assocs its `:spools` root guards onto it; bare-test
-  fixtures assoc `:load :image`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L405-L413">Source</a></sub></p>
+  The authored `:ns`/`:contribute`/`:reconcile` triple every consumer starts
+  from. A consumer whose config can load this namespace assocs its world's
+  `:spools` guards onto the datum; cold startup config, which runs before
+  spool sources are loadable, mirrors it literally under the init.clj parity
+  test; bare-test fixtures assoc `:load :image`. Every variant is `module!`
+  input, validated against `skein.api.runtime.alpha`'s `::module-opts`
+  grammar.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L405-L417">Source</a></sub></p>
 
 ## <a name="skein.spools.cron/recent-failures">`recent-failures`</a>
 ``` clojure

@@ -73,12 +73,15 @@ Return durable stall detail for a ready `:shell` gate view, or nil.
 
 Base module declaration datum for the shell executor (ADR-003.P7).
 
-  The authored `:ns`/`:contribute`/`:reconcile` triple production and tests
-  share. Callers order it after the workflow module with an `:after` edge on
+  The authored `:ns`/`:contribute`/`:reconcile` triple every consumer starts
+  from. Callers order it after the workflow module with an `:after` edge on
   the workflow module's key (the executor kind must exist before this
   contribution publishes) and assoc their world's `:spools` guards or
-  `:load :image`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/executors/shell.clj#L396-L406">Source</a></sub></p>
+  `:load :image` — cold startup config, which runs before spool sources are
+  loadable, mirrors it literally under the init.clj parity test. Every
+  variant is `module!` input, validated against `skein.api.runtime.alpha`'s
+  `::module-opts` grammar.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/executors/shell.clj#L396-L409">Source</a></sub></p>
 
 ## <a name="skein.spools.executors.shell/on-event">`on-event`</a>
 ``` clojure
