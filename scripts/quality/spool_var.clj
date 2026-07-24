@@ -31,6 +31,7 @@
             [clojure.tools.reader.reader-types :as reader-types]))
 
 (def ^:private entry-point-keys #{:contribute :reconcile})
+(def ^:private public-var-forms #{'def 'defonce 'defn 'defmacro})
 
 (def ^:private spools-root "spools")
 (def ^:private config-root ".skein")
@@ -75,10 +76,14 @@
     "authored value is not a map"))
 
 (defn def-spool-sites
-  "Return {:line :private? :value :has-value?} for every top-level
-  `(def spool …)` form read from `file`. The var name must be exactly
-  `spool`; `def-spool` and `spooler` are not it. A docstring form
-  (`(def spool \"doc\" value)`) reports the value, not the docstring."
+  "Return declaration sites for every top-level public-var form named
+  `spool` read from `file`.
+
+  A valid site uses `def`; `defonce`, `defn`, and `defmacro` sites are
+  returned so `findings` can reject them as malformed declarations. The
+  var name must be exactly `spool`; `def-spool` and `spooler` are not it.
+  A docstring form (`(def spool \"doc\" value)`) reports the value, not
+  the docstring."
   [^java.io.File file]
   (let [rdr (reader-types/indexing-push-back-reader (slurp file) 1 (.getPath file))
         opts {:eof ::eof :read-cond :allow :features #{:clj}}]
@@ -92,34 +97,43 @@
           (cond
             (= ::eof form) sites
             (and (seq? form)
-                 (= 'def (first form))
+                 (contains? public-var-forms (first form))
                  (symbol? (second form))
                  (= "spool" (name (second form))))
-            (let [tail (drop 2 form)
+            (let [form-kind (first form)
+                  tail (drop 2 form)
                   [value has-value?] (cond
+                                       (not= 'def form-kind) [nil false]
                                        (and (= 2 (count tail)) (string? (first tail)))
                                        [(second tail) true]
                                        (seq tail) [(first tail) true]
                                        :else [nil false])]
               (recur (conj sites {:line (:line (meta form))
+                                  :form-kind form-kind
                                   :private? (boolean (:private (meta (second form))))
                                   :value value
                                   :has-value? has-value?})))
             :else (recur sites)))))))
 
 (defn findings
-  "Turn `sites` ({:filename :line :private? :value :has-value? :read-error})
+  "Turn `sites` ({:filename :line :form-kind :private? :value :has-value?
+  :read-error})
   into finding strings. Public sites whose authored value fails the shape
   check, or that carry no value at all, are findings; private sites are
   ignored, and a file the scanner could not read is itself a finding."
   [sites]
-  (for [{:keys [filename line private? value has-value? read-error]} sites
+  (for [{:keys [filename line form-kind private? value has-value? read-error]} sites
         :let [finding
               (cond
                 read-error
                 (str filename ": spool-var scan could not read file: " read-error)
 
                 private? nil
+
+                (not= 'def form-kind)
+                (str filename ":" line ": public `spool` var must be authored with `def`,"
+                     " not `" form-kind "`; a module declaration must satisfy ::spool"
+                     " (PROP-Dsp-001.G6a)")
 
                 (not has-value?)
                 (str filename ":" line ": public `spool` var has no value;"

@@ -341,8 +341,16 @@
 (deftest only-a-var-named-spool-is-a-declaration-site
   (testing "adjacent names are not the reserved var"
     (is (empty? (def-spool-sites "(def spooler {:contribute 42})")))
-    (is (empty? (def-spool-sites "(def spool-state {:contribute 42})")))
-    (is (empty? (def-spool-sites "(defn spool [ctx] ctx)"))))
+    (is (empty? (def-spool-sites "(def spool-state {:contribute 42})"))))
+  (testing "other public var forms named spool are malformed declaration sites"
+    (doseq [content ["(defn spool [ctx] ctx)"
+                     "(defmacro spool [form] form)"
+                     "(defonce spool {:contribute 'a/b})"]]
+      (let [findings (findings-for content)]
+        (is (= 1 (count findings)))
+        (is (re-find #"must be authored with `def`" (first findings))))))
+  (testing "private defn shorthand is unaffected"
+    (is (empty? (def-spool-sites "(defn- spool [ctx] ctx)"))))
   (testing "the extraction records privacy and the authored value"
     (let [[site] (def-spool-sites "(def ^:private spool {:reconcile 'a/b})")]
       (is (:private? site))
