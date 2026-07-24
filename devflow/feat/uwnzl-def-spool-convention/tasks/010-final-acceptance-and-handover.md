@@ -8,11 +8,7 @@ Type: AFK
 
 Run the final acceptance matrix over the Phase C cutover and prepare the branch for the coordinator landing workflow. This proves the whole feature is green end to end against bumped pins; it does not adopt anything new into the live world beyond the Phase C refresh already verified. Tracked as kanban task `nws2o`.
 
-Run read-only acceptance in Task 9's integrated
-`/Users/ct/dev/projects/skein-src__uwnzl-phase-c` worktree on
-`codex/uwnzl-phase-c-cutover`. This task owns no code or documentation files;
-any failure returns to its owning Task 7, 8, or 9 branch and must be
-re-integrated before the acceptance matrix restarts.
+Run read-only acceptance in Task 9's integrated `/Users/ct/dev/projects/skein-src__uwnzl-phase-c` worktree on `codex/uwnzl-phase-c-cutover`. This task owns no code or documentation files; any failure returns to its owning Task 7, 8, or 9 branch and must be re-integrated before the acceptance matrix restarts.
 
 ## TASK-Dsp-010.P2 Must implement exactly
 

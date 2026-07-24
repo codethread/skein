@@ -8,32 +8,19 @@ Type: AFK
 
 Prepare the Phase B branches for devflow.spool, kanban.spool, and agent-harness.spool: export `def spool`, delete the `module` export, and convert each repo's own consuming surfaces. This is the pre-stamp work the coordinator may run before the Skein `v1` stamp exists. It stops short of raising `:skein/min` floors and publishing markers, so nothing here assumes a marked core.
 
-Provision these linked worktrees from each repo's then-current main after
-Phase A lands:
+Provision these linked worktrees from each repo's then-current main after Phase A lands:
 
-- `/Users/ct/dev/projects/devflow.spool__uwnzl-def-spool-convention` on
-  `codex/uwnzl-def-spool-convention`
-- `/Users/ct/dev/projects/kanban.spool__uwnzl-def-spool-convention` on
-  `codex/uwnzl-def-spool-convention`
-- `/Users/ct/dev/projects/agent-harness.spool__uwnzl-def-spool-convention` on
-  `codex/uwnzl-def-spool-convention`
+- `/Users/ct/dev/projects/devflow.spool__uwnzl-def-spool-convention` on `codex/uwnzl-def-spool-convention`
+- `/Users/ct/dev/projects/kanban.spool__uwnzl-def-spool-convention` on `codex/uwnzl-def-spool-convention`
+- `/Users/ct/dev/projects/agent-harness.spool__uwnzl-def-spool-convention` on `codex/uwnzl-def-spool-convention`
 
-Owned files are the exported spool namespaces, `.skein/init.clj`, their direct
-fixtures/helpers, and the repo-local prose that documents activation:
+Owned files are the exported spool namespaces, `.skein/init.clj`, their direct fixtures/helpers, and the repo-local prose that documents activation:
 
-- devflow: `src/ct/spools/devflow.clj`, `.skein/init.clj`,
-  `test/ct/spools/devflow_test.clj`, `README.md`, and `devflow.md`
-- kanban: `src/ct/spools/kanban.clj`, `.skein/init.clj`,
-  `.skein/peering_adapter.clj`, `test/ct/spools/kanban_peering_test.clj`,
-  `README.md`, `kanban.md`, and `kanban.cookbook.md`
-- agent-harness: `agent-run/src/ct/spools/agent_run.clj`,
-  `delegation/src/ct/spools/delegation.clj`,
-  `bench/src/ct/spools/bench.clj`, `.skein/init.clj`,
-  `test/ct/spools/test_support.clj`, and the four component `README.md` files
+- devflow: `src/ct/spools/devflow.clj`, `.skein/init.clj`, `test/ct/spools/devflow_test.clj`, `README.md`, and `devflow.md`
+- kanban: `src/ct/spools/kanban.clj`, `.skein/init.clj`, `.skein/peering_adapter.clj`, `test/ct/spools/kanban_peering_test.clj`, `README.md`, `kanban.md`, and `kanban.cookbook.md`
+- agent-harness: `agent-run/src/ct/spools/agent_run.clj`, `delegation/src/ct/spools/delegation.clj`, `bench/src/ct/spools/bench.clj`, `.skein/init.clj`, `test/ct/spools/test_support.clj`, and the four component `README.md` files
 
-Before editing, refresh this inventory with `git grep` in each worktree and
-record any additional direct fixture or activation caller on `l5lwo`; do not
-expand into unrelated sibling code.
+Before editing, refresh this inventory with `git grep` in each worktree and record any additional direct fixture or activation caller on `l5lwo`; do not expand into unrelated sibling code.
 
 ## TASK-Dsp-007.P2 Must implement exactly
 

@@ -1,11 +1,6 @@
 # Weaver Runtime delta for the def-spool convention (Phase A)
 
-**Document ID:** `DELTA-Dsp-002`
-**Root spec:** [daemon-runtime.md](../../../specs/daemon-runtime.md)
-**Feature:** [../proposal.md](../proposal.md) (`PROP-Dsp-001`)
-**Status:** Merged — Phase A. CC1–CC6 are in SPEC-004: convention resolution, the transitional per-key precedence, image-mode `spool` lookup, retained last-good resolved entry points with additive status/plan exposure, and the enumerated loud enforcement are folded into C45/C46; the unchanged invariants (CC6) are restated where C46 already held them.
-**Last Updated:** 2026-07-24
-**Configuration identification:** Document IDs order as document type, short name, sequential id, then optional version: `DELTA-Dsp-002` for v1 and `DELTA-Dsp-002@2` for v2. Omit `@1`. Prefix every nested point ID with the full document ID, for example `DELTA-Dsp-002.CC1`, so references are globally grepable and do not clash across documents.
+**Document ID:** `DELTA-Dsp-002` **Root spec:** [daemon-runtime.md](../../../specs/daemon-runtime.md) **Feature:** [../proposal.md](../proposal.md) (`PROP-Dsp-001`) **Status:** Merged — Phase A. CC1–CC6 are in SPEC-004: convention resolution, the transitional per-key precedence, image-mode `spool` lookup, retained last-good resolved entry points with additive status/plan exposure, and the enumerated loud enforcement are folded into C45/C46; the unchanged invariants (CC6) are restated where C46 already held them. **Last Updated:** 2026-07-24 **Configuration identification:** Document IDs order as document type, short name, sequential id, then optional version: `DELTA-Dsp-002` for v1 and `DELTA-Dsp-002@2` for v2. Omit `@1`. Prefix every nested point ID with the full document ID, for example `DELTA-Dsp-002.CC1`, so references are globally grepable and do not clash across documents.
 
 ## DELTA-Dsp-002.P1 Summary
 

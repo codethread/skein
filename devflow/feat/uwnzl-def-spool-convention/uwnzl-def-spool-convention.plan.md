@@ -1,15 +1,6 @@
 # Convention-Resolved Spool Declarations (`def spool`) Plan
 
-**Document ID:** `PLAN-Dsp-001`
-**Feature:** `uwnzl-def-spool-convention`
-**Proposal:** [proposal.md](./proposal.md)
-**RFC:** none
-**Root specs:** [repl-api.md](../../specs/repl-api.md) (SPEC-003, `::module-opts`/C19/C19a), [daemon-runtime.md](../../specs/daemon-runtime.md) (SPEC-004, C45/C46/C46b)
-**ADRs:** [ADR-002](../../adrs/0002-no-inline-module-lifecycle-macro.md) (printable-declaration invariant), [ADR-003](../../adrs/0003-spool-activation-lifecycle.md) (activation lifecycle; a successor decision records the supersession)
-**Feature specs:** [specs/repl-api.delta.md](./specs/repl-api.delta.md) (`DELTA-Dsp-001`), [specs/daemon-runtime.delta.md](./specs/daemon-runtime.delta.md) (`DELTA-Dsp-002`)
-**Status:** Active
-**Last Updated:** 2026-07-24
-**Configuration identification:** Document IDs must be ordered as document type, short name, sequential id, then optional version: `PLAN-Dsp-001` for v1 and `PLAN-Dsp-001@2` for v2. Omit `@1`; append `@2`, `@3`, etc. only when a new version supersedes an externally referenced document. Prefix every nested point ID with the full document ID, for example `PLAN-Dsp-001.P1`, so references are globally grepable and do not clash across documents.
+**Document ID:** `PLAN-Dsp-001` **Feature:** `uwnzl-def-spool-convention` **Proposal:** [proposal.md](./proposal.md) **RFC:** none **Root specs:** [repl-api.md](../../specs/repl-api.md) (SPEC-003, `::module-opts`/C19/C19a), [daemon-runtime.md](../../specs/daemon-runtime.md) (SPEC-004, C45/C46/C46b) **ADRs:** [ADR-002](../../adrs/0002-no-inline-module-lifecycle-macro.md) (printable-declaration invariant), [ADR-003](../../adrs/0003-spool-activation-lifecycle.md) (activation lifecycle; a successor decision records the supersession) **Feature specs:** [specs/repl-api.delta.md](./specs/repl-api.delta.md) (`DELTA-Dsp-001`), [specs/daemon-runtime.delta.md](./specs/daemon-runtime.delta.md) (`DELTA-Dsp-002`) **Status:** Active **Last Updated:** 2026-07-24 **Configuration identification:** Document IDs must be ordered as document type, short name, sequential id, then optional version: `PLAN-Dsp-001` for v1 and `PLAN-Dsp-001@2` for v2. Omit `@1`; append `@2`, `@3`, etc. only when a new version supersedes an externally referenced document. Prefix every nested point ID with the full document ID, for example `PLAN-Dsp-001.P1`, so references are globally grepable and do not clash across documents.
 
 ## PLAN-Dsp-001.P1 Goal and scope
 
@@ -17,7 +8,7 @@ A module's activation entry points move out of its declaration and into a `(def 
 
 ## PLAN-Dsp-001.P2 Approach
 
-- **PLAN-Dsp-001.A1 (convention resolution, one seam):** The coordinator resolves each module's entry points from the public `spool` var in its loaded namespace at **every** module evaluation, so the `:unchanged` fast path, targeted refreshes, classpath bindings, and `reload-code!` all resolve identically (`DELTA-Dsp-002.CC1`). Only the *source* of the `:contribute`/`:reconcile` pair changes; everything else in refresh, publication, and reconcile stays put.
+- **PLAN-Dsp-001.A1 (convention resolution, one seam):** The coordinator resolves each module's entry points from the public `spool` var in its loaded namespace at **every** module evaluation, so the `:unchanged` fast path, targeted refreshes, classpath bindings, and `reload-code!` all resolve identically (`DELTA-Dsp-002.CC1`). Only the _source_ of the `:contribute`/`:reconcile` pair changes; everything else in refresh, publication, and reconcile stays put.
 - **PLAN-Dsp-001.A2 (single validation source):** `s/def ::spool` lives in `skein.api.spool.alpha` and the runtime's loud enforcement validates over that same spec, so the author-facing surface and the enforcement path cannot drift (`DELTA-Dsp-001.CC2`, `DELTA-Dsp-002.CC5`). Entry points are symbols, not fn values (ADR-002.O1); unqualified symbols are coordinator-qualified so the published declaration stays printable data.
 - **PLAN-Dsp-001.A3 (transitional per-key precedence):** Phase A keeps the legacy `:contribute`/`:reconcile` grammar keys and lets an explicitly declared key win per key over the `spool` var, silently and documented as transitional (`DELTA-Dsp-002.CC2`). This is precedence, not conflict, because the pinned sibling suites still declare explicit keys for in-tree namespaces during the window and a hard conflict would fail the gate the moment those namespaces gain `spool` vars.
 - **PLAN-Dsp-001.A4 (retained resolved state):** Because declarations stop carrying `:reconcile`, removal-by-omission would lose its reconciler. The coordinator retains each module's last-good resolved entry-point set in runtime state and reconciles the `:removed` teardown through it, and exposes the resolved set additively alongside the authored graph in `status`/`plan`/refresh (`DELTA-Dsp-002.CC4`, G2a). This is the load-bearing new seam.
@@ -25,15 +16,15 @@ A module's activation entry points move out of its declaration and into a `(def 
 
 ## PLAN-Dsp-001.P3 Affected areas
 
-| ID                | Area                                                                 | Expected change                                                                 |
-| ----------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| PLAN-Dsp-001.AA1  | `src/skein/core/weaver` (`module_refresh.clj`, `module_graph.clj`)   | Convention resolution, image-mode `spool` lookup, retained last-good state, enumerated loud failures |
-| PLAN-Dsp-001.AA2  | `skein.api.runtime.alpha`, `skein.api.spool.alpha`                   | `::module-opts` keys optional in Phase A; new `::spool` spec; docstring reservation of the public `spool` name |
-| PLAN-Dsp-001.AA3  | `scripts/quality` + conventions ratchet                              | Repository lint rejecting malformed/incidental public `spool` vars in module-loadable namespaces |
-| PLAN-Dsp-001.AA4  | In-tree `spools/*`, `.skein/*.clj`, `.skein/init.clj`                | `def module` → `def spool` (drop `:ns`), file-module `spool` vars, in-tree init triples dropped, parity test narrowed |
-| PLAN-Dsp-001.AA5  | Test helpers and fixtures (`test_support.clj`, coordinator tests)    | `activate-spool!` takes and requires a namespace symbol; regression matrix for the new seams |
-| PLAN-Dsp-001.AA6  | Root specs, ADR-003 successor, `docs/spools/*`, generated API docs   | Truthful per-phase contract updates, recorded C19 exception, docs of the transitional window |
-| PLAN-Dsp-001.AA7  | Sibling repos (devflow, kanban, agent-harness) — Phase B             | `spool` exports, `module` deletions, own-surface conversion, `:skein/min "v1"` floors, new markers after external stamp card `b3v1r` |
+| ID | Area | Expected change |
+| --- | --- | --- |
+| PLAN-Dsp-001.AA1 | `src/skein/core/weaver` (`module_refresh.clj`, `module_graph.clj`) | Convention resolution, image-mode `spool` lookup, retained last-good state, enumerated loud failures |
+| PLAN-Dsp-001.AA2 | `skein.api.runtime.alpha`, `skein.api.spool.alpha` | `::module-opts` keys optional in Phase A; new `::spool` spec; docstring reservation of the public `spool` name |
+| PLAN-Dsp-001.AA3 | `scripts/quality` + conventions ratchet | Repository lint rejecting malformed/incidental public `spool` vars in module-loadable namespaces |
+| PLAN-Dsp-001.AA4 | In-tree `spools/*`, `.skein/*.clj`, `.skein/init.clj` | `def module` → `def spool` (drop `:ns`), file-module `spool` vars, in-tree init triples dropped, parity test narrowed |
+| PLAN-Dsp-001.AA5 | Test helpers and fixtures (`test_support.clj`, coordinator tests) | `activate-spool!` takes and requires a namespace symbol; regression matrix for the new seams |
+| PLAN-Dsp-001.AA6 | Root specs, ADR-003 successor, `docs/spools/*`, generated API docs | Truthful per-phase contract updates, recorded C19 exception, docs of the transitional window |
+| PLAN-Dsp-001.AA7 | Sibling repos (devflow, kanban, agent-harness) — Phase B | `spool` exports, `module` deletions, own-surface conversion, `:skein/min "v1"` floors, new markers after external stamp card `b3v1r` |
 
 ## PLAN-Dsp-001.P4 Contract and migration impact
 
