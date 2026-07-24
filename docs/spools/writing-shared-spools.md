@@ -614,6 +614,29 @@ The shape is `skein.api.spool.alpha/::spool`: a map with optional `:contribute` 
 
 There is no imperative `install!` companion: the module lifecycle is the one activation path, and a reconciler follows the SPEC-004.C46b status contract — branch on `:applied`/`:removed` and fail loudly on anything else. Fixture-activation conventions are in [testing.md](./testing.md).
 
+### Workspace file modules
+
+A workspace-relative `:file` module can use the same convention when the loaded file declares one namespace. The coordinator resolves `spool` from that namespace:
+
+```clojure
+;; .skein/acme_priority.clj
+(ns acme.priority.local)
+
+(defn reconcile [{:keys [status]}]
+  ;; Handle :applied and :removed.
+  )
+
+(def spool
+  {:reconcile 'reconcile})
+```
+
+```clojure
+(runtime/module! rt :acme/priority
+  {:file "acme_priority.clj"})
+```
+
+A file that declares no namespace remains authoring-forms-only: its collected forms may contribute, but it gets no `spool` convention lookup. Keep a convention-backed file to one declared namespace so the public var has one unambiguous owner.
+
 ### Maven dependencies in a spool root
 
 A spool root may declare ordinary JVM library dependencies in its top-level `deps.edn :deps`. Those
