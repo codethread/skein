@@ -22,11 +22,18 @@ Live-state facts this proposal builds on (verified 2026-07-24):
 - `docs/spools/testing.md` already carries the blessed test-activation story ("Activating spool
   modules from test fixtures", ADR-003.P7 conventions + the test-support helper) — shipped by
   rrvnn. The card's "testing.md gains the story" item is verification, not authoring.
-- The 7fg72 material (stale install! phrase in the agent-run cookbook) is fixed on agent-harness
-  main since `75b8a23`, i.e. shipped in v12 and v13; `rg install!` over the repo's `agent-run/`
-  and `docs/` trees is clean today.
+- Card 7fg72 is already closed with outcome `abandoned`: its note pfqb5 records the move to card
+  0ubet on the agent-harness.spool board, and note 8xlg8 records the fix shipped as agent-harness
+  v11 (`75b8a23`) — so it is present in v11, v12, and v13, and `rg install!` over that repo's
+  `agent-run/` and `docs/` trees is clean today. There is nothing left to close on this board;
+  what remains is recording the lineage.
 - No workspace anywhere pins or module-declares dresser.spool (checked every world's `spools.edn`
   and `init.clj`); dresser v1 has no consumer to cut over.
+- Consumer config trackedness differs by repo: devflow.spool, kanban.spool, dresser.spool, and
+  notes track their `.skein` config files in git (notes carries unrelated pre-existing local
+  modifications that stay untouched); agent-harness.spool's `.skein/` is wholly untracked — a
+  local-only world, discovered during this inspection, that nonetheless physically pins kanban
+  v7 and so belongs to the epic's "every consuming workspace" DONE-WHEN.
 
 ## PROP-Cut-001.P2 Goals
 
@@ -41,16 +48,32 @@ Live-state facts this proposal builds on (verified 2026-07-24):
 - **PROP-Cut-001.G3:** Sibling world cutover: kanban v7→v9 in devflow.spool, kanban.spool,
   dresser.spool, and agent-harness.spool `.skein/spools.edn`; agent-run v12→v13 in notes. Each
   world's weaver is verified stopped at edit time (else refreshed the same way as G2); evidence
-  recorded on the card.
+  recorded on the card. Durability per P1's trackedness facts: the tracked configs
+  (devflow.spool, kanban.spool, dresser.spool, notes) each get one atomic config commit on that
+  repo's main touching only the pin change — workspace config, not spool source, so no release
+  marker; the agent-harness.spool edit is local-only by nature (untracked world) and is recorded
+  as such on the card, not silently treated as durable.
 - **PROP-Cut-001.G4:** Chime verification at final state, recorded on the card with command
   output: the canonical world's event handlers include `:chime/engine`; a real attention rule
   fires a notification with zero failures; `strand runtime status` (or the runtime-status op the
   world registers) shows no module problems.
-- **PROP-Cut-001.G5:** Docs closure: 7fg72 closed with the shipped-fix evidence; the epic
-  grep-gate rerun recorded (expected surviving matches only: `.skein/kanban_tracker.clj`
-  config-level definition, the historical line in `docs/spools/writing-shared-spools.md`, the
-  historical comment in `test/skein/config_test.clj`); CLAUDE.md files verified free of stale
-  install! guidance; `docs-check` green.
+- **PROP-Cut-001.G5:** Docs closure: the 7fg72 lineage recorded on the rtnfv card (closed
+  `abandoned`, successor 0ubet on the agent-harness board, fix shipped v11 `75b8a23` and present
+  through v13) — no second close attempted; the epic grep-gate rerun recorded per the executable
+  gate below; CLAUDE.md files verified free of stale install! guidance; `docs-check` green in
+  skein-src. Sibling repos receive config-only pin edits — no prose changes — and their test
+  suites run against skein-src via `:test` aliases rather than reading `.skein` config, so no
+  repo-local docs or test gate applies to those edits; the per-world smoke (S4) is their
+  validation, recorded on the card.
+
+  The executable grep gate, narrowed from PROP-Itr-001.G7 to the surfaces the epic's DONE-WHEN
+  actually governs (design records under `devflow/` and generated `*.api.md` mirrors are
+  history/reproduction, not activation guidance):
+  `rg -n "install!" src spools test docs .skein cli --glob '!**/*.api.md'` — expected matches,
+  exactly: `.skein/kanban_tracker.clj` (config-level definition, out of epic scope by DONE-WHEN),
+  `docs/spools/writing-shared-spools.md` (normative statement that no install! companion exists),
+  `test/skein/config_test.clj` (comment describing the replaced path as history). Any other
+  match fails the gate.
 - **PROP-Cut-001.G6:** Acceptance gates: full locked suite (`flock` on `/tmp/skein-test.lock`),
   `(cd cli && go test ./...)`, `clojure -M:smoke`, `make fmt-check lint reflect-check docs-check`,
   `make spool-suite-gate` (pinned external suites vs this checkout — it must hold with the new
@@ -73,30 +96,47 @@ Live-state facts this proposal builds on (verified 2026-07-24):
 
 ## PROP-Cut-001.P4 Proposed scope
 
-- **PROP-Cut-001.S1 (disposable smoke, before any real config changes):** One disposable
+- **PROP-Cut-001.S1 (coordinate smoke, before any real config changes):** One disposable
   workspace from `mktemp -d` (guarded `${ws:?}`) whose `spools.edn` pins exactly the new
   coordinates (devflow v5, kanban v9, agent-run v13 with the canonical root mappings) and whose
   `init.clj` declares the corresponding guarded modules; start its weaver, assert every module
   `:applied` and a representative op from each family responds (`strand kanban about`,
-  devflow op registration, `strand agent`-surface presence); tear it down. This validates all
-  three git coordinates and the deleted-installer surface end to end before any real-world edit.
+  devflow op registration, `strand agent`-surface presence); tear it down. This validates the
+  three git coordinates and the deleted-installer surface end to end. (Executed during proposal
+  authoring: all seven modules `:applied`, kanban/agent/bench ops served from the new cache
+  paths, no pending generation, no shadows.)
 - **PROP-Cut-001.S2 (skein-src pin bump):** Edit `.skein/spools.edn` per G1 on this branch.
   Focused validation: `clojure -M:test skein.config-ops-test` plus the spool-facing namespaces;
   full gates at acceptance (G6). Land via `strand land` (coordinator-only) to main.
 - **PROP-Cut-001.S3 (canonical refresh + verification):** After land (canonical main
-  fast-forwarded by the land pull-main gate), `runtime/refresh!` on the live weaver via its
-  nREPL; assert module statuses (G2); run the chime verification (G4); record outputs on the
-  card. Restart only if refresh records a pending generation, per AUTHORITY discipline.
-- **PROP-Cut-001.S4 (sibling world cutover):** Apply G3's five config edits. Weavers verified
-  stopped immediately before each edit (`mill weaver status --workspace`). The coordinates were
-  proven by S1; no per-world weaver start.
-- **PROP-Cut-001.S5 (docs closure + epic hygiene):** G5's checks and records; close 7fg72;
-  grep-gate output and dresser/notebook "clean/no-consumer" records on the rtnfv card; card
-  finished done; epic waq0l finished done once rtnfv is the last open feature (board check).
+  fast-forwarded by the land pull-main gate): (a) drain check — `strand agent ps --active` shows
+  no delegated runs beyond this coordinator's own session surface; (b) `runtime/refresh!`
+  executed and observed through the weaver's nREPL, capturing the full result map; (c) assert
+  module statuses (G2); (d) post-refresh CLI health check — `strand help`, `strand kanban board`,
+  and a read op must answer — before any chime evidence or board closure is attempted; (e) run
+  the chime verification (G4) and record outputs on the card. Restart only if refresh records a
+  pending generation, per AUTHORITY discipline; if refresh fails partially, the recovery
+  (targeted re-refresh or restart) is decided and recorded before any further board mutation.
+- **PROP-Cut-001.S4 (per-world sibling cutover):** For each of the five consumer worlds, in
+  order: verify its weaver stopped (`mill weaver status --workspace`); copy its exact `.skein`
+  config shape (config files only, no data) into a disposable dir, apply the pin edit there,
+  absolutizing any config-dir-relative `:local/root` so the copy resolves the same sources;
+  start that disposable weaver, assert module outcomes, stop it; only then apply the same edit
+  to the real config. Tracked worlds then get their atomic config commit per G3. This satisfies
+  the card's smoke-every-config-change rule per consumer, not per coordinate.
+- **PROP-Cut-001.S5 (docs closure + epic hygiene):** G5's checks and records; the 7fg72 lineage
+  note; grep-gate output and dresser/notebook "clean/no-consumer" records on the rtnfv card;
+  card finished done; epic waq0l finished done once rtnfv is the last open feature (board
+  check).
 
 ## PROP-Cut-001.P5 Open questions
 
 - **PROP-Cut-001.Q1:** None structural. Judgment calls recorded here: NG1 (dresser stays
   unconsumed rather than inventing a consumer), NG3 (stopped worlds cut over cold), and treating
-  the card's testing.md/staged-edit items as verify-and-record because prior features already
-  shipped them (P1).
+  the card's testing.md/staged-edit/7fg72 items as verify-and-record because prior features
+  already shipped or closed them (P1). Review round 1 (runs qoh6s/fzfnl, synthesis 69vyu on step
+  xkwfx) drove: per-world smoke instead of one canonical-shaped smoke (S4), the executable
+  grep-gate definition with its complete expected-match list (G5), the 7fg72 retarget from close
+  to lineage record (G5/S5), the canonical refresh drain/health/recovery discipline (S3), and
+  the trackedness/durability disclosure for the sibling config edits including the untracked
+  agent-harness world (P1/G3).
